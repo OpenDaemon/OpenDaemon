@@ -1,0 +1,82 @@
+{
+  "name": "opendaemon",
+  "version": "1.0.0",
+  "description": "Next-generation process manager for Node.js",
+  "type": "module",
+  "main": "./packages/core/dist/index.cjs",
+  "module": "./packages/core/dist/index.js",
+  "types": "./packages/core/dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./packages/core/dist/index.js",
+      "require": "./packages/core/dist/index.cjs",
+      "types": "./packages/core/dist/index.d.ts"
+    },
+    "./sdk": {
+      "import": "./packages/sdk/dist/index.js",
+      "require": "./packages/sdk/dist/index.cjs",
+      "types": "./packages/sdk/dist/index.d.ts"
+    },
+    "./runtime": {
+      "import": "./packages/sdk/dist/runtime.js",
+      "require": "./packages/sdk/dist/runtime.cjs",
+      "types": "./packages/sdk/dist/runtime.d.ts"
+    }
+  },
+  "bin": {
+    "od": "./packages/cli/dist/index.js",
+    "opendaemon": "./packages/cli/dist/index.js"
+  },
+  "files": [
+    "packages/*/dist/**"
+  ],
+
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "test:ui": "vitest --ui",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "rimraf packages/*/dist",
+    "prepublishOnly": "npm run clean && npm run build && npm run test"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "@vitest/ui": "^3.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "rimraf": "^6.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "keywords": [
+    "process-manager",
+    "daemon",
+    "pm2",
+    "cluster",
+    "deployment",
+    "monitoring",
+    "typescript"
+  ],
+  "author": "Ersin Koc <ersin@opendaemon.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opendaemon/opendaemon.git"
+  },
+  "bugs": {
+    "url": "https://github.com/opendaemon/opendaemon/issues"
+  },
+  "homepage": "https://opendaemon.dev"
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@opendaemon/cli",
+  "version": "1.0.0",
+  "description": "OpenDaemon CLI binary",
+  "type": "module",
+  "bin": {
+    "od": "./dist/index.js",
+    "opendaemon": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opendaemon/core": "1.0.0",
+    "@opendaemon/sdk": "1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT"
+}
