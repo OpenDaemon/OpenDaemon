@@ -196,6 +196,36 @@ describe('StateMachine', () => {
       expect(machine.getValidEvents()).toEqual([]);
     });
 
+    it('should return false for can() when no transitions from current state', () => {
+      const machine = createMachine();
+      // Force to a state that has no transitions defined (lines 79-80)
+      machine.forceState('stopped');
+
+      expect(machine.can('start')).toBe(false);
+      expect(machine.can('stop')).toBe(false);
+    });
+
+    it('should return false for transition() when no transitions from current state', async () => {
+      const machine = createMachine();
+      // Force to a state that has no transitions defined (lines 106-107)
+      machine.forceState('stopped');
+
+      const result = await machine.transition('start');
+      expect(result).toBe(false);
+    });
+
+    it('should support afterTransition hook unsubscription', async () => {
+      const machine = createMachine();
+      const hook = vi.fn();
+
+      const unsubscribe = machine.afterTransition(hook);
+      unsubscribe();
+
+      await machine.transition('start');
+
+      expect(hook).not.toHaveBeenCalled();
+    });
+
     it('should handle async hooks', async () => {
       const machine = createMachine();
       let resolved = false;

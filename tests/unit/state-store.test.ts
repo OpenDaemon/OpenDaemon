@@ -256,5 +256,61 @@ describe('StateStore', () => {
       store.set('key', 'value');
       expect(handler).not.toHaveBeenCalled();
     });
+
+    it('should handle subscriber errors in set() and log to console.error', () => {
+      const store = new StateStore();
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const errorHandler = vi.fn().mockImplementation(() => {
+        throw new Error('Subscriber error');
+      });
+
+      store.subscribe('key', errorHandler);
+      store.set('key', 'value');
+
+      expect(errorHandler).toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Error in state subscriber for key:',
+        expect.any(Error)
+      );
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should handle subscriber errors in delete() and log to console.error', () => {
+      const store = new StateStore();
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const errorHandler = vi.fn().mockImplementation(() => {
+        throw new Error('Subscriber error');
+      });
+
+      store.set('key', 'value');
+      store.subscribe('key', errorHandler);
+      store.delete('key');
+
+      expect(errorHandler).toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Error in state subscriber for key:',
+        expect.any(Error)
+      );
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should handle subscriber errors in clear() and log to console.error', () => {
+      const store = new StateStore();
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const errorHandler = vi.fn().mockImplementation(() => {
+        throw new Error('Subscriber error');
+      });
+
+      store.set('key', 'value');
+      store.subscribe('key', errorHandler);
+      store.clear();
+
+      expect(errorHandler).toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Error in state subscriber for key:',
+        expect.any(Error)
+      );
+      consoleErrorSpy.mockRestore();
+    });
   });
 });

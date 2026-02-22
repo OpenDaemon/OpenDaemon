@@ -175,6 +175,22 @@ describe('JSON-RPC', () => {
       
       expect(parsed?.id).toBe(123);
     });
+
+    it('should return null for non-object data (lines 164-165)', () => {
+      const buffer = Buffer.from('"string"');
+      
+      const parsed = parseRequest(buffer);
+      
+      expect(parsed).toBeNull();
+    });
+
+    it('should return null for null data (lines 164-165)', () => {
+      const buffer = Buffer.from('null');
+      
+      const parsed = parseRequest(buffer);
+      
+      expect(parsed).toBeNull();
+    });
   });
 
   describe('parseResponse', () => {
@@ -219,6 +235,22 @@ describe('JSON-RPC', () => {
 
     it('should return null when neither result nor error present', () => {
       const buffer = Buffer.from('{"jsonrpc":"2.0","id":1}');
+      
+      const parsed = parseResponse(buffer);
+      
+      expect(parsed).toBeNull();
+    });
+
+    it('should return null for non-object data (lines 183-184)', () => {
+      const buffer = Buffer.from('"string"');
+      
+      const parsed = parseResponse(buffer);
+      
+      expect(parsed).toBeNull();
+    });
+
+    it('should return null for null data (lines 183-184)', () => {
+      const buffer = Buffer.from('null');
       
       const parsed = parseResponse(buffer);
       

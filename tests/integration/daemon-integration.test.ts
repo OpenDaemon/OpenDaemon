@@ -65,6 +65,8 @@ vi.mock('../../plugins/config-manager/src/index.js', () => ({
 }));
 
 describe('Daemon Entry Point Integration', () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+  
   beforeEach(() => {
     vi.clearAllMocks();
     Object.keys(registeredMethods).forEach(key => delete registeredMethods[key]);
@@ -72,8 +74,15 @@ describe('Daemon Entry Point Integration', () => {
     // Reset modules
     vi.resetModules();
     
+    // Mock process.exit to prevent test runner termination
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as any);
+    
     // Default success state
     mockExistsSync.mockReturnValue(false);
+  });
+  
+  afterEach(() => {
+    exitSpy.mockRestore();
   });
 
   describe('startup flow', () => {
@@ -306,8 +315,18 @@ describe('Daemon Entry Point Integration', () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue('12345');
       
-      await import('../../packages/cli/src/daemon.js');
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // Mock process.kill to throw (process doesn't exist)
+      const originalKill = process.kill;
+      process.kill = vi.fn().mockImplementation(() => { throw new Error('No such process'); }) as any;
+      
+      try {
+        await import('../../packages/cli/src/daemon.js');
+        await new Promise(resolve => setTimeout(resolve, 10));
+      } catch {
+        // Expected
+      }
+      
+      process.kill = originalKill;
       
       expect(mockReadFileSync).toHaveBeenCalled();
     });
@@ -324,7 +343,7 @@ describe('Daemon Entry Point Integration', () => {
         await import('../../packages/cli/src/daemon.js');
         await new Promise(resolve => setTimeout(resolve, 10));
       } catch {
-        // Expected
+        // Expected - process.exit is called
       }
       
       process.kill = originalKill;
@@ -341,7 +360,7 @@ describe('Daemon Entry Point Integration', () => {
         await import('../../packages/cli/src/daemon.js');
         await new Promise(resolve => setTimeout(resolve, 10));
       } catch {
-        // Expected
+        // Expected - process.exit is called
       }
       
       expect(mockLoggerError).toHaveBeenCalledWith(
@@ -358,7 +377,7 @@ describe('Daemon Entry Point Integration', () => {
         await import('../../packages/cli/src/daemon.js');
         await new Promise(resolve => setTimeout(resolve, 10));
       } catch {
-        // Expected
+        // Expected - process.exit is called
       }
       
       expect(mockLoggerError).toHaveBeenCalled();

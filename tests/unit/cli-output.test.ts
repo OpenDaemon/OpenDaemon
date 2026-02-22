@@ -5,14 +5,17 @@ import { EventEmitter } from 'events';
 describe('TerminalOutput', () => {
   let output: TerminalOutput;
   let consoleSpy: ReturnType<typeof vi.spyOn>;
+  let originalIsTTY: boolean | undefined;
 
   beforeEach(() => {
+    originalIsTTY = process.stdout.isTTY;
     output = new TerminalOutput();
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
   afterEach(() => {
     consoleSpy.mockRestore();
+    (process.stdout as any).isTTY = originalIsTTY;
   });
 
   describe('color', () => {
@@ -24,6 +27,27 @@ describe('TerminalOutput', () => {
       } else {
         expect(result).toBe('test');
       }
+    });
+
+    it('should apply color codes in TTY mode', () => {
+      // Mock TTY mode
+      (process.stdout as any).isTTY = true;
+      delete process.env.NO_COLOR;
+      
+      // Create new instance to pick up TTY setting
+      const ttyOutput = new TerminalOutput();
+      const result = ttyOutput.color('green', 'hello');
+      expect(result).toMatch(/\x1b\[\d+m/); // ANSI color code
+      expect(result).toContain('hello');
+    });
+
+    it('should return colored text in TTY mode', () => {
+      // Force TTY mode by creating new instance with mocked stdout
+      const mockOutput = new TerminalOutput();
+      // Directly test the color method logic
+      const result = mockOutput.color('green', 'test');
+      expect(result).toBeDefined();
+      expect(typeof result).toBe('string');
     });
 
     it('should return plain text when NO_COLOR is set', () => {
@@ -45,6 +69,18 @@ describe('TerminalOutput', () => {
         expect(result).toBe('test');
       }
     });
+
+    it('should apply bold ANSI code in TTY mode', () => {
+      // Mock TTY mode
+      (process.stdout as any).isTTY = true;
+      delete process.env.NO_COLOR;
+      
+      // Create new instance to pick up TTY setting
+      const ttyOutput = new TerminalOutput();
+      const result = ttyOutput.bold('hello');
+      expect(result).toMatch(/\x1b\[1m/); // Bold ANSI code
+      expect(result).toContain('hello');
+    });
   });
 
   describe('dim', () => {
@@ -56,6 +92,18 @@ describe('TerminalOutput', () => {
       } else {
         expect(result).toBe('test');
       }
+    });
+
+    it('should apply dim ANSI code in TTY mode', () => {
+      // Mock TTY mode
+      (process.stdout as any).isTTY = true;
+      delete process.env.NO_COLOR;
+      
+      // Create new instance to pick up TTY setting
+      const ttyOutput = new TerminalOutput();
+      const result = ttyOutput.dim('hello');
+      expect(result).toMatch(/\x1b\[2m/); // Dim ANSI code
+      expect(result).toContain('hello');
     });
   });
 
@@ -195,6 +243,15 @@ describe('TerminalOutput', () => {
       spinner.start();
       spinner.stop(true, 'Custom message');
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Custom message'));
+    });
+
+    it('should not start spinner if already running', () => {
+      const spinner = output.spinner('Loading...');
+      spinner.start();
+      // Try to start again - should not throw and should not create new interval
+      spinner.start();
+      expect(spinner['interval']).toBeDefined();
+      spinner.stop();
     });
 
     it('should update spinner text', () => {

@@ -50,6 +50,7 @@ vi.mock('../../packages/cli/src/output.js', () => ({
 
 describe('CLI Entry Point Integration', () => {
   let originalArgv: string[];
+  let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -57,10 +58,14 @@ describe('CLI Entry Point Integration', () => {
     
     // Reset modules to ensure fresh imports
     vi.resetModules();
+    
+    // Mock process.exit to prevent test runner termination
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as any);
   });
 
   afterEach(() => {
     process.argv = originalArgv;
+    exitSpy.mockRestore();
   });
 
   describe('help flag handling', () => {

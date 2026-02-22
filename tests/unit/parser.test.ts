@@ -344,5 +344,61 @@ describe('CommandParser', () => {
       expect(result).toBeDefined();
       expect(result.args).toBeDefined();
     });
+
+    it('should handle edge case arguments', () => {
+      const parser = new CommandParser();
+      parser.addOption({
+        name: 'verbose',
+        alias: 'v',
+        type: 'boolean',
+      });
+
+      // Test empty string - should be treated as positional
+      const result1 = parser.parse(['']);
+      expect(result1).toBeDefined();
+
+      // Test single dash - should be treated as positional
+      const result2 = parser.parse(['-']);
+      expect(result2).toBeDefined();
+
+      // Test unmatched combined flags
+      const result3 = parser.parse(['-xyz']);
+      expect(result3).toBeDefined();
+    });
+
+    it('should handle parseValue with number type', () => {
+      const parser = new CommandParser();
+      parser.addOption({
+        name: 'count',
+        type: 'number',
+      });
+
+      // Test line 264: Number(value)
+      expect(parser.parse(['--count=42']).options.count).toBe(42);
+      expect(parser.parse(['--count=0']).options.count).toBe(0);
+    });
+
+    it('should directly test parseValue method', () => {
+      const parser = new CommandParser();
+      
+      // Access private method for testing
+      const parseValue = (parser as any).parseValue.bind(parser);
+      
+      // Test line 266: boolean true cases
+      expect(parseValue('true', 'boolean')).toBe(true);
+      expect(parseValue('1', 'boolean')).toBe(true);
+      expect(parseValue('', 'boolean')).toBe(true);
+      
+      // Test line 266: boolean false cases (currently uncovered)
+      expect(parseValue('false', 'boolean')).toBe(false);
+      expect(parseValue('0', 'boolean')).toBe(false);
+      expect(parseValue('abc', 'boolean')).toBe(false);
+      
+      // Test line 268: array type
+      expect(parseValue('value', 'array')).toEqual(['value']);
+      
+      // Test line 270: default/string type
+      expect(parseValue('hello', 'string')).toBe('hello');
+    });
   });
 });
