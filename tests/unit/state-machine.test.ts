@@ -145,4 +145,69 @@ describe('StateMachine', () => {
       expect(machine.getState()).toBe('running');
     });
   });
+
+  describe('edge cases', () => {
+    it('should handle multiple beforeTransition hooks', async () => {
+      const machine = createMachine();
+      const hook1 = vi.fn();
+      const hook2 = vi.fn();
+
+      machine.beforeTransition(hook1);
+      machine.beforeTransition(hook2);
+
+      await machine.transition('start');
+
+      expect(hook1).toHaveBeenCalled();
+      expect(hook2).toHaveBeenCalled();
+    });
+
+    it('should handle multiple afterTransition hooks', async () => {
+      const machine = createMachine();
+      const hook1 = vi.fn();
+      const hook2 = vi.fn();
+
+      machine.afterTransition(hook1);
+      machine.afterTransition(hook2);
+
+      await machine.transition('start');
+
+      expect(hook1).toHaveBeenCalled();
+      expect(hook2).toHaveBeenCalled();
+    });
+
+    it('should propagate hook errors', async () => {
+      const machine = createMachine();
+      const errorHook = vi.fn().mockImplementation(() => {
+        throw new Error('Hook error');
+      });
+
+      machine.beforeTransition(errorHook);
+
+      // Should throw when hook errors
+      await expect(machine.transition('start')).rejects.toThrow('Hook error');
+      expect(errorHook).toHaveBeenCalled();
+    });
+
+    it('should return empty array for invalid state in getValidEvents', () => {
+      const machine = createMachine();
+      // Force to a state that has no transitions defined
+      machine.forceState('stopped');
+
+      expect(machine.getValidEvents()).toEqual([]);
+    });
+
+    it('should handle async hooks', async () => {
+      const machine = createMachine();
+      let resolved = false;
+
+      machine.beforeTransition(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        resolved = true;
+      });
+
+      await machine.transition('start');
+
+      expect(resolved).toBe(true);
+    });
+  });
 });

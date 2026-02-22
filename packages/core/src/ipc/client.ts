@@ -1,9 +1,6 @@
 import { createConnection, type Socket } from 'net';
-import { randomUUID } from 'crypto';
 import { FrameType, encodeFrame, decodeFrames } from './protocol.js';
 import {
-  type JsonRpcRequest,
-  type JsonRpcResponse,
   createRequest,
   parseResponse,
   serialize,
@@ -26,16 +23,14 @@ interface PendingRequest {
  * IPC Client implementation
  */
 export class IpcClient implements IIpcClient {
-  private socket?: Socket;
-  private buffer = Buffer.alloc(0);
+  private socket: Socket | undefined;
+  private buffer: Buffer = Buffer.alloc(0);
   private pendingRequests = new Map<string | number, PendingRequest>();
   private notificationHandlers: Array<(method: string, params: unknown) => void> = [];
   private config: Required<IpcClientConfig>;
   private logger: Logger;
   private connected = false;
   private requestId = 0;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 3;
 
   constructor(config: IpcClientConfig) {
     this.config = {
@@ -53,7 +48,7 @@ export class IpcClient implements IIpcClient {
     return new Promise((resolve, reject) => {
       this.socket = createConnection(this.config.socketPath, () => {
         this.connected = true;
-        this.reconnectAttempts = 0;
+        // Reconnect logic would go here
         this.logger.info(`Connected to IPC server at ${this.config.socketPath}`);
         resolve();
       });
@@ -90,7 +85,7 @@ export class IpcClient implements IIpcClient {
   async disconnect(): Promise<void> {
     if (this.socket) {
       this.socket.end();
-      this.socket = undefined;
+      this.socket = undefined as unknown as Socket;
       this.connected = false;
     }
   }
@@ -174,7 +169,7 @@ export class IpcClient implements IIpcClient {
     this.buffer = Buffer.concat([this.buffer, data]);
 
     const { frames, remaining } = decodeFrames(this.buffer);
-    this.buffer = remaining;
+    this.buffer = remaining as unknown as Buffer;
 
     for (const frame of frames) {
       switch (frame.type) {
@@ -205,7 +200,7 @@ export class IpcClient implements IIpcClient {
       return;
     }
 
-    const pending = this.pendingRequests.get(response.id);
+    const pending = response.id !== null ? this.pendingRequests.get(response.id) : undefined;
     if (!pending) {
       this.logger.warn(`Received response for unknown request: ${String(response.id)}`);
       return;
@@ -213,7 +208,7 @@ export class IpcClient implements IIpcClient {
 
     // Clear timeout
     clearTimeout(pending.timeout);
-    this.pendingRequests.delete(response.id);
+    if (response.id !== null) { this.pendingRequests.delete(response.id); }
 
     // Resolve or reject
     if (response.error) {

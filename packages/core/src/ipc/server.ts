@@ -2,7 +2,6 @@ import { createServer, type Server, type Socket } from 'net';
 import { randomUUID } from 'crypto';
 import { FrameType, encodeFrame, decodeFrames } from './protocol.js';
 import {
-  type JsonRpcRequest,
   type JsonRpcResponse,
   createResponse,
   createErrorResponse,
@@ -25,7 +24,7 @@ import { IpcError, ErrorCode } from '../errors/index.js';
 class IpcSocketImpl implements IpcSocket {
   readonly id: string;
   private socket: Socket;
-  private buffer = Buffer.alloc(0);
+  private buffer: Buffer = Buffer.alloc(0);
   private dataHandlers: Array<(data: Buffer) => void> = [];
   private closeHandlers: Array<() => void> = [];
   private errorHandlers: Array<(err: Error) => void> = [];
@@ -42,7 +41,7 @@ class IpcSocketImpl implements IpcSocket {
       
       // Try to decode frames
       const { frames, remaining } = decodeFrames(this.buffer);
-      this.buffer = remaining;
+      this.buffer = remaining as unknown as Buffer;
       
       for (const frame of frames) {
         if (frame.type === FrameType.JSON_RPC_REQUEST || 
@@ -104,7 +103,6 @@ export class IpcServer {
   private connectionHandlers: ConnectionHandler[] = [];
   private config: IpcServerConfig;
   private logger: Logger;
-  private requestId = 0;
 
   constructor(config: IpcServerConfig) {
     this.config = {
@@ -268,7 +266,7 @@ export class IpcServer {
 
     // Check auth token if required
     if (this.config.authToken) {
-      const authHeader = (request.params as Record<string, unknown> | undefined)?.__authToken;
+      const authHeader = (request.params as Record<string, unknown> | undefined)?.['__authToken'];
       if (authHeader !== this.config.authToken) {
         this.sendError(socket, request.id, JsonRpcErrorCode.INVALID_REQUEST, 'Invalid auth token');
         return;

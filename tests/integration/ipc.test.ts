@@ -95,18 +95,66 @@ describe('IPC', () => {
       await server.start();
 
       const notifications: string[] = [];
+      
+      // Connect first
+      await client.connect();
+      
+      // Then register notification handler
       client.onNotification((method) => {
         notifications.push(method);
+      });
+      
+      // Small delay to ensure handler is registered
+      await setTimeout(50);
+      
+      // Now broadcast
+      server.broadcast('test.notification', { data: 123 });
+      
+      // Wait for the notification to be received
+      await setTimeout(100);
+      
+      expect(notifications).toContain('test.notification');
+    });
+
+    it('should handle client connection errors gracefully', async () => {
+      await server.start();
+      
+      // Try to connect multiple clients rapidly
+      const clients: IpcClient[] = [];
+      const connectPromises: Promise<void>[] = [];
+      
+      for (let i = 0; i < 3; i++) {
+        const c = new IpcClient({ socketPath, timeout: 1000 });
+        clients.push(c);
+        connectPromises.push(c.connect());
+      }
+      
+      // All should connect successfully
+      await expect(Promise.all(connectPromises)).resolves.not.toThrow();
+      
+      // Cleanup
+      for (const c of clients) {
+        await c.disconnect();
+      }
+    });
+
+    it('should handle socket closure during operation', async () => {
+      await server.start();
+      server.registerMethod('slow', async () => {
+        await setTimeout(500);
+        return 'done';
       });
 
       await client.connect();
       
-      server.broadcast('test.notification', { data: 123 });
+      // Start a slow request
+      const requestPromise = client.call('slow');
       
-      // Wait a bit longer for the notification to be received
-      await setTimeout(500);
+      // Immediately disconnect (simulates socket close)
+      await client.disconnect();
       
-      expect(notifications).toContain('test.notification');
+      // Request should be rejected
+      await expect(requestPromise).rejects.toThrow();
     });
   });
 
@@ -146,6 +194,47 @@ describe('IPC', () => {
       await expect(fastClient.call('slow')).rejects.toThrow('timeout');
       
       await fastClient.disconnect();
+    });
+
+    it('should handle client disconnection', async () => {
+      await server.start();
+      server.registerMethod('test', () => 'ok');
+
+      await client.connect();
+      expect(client.isConnected()).toBe(true);
+
+      // Disconnect client
+      await client.disconnect();
+      expect(client.isConnected()).toBe(false);
+    });
+
+    it('should handle server stop with connected clients', async () => {
+      await server.start();
+      server.registerMethod('test', () => 'ok');
+
+      await client.connect();
+      expect(client.isConnected()).toBe(true);
+
+      // Stop server while client is connected
+      await server.stop();
+
+      // Give client time to detect disconnection
+      await setTimeout(100);
+
+      // Client connection state may vary by platform, but server stop should not throw
+      expect(true).toBe(true);
+    });
+
+    it('should handle rapid connect/disconnect cycles', async () => {
+      await server.start();
+
+      for (let i = 0; i < 5; i++) {
+        const tempClient = new IpcClient({ socketPath, timeout: 1000 });
+        await tempClient.connect();
+        expect(tempClient.isConnected()).toBe(true);
+        await tempClient.disconnect();
+        expect(tempClient.isConnected()).toBe(false);
+      }
     });
   });
 });

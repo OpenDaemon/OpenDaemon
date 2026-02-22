@@ -14,3 +14,16 @@ export {
   createErrorResponse,
   serialize,
 } from './rpc.js';
+
+// IPC Server/Client
+export { IpcServer } from './server.js';
+export { IpcClient } from './client.js';
+export type {
+  IpcServerConfig,
+  IpcClientConfig,
+  IpcSocket,
+  RpcMethodHandler,
+  ConnectionHandler,
+  IIpcServer,
+  IIpcClient,
+} from './types.js';

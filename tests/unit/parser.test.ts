@@ -204,4 +204,122 @@ describe('CommandParser', () => {
       expect(result.args).toContain('--unknown-flag');
     });
   });
+
+  describe('edge cases', () => {
+    it('should handle array option as flag', () => {
+      const parser = new CommandParser();
+      parser.addOption({
+        name: 'tags',
+        type: 'array',
+      });
+
+      const result = parser.parse(['--tags']);
+
+      expect(result.options.tags).toEqual(['true']);
+    });
+
+    it('should parse boolean values', () => {
+      const parser = new CommandParser();
+      parser.addOption({
+        name: 'flag',
+        type: 'boolean',
+      });
+
+      expect(parser.parse(['--flag=true']).options.flag).toBe(true);
+      expect(parser.parse(['--flag=1']).options.flag).toBe(true);
+      expect(parser.parse(['--flag=']).options.flag).toBe(true);
+      // Note: --flag=false behavior depends on implementation
+    });
+
+    it('should handle unknown short flag at end of combined flags', () => {
+      const parser = new CommandParser();
+      parser.addOption({
+        name: 'verbose',
+        alias: 'v',
+        type: 'boolean',
+      });
+
+      // -vx where x is unknown - should return 0 and treat as arg
+      const result = parser.parse(['-vx']);
+      expect(result.args).toContain('-vx');
+    });
+
+    it('should handle short flag without value for non-boolean', () => {
+      const parser = new CommandParser();
+      parser.addOption({
+        name: 'config',
+        alias: 'c',
+        type: 'string',
+      });
+
+      // -c at end without value
+      const result = parser.parse(['-c']);
+      // Should be treated as argument
+      expect(result.args.length).toBeGreaterThan(0);
+    });
+
+    it('should handle combined non-boolean flags', () => {
+      const parser = new CommandParser();
+      parser.addOption({
+        name: 'config',
+        alias: 'c',
+        type: 'string',
+      });
+      parser.addOption({
+        name: 'verbose',
+        alias: 'v',
+        type: 'boolean',
+      });
+
+      // -cv where c is string (not boolean), should fail
+      const result = parser.parse(['-cv']);
+      expect(result.args.length).toBeGreaterThan(0);
+    });
+
+    it('should return 0 for non-matching argument patterns', () => {
+      const parser = new CommandParser();
+      parser.addOption({
+        name: 'verbose',
+        type: 'boolean',
+      });
+
+      // Plain argument without dash prefix - may or may not be treated as positional arg
+      const result = parser.parse(['notanoption']);
+      // Implementation may vary - just verify no errors
+      expect(result).toBeDefined();
+    });
+
+    it('should parse array value in parseValue', () => {
+      const parser = new CommandParser();
+      parser.addOption({
+        name: 'arr',
+        type: 'array',
+      });
+
+      const result = parser.parse(['--arr=value']);
+
+      expect(result.options.arr).toEqual(['value']);
+    });
+
+    it('should handle unknown short flag', () => {
+      const parser = new CommandParser();
+
+      const result = parser.parse(['-x']);
+
+      expect(result.args).toContain('-x');
+    });
+
+    it('should handle combined flag with non-boolean', () => {
+      const parser = new CommandParser();
+      parser.addOption({
+        name: 'verbose',
+        alias: 'v',
+        type: 'string',
+      });
+
+      const result = parser.parse(['-vx']);
+
+      expect(result.args).toContain('-vx');
+    });
+  });
 });

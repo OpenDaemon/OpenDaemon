@@ -59,8 +59,11 @@ export type {
 export { Logger, LogLevel, type LogEntry, type LogHandler } from './utils/logger.js';
 
 // IPC
-export { encodeFrame, decodeFrames, FrameType, type Frame } from './ipc/protocol.js';
 export {
+  encodeFrame,
+  decodeFrames,
+  FrameType,
+  type Frame,
   type JsonRpcRequest,
   type JsonRpcResponse,
   type JsonRpcError,
@@ -71,4 +74,13 @@ export {
   createResponse,
   createErrorResponse,
   serialize,
-} from './ipc/rpc.js';
+  IpcServer,
+  IpcClient,
+  type IpcServerConfig,
+  type IpcClientConfig,
+  type IpcSocket,
+  type RpcMethodHandler,
+  type ConnectionHandler,
+  type IIpcServer,
+  type IIpcClient,
+} from './ipc/index.js';

@@ -178,5 +178,83 @@ describe('StateStore', () => {
         c: { nested: true },
       });
     });
+
+    it('should return empty object for empty store', () => {
+      const store = new StateStore();
+
+      expect(store.toObject()).toEqual({});
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should handle deleting non-existent key', () => {
+      const store = new StateStore();
+      const handler = vi.fn();
+
+      // Subscribe to a key that doesn't exist
+      store.subscribe('nonexistent', handler);
+      // Delete it - should not throw and should not notify
+      store.delete('nonexistent');
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('should handle updating non-existent key', () => {
+      const store = new StateStore();
+      const handler = vi.fn();
+
+      store.subscribe('counter', handler);
+      store.update('counter', (old) => (old ?? 0) + 1);
+
+      expect(store.get('counter')).toBe(1);
+      expect(handler).toHaveBeenCalledWith(1, undefined);
+    });
+
+    it('should handle setting same value', () => {
+      const store = new StateStore();
+      const handler = vi.fn();
+
+      store.set('key', 'value');
+      store.subscribe('key', handler);
+      // Set same value again
+      store.set('key', 'value');
+
+      // Should still notify
+      expect(handler).toHaveBeenCalledWith('value', 'value');
+    });
+
+    it('should handle clearing empty store', () => {
+      const store = new StateStore();
+
+      // Should not throw
+      expect(() => store.clear()).not.toThrow();
+      expect(store.size()).toBe(0);
+    });
+
+    it('should handle multiple subscribers', () => {
+      const store = new StateStore();
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+
+      store.subscribe('key', handler1);
+      store.subscribe('key', handler2);
+      store.set('key', 'value');
+
+      expect(handler1).toHaveBeenCalledWith('value', undefined);
+      expect(handler2).toHaveBeenCalledWith('value', undefined);
+    });
+
+    it('should handle unsubscribe from non-existent subscription', () => {
+      const store = new StateStore();
+      const handler = vi.fn();
+
+      const unsubscribe = store.subscribe('key', handler);
+      // Unsubscribe multiple times - should not throw
+      unsubscribe();
+      unsubscribe();
+
+      store.set('key', 'value');
+      expect(handler).not.toHaveBeenCalled();
+    });
   });
 });

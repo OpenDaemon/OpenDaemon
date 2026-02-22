@@ -152,7 +152,7 @@ export function createErrorResponse(
  * @param message - Message to serialize
  * @returns Serialized buffer
  */
-export function serialize(message: JsonRpcRequest | JsonRpcResponse): Buffer {
+export function serialize(message: unknown): Buffer {
   return Buffer.from(JSON.stringify(message), 'utf-8');
 }
 
