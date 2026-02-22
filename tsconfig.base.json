@@ -23,6 +23,13 @@
     
     "resolveJsonModule": true,
     
+    "baseUrl": ".",
+    "paths": {
+      "@opendaemon/core": ["./packages/core/src/index.ts"],
+      "@opendaemon/core/*": ["./packages/core/src/*"],
+      "@opendaemon/sdk": ["./packages/sdk/src/index.ts"]
+    },
+    
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitReturns": true,

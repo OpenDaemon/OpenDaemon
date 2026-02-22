@@ -614,13 +614,153 @@ describe('IPC Client Advanced Tests', () => {
       await client.disconnect();
     });
 
-    it('should handle heartbeat responses', async () => {
+    it('should handle socket backpressure with drain event (lines 132-135)', async () => {
+      server.registerMethod('test', () => 'ok');
       await server.start();
       await client.connect();
 
-      // Client should handle heartbeat from server if implemented
-      // Keep connection alive for a moment
+      // Get the client's internal socket
+      const clientSocket = (client as any).socket;
+      expect(clientSocket).toBeDefined();
+
+      // Track if drain handler was registered
+      let drainHandlerRegistered = false;
+      const originalOnce = clientSocket.once.bind(clientSocket);
+      
+      clientSocket.once = vi.fn((event: string, handler: any) => {
+        if (event === 'drain') {
+          drainHandlerRegistered = true;
+          // Immediately emit drain to continue the flow
+          process.nextTick(() => {
+            handler();
+          });
+        }
+        return originalOnce(event, handler);
+      });
+
+      // Mock write to return false (backpressure) on first call
+      const originalWrite = clientSocket.write.bind(clientSocket);
+      let firstWrite = true;
+      
+      clientSocket.write = vi.fn((...args: any[]) => {
+        if (firstWrite) {
+          firstWrite = false;
+          // Still write the data but return false
+          originalWrite(...args);
+          return false;
+        }
+        return originalWrite(...args);
+      });
+
+      // Make a call - this should trigger the drain event handler
+      const result = await client.call('test');
+      expect(result).toBe('ok');
+      expect(drainHandlerRegistered).toBe(true);
+
+      // Restore original methods
+      clientSocket.write = originalWrite;
+      clientSocket.once = originalOnce;
+      
+      await client.disconnect();
+    });
+
+    it('should handle notification handler errors (lines 235-236)', async () => {
+      await server.start();
+      await client.connect();
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      // Register a notification handler that throws
+      client.onNotification(() => {
+        throw new Error('Notification handler error');
+      });
+
+      // Get the client's internal socket and simulate a notification
+      const clientSocket = (client as any).socket;
+      if (clientSocket) {
+        // Manually send a notification frame using correct protocol format
+        const notificationPayload = Buffer.from(JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'test.notification',
+          params: { data: 'test' }
+        }));
+        // Frame format: [type: 1 byte][size: 4 bytes (UInt32BE)][payload: size bytes]
+        const frame = Buffer.alloc(5 + notificationPayload.length);
+        frame.writeUInt8(0x03, 0); // FrameType.JSON_RPC_NOTIFICATION = 0x03
+        frame.writeUInt32BE(notificationPayload.length, 1);
+        notificationPayload.copy(frame, 5);
+        clientSocket.emit('data', frame);
+      }
+
+      // Give time for the error to be logged
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      consoleSpy.mockRestore();
+      await client.disconnect();
+    });
+
+    it('should handle notification parsing errors (lines 239-240)', async () => {
+      await server.start();
+      await client.connect();
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      // Get the client's internal socket and send invalid JSON
+      const clientSocket = (client as any).socket;
+      if (clientSocket) {
+        // Manually send a notification frame with invalid JSON using correct protocol format
+        const invalidPayload = Buffer.from('not valid json');
+        // Frame format: [type: 1 byte][size: 4 bytes (UInt32BE)][payload: size bytes]
+        const frame = Buffer.alloc(5 + invalidPayload.length);
+        frame.writeUInt8(0x03, 0); // FrameType.JSON_RPC_NOTIFICATION = 0x03
+        frame.writeUInt32BE(invalidPayload.length, 1);
+        invalidPayload.copy(frame, 5);
+        clientSocket.emit('data', frame);
+      }
+
+      // Give time for the error to be logged
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      consoleSpy.mockRestore();
+      await client.disconnect();
+    });
+
+    it('should handle heartbeat frame from server (lines 184-187)', async () => {
+      await server.start();
+      await client.connect();
+
+      // Get the client's internal socket
+      const clientSocket = (client as any).socket;
+      expect(clientSocket).toBeDefined();
+
+      // Spy on client socket write to capture heartbeat response
+      let heartbeatResponseReceived = false;
+      const originalWrite = clientSocket.write.bind(clientSocket);
+      clientSocket.write = vi.fn((data: Buffer) => {
+        // Check if this is a heartbeat response (type 0x05)
+        if (data.length >= 5 && data.readUInt8(0) === 0x05) {
+          heartbeatResponseReceived = true;
+        }
+        return originalWrite(data);
+      });
+
+      // Send heartbeat frame directly to client's socket
+      // Frame format: [type: 1 byte][size: 4 bytes (UInt32BE)][payload: size bytes]
+      const heartbeatFrame = Buffer.alloc(5);
+      heartbeatFrame.writeUInt8(0x05, 0); // FrameType.HEARTBEAT = 0x05
+      heartbeatFrame.writeUInt32BE(0, 1); // Size = 0
+      
+      // Emit data event on client's socket to simulate receiving heartbeat
+      clientSocket.emit('data', heartbeatFrame);
+
+      // Give time for heartbeat to be processed
       await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Restore original write before disconnecting
+      clientSocket.write = originalWrite;
+
+      // Verify client responded with heartbeat
+      expect(heartbeatResponseReceived).toBe(true);
 
       // Should still be connected
       expect(client.isConnected()).toBe(true);

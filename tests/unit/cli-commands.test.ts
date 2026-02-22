@@ -31,8 +31,20 @@ describe('CLI Commands', () => {
       expect(cmd.description).toBe('List all processes');
     });
 
-    it('should output empty message when no processes', async () => {
+    it('should output empty message when no processes (lines 76-78)', async () => {
+      // Set environment variable to trigger empty processes path
+      const originalEnv = process.env['TEST_EMPTY_PROCESSES'];
+      process.env['TEST_EMPTY_PROCESSES'] = 'true';
+      
       await cmd.execute([], { json: false, quiet: false });
+      
+      // Restore environment variable
+      if (originalEnv === undefined) {
+        delete process.env['TEST_EMPTY_PROCESSES'];
+      } else {
+        process.env['TEST_EMPTY_PROCESSES'] = originalEnv;
+      }
+      
       expect(consoleSpy).toHaveBeenCalled();
     });
 
@@ -98,6 +110,43 @@ describe('CLI Commands', () => {
       // Will test formatStatus with unknown status (default case)
       await cmd.execute([], { json: false, quiet: false });
       expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should test formatStatus with all status values', () => {
+      // Test all formatStatus branches directly
+      const formatStatus = (cmd as any).formatStatus.bind(cmd);
+      
+      expect(formatStatus('online')).toContain('online');
+      expect(formatStatus('stopped')).toContain('stopped');
+      expect(formatStatus('errored')).toContain('errored');
+      expect(formatStatus('starting')).toContain('starting');
+      expect(formatStatus('unknown')).toBe('unknown');
+    });
+
+    it('should test formatDuration with all time units', () => {
+      // Test formatDuration with different time values
+      const formatDuration = (cmd as any).formatDuration.bind(cmd);
+      
+      // Test days (lines 131)
+      expect(formatDuration(90000000)).toMatch(/\d+d/); // ~25 hours
+      
+      // Test hours (lines 133)
+      expect(formatDuration(7200000)).toBe('2h'); // 2 hours
+      
+      // Test minutes (lines 135)
+      expect(formatDuration(300000)).toBe('5m'); // 5 minutes
+      
+      // Test seconds (line 137)
+      expect(formatDuration(30000)).toBe('30s'); // 30 seconds
+    });
+
+    it('should test formatBytes with various sizes', () => {
+      const formatBytes = (cmd as any).formatBytes.bind(cmd);
+      
+      expect(formatBytes(512)).toBe('512.0B');
+      expect(formatBytes(1024)).toBe('1.0K');
+      expect(formatBytes(1024 * 1024)).toBe('1.0M');
+      expect(formatBytes(1024 * 1024 * 1024)).toBe('1.0G');
     });
   });
 

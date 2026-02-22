@@ -34,9 +34,11 @@ export class IpcClient implements IIpcClient {
 
   constructor(config: IpcClientConfig) {
     this.config = {
-      timeout: 30000,
-      authToken: '',
-      ...config,
+      socketPath: config.socketPath ?? '',
+      host: config.host ?? '127.0.0.1',
+      port: config.port ?? 9999,
+      timeout: config.timeout ?? 30000,
+      authToken: config.authToken ?? '',
     };
     this.logger = new Logger('ipc-client');
   }
@@ -46,12 +48,27 @@ export class IpcClient implements IIpcClient {
    */
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.socket = createConnection(this.config.socketPath, () => {
-        this.connected = true;
-        // Reconnect logic would go here
-        this.logger.info(`Connected to IPC server at ${this.config.socketPath}`);
-        resolve();
-      });
+      // Support both Unix sockets and TCP
+      const hasSocketPath = this.config.socketPath && this.config.socketPath.length > 0;
+      
+      if (hasSocketPath) {
+        // Unix socket connection
+        this.socket = createConnection(this.config.socketPath, () => {
+          this.connected = true;
+          this.logger.info(`Connected to IPC server at ${this.config.socketPath}`);
+          resolve();
+        });
+      } else {
+        // TCP connection
+        this.socket = createConnection({
+          host: this.config.host,
+          port: this.config.port,
+        }, () => {
+          this.connected = true;
+          this.logger.info(`Connected to IPC server at ${this.config.host}:${this.config.port}`);
+          resolve();
+        });
+      }
 
       this.socket.on('data', (data: Buffer) => {
         this.handleData(data);

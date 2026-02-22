@@ -4,7 +4,7 @@ import { Kernel, Logger } from '@opendaemon/core';
 import { IpcServer } from '@opendaemon/core';
 import { ProcessManagerPlugin } from '../../plugins/process-manager/src/index.js';
 import { ConfigManagerPlugin } from '../../plugins/config-manager/src/index.js';
-import { DaemonError } from '@opendaemon/core';
+
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
 
@@ -31,16 +31,23 @@ async function main(): Promise<void> {
     // Create kernel
     const kernel = new Kernel();
 
-    // Register plugins
+    // Create IPC server FIRST (before registering plugins)
+    // Use TCP on Windows (Unix sockets have permission issues), Unix socket on Linux/Mac
+    const isWindows = process.platform === 'win32';
+    const ipcConfig = isWindows
+      ? { host: '127.0.0.1', port: 9876 }
+      : { socketPath: resolve('opendaemon.sock') };
+    const ipcServer = new IpcServer(ipcConfig);
+
+    // Connect kernel to IPC server so plugins can register methods
+    kernel.setIpcServer(ipcServer);
+
+    // Register plugins (they will register their RPC methods now)
     kernel.registerPlugin(new ConfigManagerPlugin());
     kernel.registerPlugin(new ProcessManagerPlugin());
 
     // Start kernel
     await kernel.start();
-
-    // Create IPC server
-    const socketPath = resolve('opendaemon.sock');
-    const ipcServer = new IpcServer({ socketPath });
 
     // Register IPC methods
     ipcServer.registerMethod('daemon.status', () => ({

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { CommandParser, type ParsedCommand, type OptionValue } from './parser.js';
+import { CommandParser, type ParsedCommand } from './parser.js';
 import {
   showHelp,
   showVersion,
@@ -9,6 +9,7 @@ import {
   ListCommand,
   StartCommand,
   StopCommand,
+  DeleteCommand,
   StatusCommand,
   DaemonCommand,
 } from './commands/index.js';
@@ -61,6 +62,35 @@ async function main(): Promise<void> {
     description: 'Show version',
   });
 
+  // Add common command options
+  parser.addOption({
+    name: 'name',
+    alias: 'n',
+    type: 'string',
+    description: 'Process name',
+  });
+
+  parser.addOption({
+    name: 'instances',
+    alias: 'i',
+    type: 'number',
+    description: 'Number of instances',
+  });
+
+  parser.addOption({
+    name: 'json',
+    alias: 'j',
+    type: 'boolean',
+    description: 'Output as JSON',
+  });
+
+  parser.addOption({
+    name: 'quiet',
+    alias: 'q',
+    type: 'boolean',
+    description: 'Minimal output',
+  });
+
   // Parse arguments
   const args = process.argv.slice(2);
   const parsed = parser.parse(args);
@@ -107,25 +137,34 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
     case 'list':
     case 'ls': {
       const cmd = new ListCommand();
-      await cmd.execute([subcommand, ...parsed.args], parsed.options);
+      await cmd.execute(parsed.args, parsed.options);
       break;
     }
 
     case 'start': {
       const cmd = new StartCommand();
-      await cmd.execute([subcommand, ...parsed.args], parsed.options);
+      const startArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await cmd.execute(startArgs, parsed.options);
       break;
     }
 
     case 'stop': {
       const cmd = new StopCommand();
-      await cmd.execute([subcommand, ...parsed.args], parsed.options);
+      const stopArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await cmd.execute(stopArgs, parsed.options);
+      break;
+    }
+
+    case 'delete': {
+      const cmd = new DeleteCommand();
+      const deleteArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await cmd.execute(deleteArgs, parsed.options);
       break;
     }
 
     case 'status': {
       const cmd = new StatusCommand();
-      await cmd.execute([subcommand, ...parsed.args], parsed.options);
+      await cmd.execute();
       break;
     }
 

@@ -89,7 +89,8 @@ export interface PluginContext {
    * @param name - Method name (will be prefixed with plugin name)
    * @param handler - Handler function
    */
-  registerMethod(name: string, handler: RpcHandler): void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  registerMethod(name: string, handler: (...args: any[]) => unknown | Promise<unknown>): void;
 
   /**
    * Register a hook into another plugin's lifecycle

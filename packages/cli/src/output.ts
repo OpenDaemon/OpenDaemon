@@ -211,7 +211,8 @@ class Spinner {
     process.stdout.write('\x1b[?25l');
 
     this.interval = setInterval(() => {
-      const spinner = this.output.color('cyan', this.frames[this.frame]);
+      const frame = this.frames[this.frame] ?? '⠋';
+      const spinner = this.output!.color('cyan', frame);
       process.stdout.write(`\r${spinner} ${this.text}`);
       this.frame = (this.frame + 1) % this.frames.length;
     }, 80);

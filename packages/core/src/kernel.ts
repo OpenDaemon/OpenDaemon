@@ -62,6 +62,8 @@ export class Kernel {
   private logger: Logger;
   private watchdog: NodeJS.Timeout | undefined;
   private readonly watchdogInterval = 30000; // 30 seconds
+  private ipcServer: unknown; // Reference to IPC server for RPC method registration
+  private pendingMethodRegistrations: Array<{ name: string; handler: (...args: unknown[]) => unknown | Promise<unknown> }> = []; // Buffer for RPC methods registered before IPC server is ready
 
   /**
    * Create a new kernel instance
@@ -137,6 +139,24 @@ export class Kernel {
    */
   getPlugin<T extends Plugin>(name: string): T | undefined {
     return this.registry.getPlugin<T>(name);
+  }
+
+  /**
+   * Set the IPC server reference for RPC method registration
+   *
+   * @param server - IPC server instance
+   */
+  setIpcServer(server: unknown): void {
+    this.ipcServer = server;
+
+    // Flush any pending method registrations
+    if (server && this.pendingMethodRegistrations.length > 0) {
+      this.logger.debug(`Flushing ${this.pendingMethodRegistrations.length} pending RPC method registrations`);
+      for (const { name, handler } of this.pendingMethodRegistrations) {
+        (server as any).registerMethod(name, handler);
+      }
+      this.pendingMethodRegistrations = [];
+    }
   }
 
   /**
@@ -351,9 +371,18 @@ export class Kernel {
       logger: pluginLogger,
       store: this.store,
 
-      registerMethod: (_name: string, _handler: unknown): void => {
-        // Will be implemented when IPC is added
-        this.logger.warn('RPC methods not yet implemented');
+      registerMethod: (name: string, handler: unknown): void => {
+        // Forward to IPC server if available, otherwise buffer for later
+        if (this.ipcServer) {
+          (this.ipcServer as any).registerMethod(name, handler as (...args: unknown[]) => unknown | Promise<unknown>);
+        } else {
+          // Buffer the registration for when IPC server is set
+          this.pendingMethodRegistrations.push({
+            name,
+            handler: handler as (...args: unknown[]) => unknown | Promise<unknown>,
+          });
+          this.logger.debug(`Buffered RPC method registration: ${name}`);
+        }
       },
 
       registerHook: (_hookName: string, _handler: unknown): void => {

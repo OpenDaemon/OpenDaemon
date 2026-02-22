@@ -45,6 +45,7 @@ export type {
   ProcessConfig,
   ProcessStatus,
   ProcessInfo,
+  ProcessMode,
   DaemonConfig,
   LogRotationConfig,
   WatchConfig,

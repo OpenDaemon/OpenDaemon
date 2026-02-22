@@ -2,7 +2,9 @@
  * IPC Server configuration
  */
 export interface IpcServerConfig {
-  socketPath: string;
+  socketPath?: string;
+  host?: string;
+  port?: number;
   maxConnections?: number;
   maxMessageSize?: number;
   authToken?: string;
@@ -12,7 +14,9 @@ export interface IpcServerConfig {
  * IPC Client configuration
  */
 export interface IpcClientConfig {
-  socketPath: string;
+  socketPath?: string;
+  host?: string;
+  port?: number;
   timeout?: number;
   authToken?: string;
 }

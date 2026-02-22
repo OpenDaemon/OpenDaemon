@@ -351,6 +351,36 @@ describe('EventBus', () => {
       // Should not throw
       expect(() => bus.off('nonexistent', handler)).not.toThrow();
     });
+
+    it('should remove all wildcard subscriptions when off called without handler (lines 208-213)', () => {
+      const bus = new EventBus();
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+
+      // Subscribe multiple handlers to wildcard pattern
+      bus.on('test:*', handler1);
+      bus.on('test:*', handler2);
+
+      // Remove all handlers for the wildcard pattern
+      bus.off('test:*');
+
+      // Emit should not trigger handlers
+      bus.emit('test:event', { data: 123 });
+
+      expect(handler1).not.toHaveBeenCalled();
+      expect(handler2).not.toHaveBeenCalled();
+    });
+
+    it('should handle off for non-wildcard pattern without handler', () => {
+      const bus = new EventBus();
+      const handler = vi.fn();
+
+      bus.on('test', handler);
+      bus.off('test'); // Remove all handlers for non-wildcard event
+
+      bus.emit('test', { data: 123 });
+      expect(handler).not.toHaveBeenCalled();
+    });
   });
 
   describe('listenerCount with once subscriptions', () => {

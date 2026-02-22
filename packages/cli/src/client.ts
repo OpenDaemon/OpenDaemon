@@ -8,18 +8,33 @@ import { existsSync } from 'fs';
 export class CliClient {
   private client: IpcClient;
   private connected = false;
+  private isWindows = process.platform === 'win32';
 
-  constructor(socketPath = './opendaemon.sock') {
-    this.client = new IpcClient({
-      socketPath: resolve(socketPath),
-      timeout: 30000,
-    });
+  constructor() {
+    // Use TCP on Windows (Unix sockets have permission issues), Unix socket on Linux/Mac
+    if (this.isWindows) {
+      this.client = new IpcClient({
+        host: '127.0.0.1',
+        port: 9876,
+        timeout: 30000,
+      });
+    } else {
+      this.client = new IpcClient({
+        socketPath: resolve('opendaemon.sock'),
+        timeout: 30000,
+      });
+    }
   }
 
   /**
    * Check if daemon is running
    */
   isDaemonRunning(): boolean {
+    if (this.isWindows) {
+      // On Windows, try to connect to TCP port
+      // We'll just try connecting and see if it works
+      return true; // Assume running, connection will fail if not
+    }
     return existsSync(resolve('opendaemon.sock'));
   }
 

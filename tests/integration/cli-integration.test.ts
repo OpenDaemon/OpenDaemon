@@ -38,7 +38,7 @@ vi.mock('../../packages/cli/src/output.js', () => ({
   term: {
     error: (...args: any[]) => mockTermError(...args),
     info: vi.fn(),
-    color: vi.fn((c: string, t: string) => t),
+    color: vi.fn((_c: string, t: string) => t),
     bold: vi.fn((t: string) => t),
     table: vi.fn(() => 'table'),
     spinner: vi.fn(() => ({
@@ -50,7 +50,8 @@ vi.mock('../../packages/cli/src/output.js', () => ({
 
 describe('CLI Entry Point Integration', () => {
   let originalArgv: string[];
-  let exitSpy: ReturnType<typeof vi.spyOn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let exitSpy: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -60,7 +61,7 @@ describe('CLI Entry Point Integration', () => {
     vi.resetModules();
     
     // Mock process.exit to prevent test runner termination
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as any);
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
   });
 
   afterEach(() => {
@@ -239,6 +240,25 @@ describe('CLI Entry Point Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(mockTermError).toHaveBeenCalledWith('Unknown command: unknown-command');
+    });
+
+    it('should handle fatal errors in main catch block (lines 147-149)', async () => {
+      // Mock term.error to throw an error, which will escape the inner try-catch
+      // and trigger the main catch block with process.exit
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockTermError.mockImplementation(() => {
+        throw new Error('term.error failed');
+      });
+      
+      process.argv = ['node', 'cli', 'list'];
+      mockListExecute.mockRejectedValue(new Error('Command failed'));
+      
+      await import('../../packages/cli/src/cli.js');
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // The main catch block should have been triggered
+      expect(consoleSpy).toHaveBeenCalledWith('Unexpected error:', expect.any(Error));
+      consoleSpy.mockRestore();
     });
   });
 });

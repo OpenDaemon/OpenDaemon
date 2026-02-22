@@ -44,6 +44,23 @@ describe('Error System', () => {
       expect(error.cause).toBe(cause);
     });
 
+    it('should serialize cause in toJSON (lines 113-116)', () => {
+      const cause = new Error('Original error');
+      cause.name = 'OriginalError';
+      const error = new DaemonError(
+        ErrorCode.PROCESS_START_FAILED,
+        'Failed to start process',
+        undefined,
+        cause
+      );
+
+      const json = error.toJSON();
+      expect(json.cause).toEqual({
+        name: 'OriginalError',
+        message: 'Original error',
+      });
+    });
+
     it('should convert to JSON', () => {
       const error = new DaemonError(
         ErrorCode.DAEMON_NOT_RUNNING,

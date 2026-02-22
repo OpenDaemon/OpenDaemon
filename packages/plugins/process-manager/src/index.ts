@@ -8,7 +8,6 @@ import type {
   ProcessMode,
 } from '../../../core/src/index.js';
 import { spawn, type ChildProcess } from 'child_process';
-import { EventEmitter } from 'events';
 import { existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 
@@ -19,14 +18,14 @@ interface ManagedProcessInfo {
   id: number;
   config: ProcessConfig;
   status: ProcessStatus;
-  pid?: number;
+  pid?: number | undefined;
   pids: number[];
   startTime?: Date;
   restartCount: number;
   lastRestart?: Date;
-  childProcess?: ChildProcess;
+  childProcess?: ChildProcess | undefined;
   workers: ChildProcess[];
-  stopTimeout?: NodeJS.Timeout;
+  stopTimeout?: NodeJS.Timeout | undefined;
 }
 
 /**
@@ -163,7 +162,7 @@ export class ProcessManagerPlugin implements Plugin {
 
     try {
       // Start the process
-      if (config.mode === 'cluster' && config.instances && config.instances > 1) {
+      if (config.mode === 'cluster' && typeof config.instances === 'number' && config.instances > 1) {
         await this.startCluster(proc);
       } else {
         await this.startFork(proc);
@@ -178,6 +177,7 @@ export class ProcessManagerPlugin implements Plugin {
       return this.toProcessInfo(proc);
     } catch (err) {
       proc.status = 'errored';
+      this.logger.error(`Failed to start process ${config.name}:`, undefined, err as Error);
       throw err;
     }
   }
@@ -340,6 +340,15 @@ export class ProcessManagerPlugin implements Plugin {
       proc.stopTimeout = undefined;
     }
 
+    // Clear worker restart timeouts
+    const workerTimeouts = (proc as ManagedProcessInfo & { workerTimeouts?: Map<number, NodeJS.Timeout> }).workerTimeouts;
+    if (workerTimeouts) {
+      for (const timeout of workerTimeouts.values()) {
+        clearTimeout(timeout);
+      }
+      workerTimeouts.clear();
+    }
+
     // Send signal to main process
     if (proc.childProcess && !proc.childProcess.killed) {
       proc.childProcess.kill(signal as NodeJS.Signals);
@@ -386,50 +395,60 @@ export class ProcessManagerPlugin implements Plugin {
     this.context.events.emit('process:stopped', { name: proc.config.name });
   }
 
-  /**
-   * Handle process exit
-   */
-  private handleProcessExit(
-    proc: ManagedProcessInfo,
-    code: number | null,
-    signal: string | null
-  ): void {
-    if (this.stopping) {
-      return;
-    }
-
-    this.logger.info(`Process exited: ${proc.config.name}`, { code, signal });
-
-    // Check if should restart
-    const shouldRestart = this.shouldRestart(proc, code);
-    
-    if (shouldRestart) {
-      proc.restartCount++;
-      proc.lastRestart = new Date();
-      proc.status = 'starting';
-      
-      this.logger.info(`Restarting process: ${proc.config.name}`, {
-        restartCount: proc.restartCount,
-      });
-
-      setTimeout(() => {
-        if (proc.config.mode === 'cluster' && proc.config.instances && proc.config.instances > 1) {
-          this.startCluster(proc).catch((err) => {
-            this.logger.error(`Failed to restart cluster: ${proc.config.name}`, undefined, err);
-            proc.status = 'errored';
-          });
-        } else {
-          this.startFork(proc).catch((err) => {
-            this.logger.error(`Failed to restart: ${proc.config.name}`, undefined, err);
-            proc.status = 'errored';
-          });
-        }
-      }, proc.config.restartDelay ?? 1000);
-    } else {
-      proc.status = code === 0 ? 'stopped' : 'errored';
-      this.context.events.emit('process:exit', { name: proc.config.name, code, signal });
-    }
+/**
+ * Handle process exit
+ */
+private handleProcessExit(
+  proc: ManagedProcessInfo,
+  code: number | null,
+  signal: string | null
+): void {
+  if (this.stopping) {
+    return;
   }
+
+  this.logger.info(`Process exited: ${proc.config.name}`, { code, signal });
+
+  // Check if should restart
+  const shouldRestart = this.shouldRestart(proc, code);
+
+  if (shouldRestart) {
+    proc.restartCount++;
+    proc.lastRestart = new Date();
+    proc.status = 'starting';
+
+    this.logger.info(`Restarting process: ${proc.config.name}`, {
+      restartCount: proc.restartCount,
+    });
+
+    // Clear any existing timeout
+    if (proc.stopTimeout) {
+      clearTimeout(proc.stopTimeout);
+    }
+
+    proc.stopTimeout = setTimeout(() => {
+      proc.stopTimeout = undefined;
+      if (proc.status === 'stopping' || proc.status === 'stopped') {
+        // Process was manually stopped during restart delay
+        return;
+      }
+      if (proc.config.mode === 'cluster' && typeof proc.config.instances === 'number' && proc.config.instances > 1) {
+        this.startCluster(proc).catch((err) => {
+          this.logger.error(`Failed to restart cluster: ${proc.config.name}`, undefined, err);
+          proc.status = 'errored';
+        });
+      } else {
+        this.startFork(proc).catch((err) => {
+          this.logger.error(`Failed to restart: ${proc.config.name}`, undefined, err);
+          proc.status = 'errored';
+        });
+      }
+    }, proc.config.restartDelay ?? 1000);
+  } else {
+    proc.status = code === 0 ? 'stopped' : 'errored';
+    this.context.events.emit('process:exit', { name: proc.config.name, code, signal });
+  }
+}
 
   /**
    * Handle worker exit
@@ -448,13 +467,27 @@ export class ProcessManagerPlugin implements Plugin {
 
     // Restart worker if needed
     const shouldRestart = this.shouldRestart(proc, code);
-    
+
     if (shouldRestart) {
-      setTimeout(() => {
+      // Store worker restart timeout in a map attached to proc
+      const workerTimeouts = (proc as ManagedProcessInfo & { workerTimeouts?: Map<number, NodeJS.Timeout> }).workerTimeouts ??= new Map();
+
+      // Clear existing timeout for this worker
+      const existingTimeout = workerTimeouts.get(index);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+
+      workerTimeouts.set(index, setTimeout(() => {
+        workerTimeouts.delete(index);
+        if (proc.status === 'stopping' || proc.status === 'stopped') {
+          // Process was manually stopped during restart delay
+          return;
+        }
         this.startWorker(proc, index).catch((err) => {
           this.logger.error(`Failed to restart worker: ${proc.config.name}[${index}]`, undefined, err);
         });
-      }, proc.config.restartDelay ?? 1000);
+      }, proc.config.restartDelay ?? 1000));
     }
   }
 
@@ -547,7 +580,7 @@ export class ProcessManagerPlugin implements Plugin {
       name: proc.config.name,
       status: proc.status,
       mode: (proc.config.mode ?? 'fork') as ProcessMode,
-      instances: proc.config.instances ?? 1,
+      instances: typeof proc.config.instances === 'number' ? proc.config.instances : (proc.config.instances === 'max' ? proc.workers.length || 1 : 1),
       runningInstances: proc.workers.length || (proc.childProcess ? 1 : 0),
       pid: proc.pid,
       pids: proc.pids,

@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { term } from './output.js';
+import { term } from '../output.js';
 
 /**
  * Get package version

@@ -13,7 +13,6 @@ const mockExistsSync = vi.fn().mockReturnValue(false);
 const mockReadFileSync = vi.fn();
 const mockWriteFileSync = vi.fn();
 const mockUnlinkSync = vi.fn();
-const mockProcessOn = vi.fn();
 
 // Track registered methods
 const registeredMethods: Record<string, Function> = {};
@@ -75,7 +74,7 @@ describe('Daemon Entry Point Integration', () => {
     vi.resetModules();
     
     // Mock process.exit to prevent test runner termination
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as any);
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     
     // Default success state
     mockExistsSync.mockReturnValue(false);
@@ -232,10 +231,10 @@ describe('Daemon Entry Point Integration', () => {
 
     it('should execute shutdown handler when signal received', async () => {
       const handlers: Record<string, Function> = {};
-      vi.spyOn(process, 'on').mockImplementation((event: string, handler: (...args: any[]) => void) => {
+      vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return process;
-      });
+      }) as any);
       
       await import('../../packages/cli/src/daemon.js');
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -257,10 +256,10 @@ describe('Daemon Entry Point Integration', () => {
 
     it('should clean up PID file on shutdown', async () => {
       const handlers: Record<string, Function> = {};
-      vi.spyOn(process, 'on').mockImplementation((event: string, handler: (...args: any[]) => void) => {
+      vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return process;
-      });
+      }) as any);
       
       // PID file exists during shutdown
       mockExistsSync.mockReturnValue(true);
@@ -381,6 +380,28 @@ describe('Daemon Entry Point Integration', () => {
       }
       
       expect(mockLoggerError).toHaveBeenCalled();
+    });
+
+    it('should handle fatal errors in main catch block (lines 103-105)', async () => {
+      // Mock logger.error to throw an error, escaping the inner try-catch
+      // and triggering the main catch block
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockLoggerError.mockImplementation(() => {
+        throw new Error('logger.error failed');
+      });
+      
+      mockKernelStart.mockRejectedValue(new Error('Kernel failed'));
+      
+      try {
+        await import('../../packages/cli/src/daemon.js');
+        await new Promise(resolve => setTimeout(resolve, 10));
+      } catch {
+        // Expected
+      }
+      
+      // The main catch block should have been triggered
+      expect(consoleSpy).toHaveBeenCalledWith('Fatal error:', expect.any(Error));
+      consoleSpy.mockRestore();
     });
   });
 });

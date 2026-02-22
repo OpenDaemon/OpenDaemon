@@ -127,10 +127,20 @@ export class IpcServer {
         reject(new IpcError(ErrorCode.IPC_ERROR, 'Server error', undefined, err));
       });
 
-      this.server.listen(this.config.socketPath, () => {
-        this.logger.info(`IPC server listening on ${this.config.socketPath}`);
-        resolve();
-      });
+      // Support both Unix sockets and TCP
+      if (this.config.socketPath) {
+        this.server.listen(this.config.socketPath, () => {
+          this.logger.info(`IPC server listening on ${this.config.socketPath}`);
+          resolve();
+        });
+      } else if (this.config.host && this.config.port) {
+        this.server.listen(this.config.port, this.config.host, () => {
+          this.logger.info(`IPC server listening on ${this.config.host}:${this.config.port}`);
+          resolve();
+        });
+      } else {
+        reject(new IpcError(ErrorCode.IPC_ERROR, 'Invalid server config: must provide socketPath or host+port'));
+      }
     });
   }
 

@@ -1,5 +1,9 @@
-import type { ParsedCommand, OptionValue } from '../parser.js';
+import type { OptionValue } from '../parser.js';
 import { term } from '../output.js';
+import { CliClient } from '../client.js';
+import { resolve } from 'path';
+import { existsSync, readFileSync, unlinkSync } from 'fs';
+import { spawn } from 'child_process';
 
 /**
  * Command handler interface
@@ -46,49 +50,61 @@ export class ListCommand implements Command {
     const isJson = options['json'] === true;
     const isQuiet = options['quiet'] === true;
 
-    // TODO: Implement actual process listing via IPC
-    const mockProcesses = [
-      {
-        id: 0,
-        name: 'api-gateway',
-        status: 'online',
-        mode: 'cluster',
-        instances: 4,
-        cpu: 12.5,
-        memory: 134217728,
-        uptime: 86400000,
-      },
-    ];
+    try {
+      // Connect to daemon via IPC
+      const client = new CliClient();
+      await client.connect();
 
-    if (isJson) {
-      console.log(JSON.stringify(mockProcesses, null, 2));
-      return;
-    }
+      // Fetch processes from daemon
+      const processes = await client.listProcesses();
+      await client.disconnect();
 
-    if (isQuiet) {
-      for (const proc of mockProcesses) {
-        console.log(proc.name);
+      if (isJson) {
+        console.log(JSON.stringify(processes, null, 2));
+        return;
       }
-      return;
+
+      if (isQuiet) {
+        for (const proc of processes) {
+          const p = proc as { name: string };
+          console.log(p.name);
+        }
+        return;
+      }
+
+      if (processes.length === 0) {
+        term.info('No processes running');
+        return;
+      }
+
+      const headers = ['ID', 'Name', 'Mode', 'Status', 'CPU', 'Memory', 'Uptime'];
+      const rows = processes.map((proc: unknown) => {
+        const p = proc as {
+          id: number;
+          name: string;
+          mode: string;
+          status: string;
+          cpu: number;
+          memory: number;
+          uptime: number;
+        };
+        return [
+          String(p.id),
+          p.name,
+          p.mode,
+          this.formatStatus(p.status),
+          `${p.cpu.toFixed(1)}%`,
+          this.formatBytes(p.memory),
+          this.formatDuration(p.uptime),
+        ];
+      });
+
+      console.log(term.table(headers, rows));
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      term.error(`Failed to list processes: ${error.message}`);
+      process.exit(1);
     }
-
-    if (mockProcesses.length === 0) {
-      term.info('No processes running');
-      return;
-    }
-
-    const headers = ['ID', 'Name', 'Mode', 'Status', 'CPU', 'Memory', 'Uptime'];
-    const rows = mockProcesses.map(proc => [
-      String(proc.id),
-      proc.name,
-      proc.mode,
-      this.formatStatus(proc.status),
-      `${proc.cpu.toFixed(1)}%`,
-      this.formatBytes(proc.memory),
-      this.formatDuration(proc.uptime),
-    ]);
-
-    console.log(term.table(headers, rows));
   }
 
   private formatStatus(status: string): string {
@@ -179,6 +195,7 @@ export class StartCommand implements Command {
     args: string[],
     options: Record<string, OptionValue | undefined>
   ): Promise<void> {
+    
     if (args.length === 0) {
       term.error('No script or config file specified');
       process.exit(1);
@@ -187,14 +204,52 @@ export class StartCommand implements Command {
     const target = args[0] || '';
     const name = (options['name'] as string) || target.replace(/\.(js|ts)$/, '');
     const instances = (options['instances'] as number) || 1;
+    
+
+    // Check if it's a config file
+    if (target.endsWith('.ts') || target.endsWith('.js') || target.endsWith('.json')) {
+      const configPath = resolve(target);
+      if (!existsSync(configPath)) {
+        term.error(`Config file not found: ${target}`);
+        process.exit(1);
+      }
+      // TODO: Load and apply config file
+      term.info(`Loading config from ${target}...`);
+    }
+
+    const scriptPath = resolve(target);
+    if (!existsSync(scriptPath)) {
+      term.error(`Script not found: ${target}`);
+      process.exit(1);
+    }
 
     const spinner = term.spinner(`Starting ${name}...`);
     spinner.start();
 
-    // TODO: Implement actual process start via IPC
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      // Connect to daemon via IPC
+      const client = new CliClient();
+      await client.connect();
 
-    spinner.stop(true, `Started ${name} with ${instances} instance(s)`);
+      // Start the process
+      const processConfig = {
+        name,
+        script: scriptPath,
+        instances,
+        mode: instances > 1 ? 'cluster' : 'fork',
+        cwd: process.cwd(),
+      };
+
+      await client.startProcess(processConfig);
+      await client.disconnect();
+
+      spinner.stop(true, `Started ${name} with ${instances} instance(s)`);
+    } catch (err) {
+      spinner.stop(false);
+      const error = err instanceof Error ? err : new Error(String(err));
+      term.error(`Failed to start process: ${error.message}`);
+      process.exit(1);
+    }
   }
 }
 
@@ -225,10 +280,68 @@ export class StopCommand implements Command {
     const spinner = term.spinner(`Stopping ${name}...`);
     spinner.start();
 
-    // TODO: Implement actual process stop via IPC
-    await new Promise(resolve => setTimeout(resolve, 500));
+    try {
+      // Connect to daemon via IPC
+      const client = new CliClient();
+      await client.connect();
 
-    spinner.stop(true, `Stopped ${name}`);
+      // Stop the process
+      await client.stopProcess(name);
+      await client.disconnect();
+
+      spinner.stop(true, `Stopped ${name}`);
+    } catch (err) {
+      spinner.stop(false);
+      const error = err instanceof Error ? err : new Error(String(err));
+      term.error(`Failed to stop process: ${error.message}`);
+      process.exit(1);
+    }
+  }
+}
+
+/**
+ * Delete command - delete a process
+ */
+export class DeleteCommand implements Command {
+  name = 'delete';
+  description = 'Delete a process';
+  options = [
+    {
+      name: 'json',
+      type: 'boolean' as const,
+      description: 'Output as JSON',
+    },
+  ];
+
+  async execute(
+    args: string[],
+    _options: Record<string, OptionValue | undefined>
+  ): Promise<void> {
+    if (args.length === 0) {
+      term.error('No process name specified');
+      process.exit(1);
+    }
+
+    const name = args[0];
+    const spinner = term.spinner(`Deleting ${name}...`);
+    spinner.start();
+
+    try {
+      // Connect to daemon via IPC
+      const client = new CliClient();
+      await client.connect();
+
+      // Delete the process
+      await client.deleteProcess(name);
+      await client.disconnect();
+
+      spinner.stop(true, `Deleted ${name}`);
+    } catch (err) {
+      spinner.stop(false);
+      const error = err instanceof Error ? err : new Error(String(err));
+      term.error(`Failed to delete process: ${error.message}`);
+      process.exit(1);
+    }
   }
 }
 
@@ -240,9 +353,56 @@ export class StatusCommand implements Command {
   description = 'Show daemon status';
 
   async execute(): Promise<void> {
-    // TODO: Implement actual status check via IPC
-    term.info('Daemon status: not implemented');
+    try {
+      const client = new CliClient();
+      
+      if (!client.isDaemonRunning()) {
+        term.info('Daemon: not running');
+        return;
+      }
+
+      await client.connect();
+      const status = await client.getDaemonStatus();
+      await client.disconnect();
+
+      console.log('Daemon Status:');
+      console.log(JSON.stringify(status, null, 2));
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      term.error(`Failed to get status: ${error.message}`);
+      process.exit(1);
+    }
   }
+}
+
+const PID_FILE = 'opendaemon.pid';
+const SOCKET_FILE = 'opendaemon.sock';
+
+/**
+ * Check if a process is running by PID
+ */
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the path to the daemon script
+ */
+function getDaemonScriptPath(): string {
+  const currentDir = resolve(process.cwd(), 'packages', 'cli');
+  const distPath = resolve(currentDir, 'dist', 'daemon.js');
+  const srcPath = resolve(currentDir, 'src', 'daemon.ts');
+  
+  if (existsSync(distPath)) {
+    return distPath;
+  }
+  
+  return srcPath;
 }
 
 /**
@@ -280,32 +440,197 @@ export class DaemonCommand implements Command {
   }
 
   private async startDaemon(): Promise<void> {
+    const pidFile = resolve(PID_FILE);
+    const socketFile = resolve(SOCKET_FILE);
+
+    // Check if already running
+    if (existsSync(pidFile)) {
+      const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
+      if (isProcessRunning(pid)) {
+        term.info(`Daemon is already running (PID: ${pid})`);
+        return;
+      }
+      // Stale PID file, clean it up
+      unlinkSync(pidFile);
+    }
+
     const spinner = term.spinner('Starting daemon...');
     spinner.start();
 
-    // TODO: Implement actual daemon start
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      // Clean up old socket file if it exists
+      if (existsSync(socketFile)) {
+        unlinkSync(socketFile);
+      }
 
-    spinner.stop(true, 'Daemon started');
+      // Get the daemon script path
+      const daemonScript = getDaemonScriptPath();
+      
+      if (!existsSync(daemonScript)) {
+        throw new Error(`Daemon script not found: ${daemonScript}`);
+      }
+
+      // Spawn the daemon process
+      const child = spawn(process.execPath, [daemonScript], {
+        detached: true,
+        stdio: 'ignore',
+      });
+
+      // Wait for the daemon to start and write its PID file
+      await new Promise<void>((resolve, reject) => {
+        let attempts = 0;
+        const maxAttempts = 50; // 5 seconds total
+        
+        const checkStarted = () => {
+          attempts++;
+          
+          // Check if PID file was created
+          if (existsSync(pidFile)) {
+            const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
+            if (isProcessRunning(pid)) {
+              resolve();
+              return;
+            }
+          }
+          
+          // Check if child process exited with error
+          if (child.exitCode !== null && child.exitCode !== 0) {
+            reject(new Error(`Daemon exited with code ${child.exitCode}`));
+            return;
+          }
+          
+          if (attempts >= maxAttempts) {
+            reject(new Error('Daemon failed to start within timeout'));
+            return;
+          }
+          
+          setTimeout(checkStarted, 100);
+        };
+        
+        setTimeout(checkStarted, 100);
+      });
+
+      // Unref so parent can exit
+      child.unref();
+
+      spinner.stop(true, 'Daemon started');
+    } catch (err) {
+      spinner.stop(false);
+      const error = err instanceof Error ? err : new Error(String(err));
+      term.error(`Failed to start daemon: ${error.message}`);
+      process.exit(1);
+    }
   }
 
   private async stopDaemon(): Promise<void> {
+    const pidFile = resolve(PID_FILE);
+    const socketFile = resolve(SOCKET_FILE);
+
+    if (!existsSync(pidFile)) {
+      term.info('Daemon is not running');
+      return;
+    }
+
+    const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
+    
+    if (!isProcessRunning(pid)) {
+      // Stale PID file
+      unlinkSync(pidFile);
+      if (existsSync(socketFile)) {
+        unlinkSync(socketFile);
+      }
+      term.info('Daemon is not running (cleaned up stale files)');
+      return;
+    }
+
     const spinner = term.spinner('Stopping daemon...');
     spinner.start();
 
-    // TODO: Implement actual daemon stop
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      // Send SIGTERM to the daemon
+      process.kill(pid, 'SIGTERM');
 
-    spinner.stop(true, 'Daemon stopped');
+      // Wait for the process to exit
+      await new Promise<void>((resolve) => {
+        let attempts = 0;
+        const maxAttempts = 100; // 10 seconds total
+        
+        const checkStopped = () => {
+          attempts++;
+          
+          if (!isProcessRunning(pid)) {
+            resolve();
+            return;
+          }
+          
+          if (attempts >= maxAttempts) {
+            // Force kill
+            try {
+              process.kill(pid, 'SIGKILL');
+            } catch {
+              // Process might have exited between check and kill
+            }
+            resolve();
+            return;
+          }
+          
+          setTimeout(checkStopped, 100);
+        };
+        
+        setTimeout(checkStopped, 100);
+      });
+
+      // Clean up files
+      if (existsSync(pidFile)) {
+        unlinkSync(pidFile);
+      }
+      if (existsSync(socketFile)) {
+        unlinkSync(socketFile);
+      }
+
+      spinner.stop(true, 'Daemon stopped');
+    } catch (err) {
+      spinner.stop(false);
+      const error = err instanceof Error ? err : new Error(String(err));
+      term.error(`Failed to stop daemon: ${error.message}`);
+      process.exit(1);
+    }
   }
 
   private async restartDaemon(): Promise<void> {
     await this.stopDaemon();
+    await new Promise(resolve => setTimeout(resolve, 500));
     await this.startDaemon();
   }
 
   private async daemonStatus(): Promise<void> {
-    // TODO: Implement actual daemon status
-    term.info('Daemon: not running');
+    const pidFile = resolve(PID_FILE);
+
+    if (!existsSync(pidFile)) {
+      term.info('Daemon is not running');
+      return;
+    }
+
+    const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
+    
+    if (!isProcessRunning(pid)) {
+      term.info('Daemon is not running (stale PID file)');
+      return;
+    }
+
+    term.info(`Daemon is running (PID: ${pid})`);
+    
+    // Try to get more info from daemon via IPC
+    try {
+      const client = new CliClient();
+      await client.connect();
+      const status = await client.getDaemonStatus() as { status: string; pid: number; uptime: number };
+      await client.disconnect();
+      
+      console.log(`  Status: ${status.status}`);
+      console.log(`  Uptime: ${Math.floor(status.uptime)}s`);
+    } catch {
+      // IPC not available, basic info is enough
+    }
   }
 }

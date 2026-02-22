@@ -225,7 +225,7 @@ export interface ProcessInfo {
   mode: ProcessMode;
   instances: number;
   runningInstances: number;
-  pid?: number;
+  pid?: number | undefined;
   pids: number[];
   restartCount: number;
   uptime: number;
