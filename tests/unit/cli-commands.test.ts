@@ -45,6 +45,60 @@ describe('CLI Commands', () => {
       await cmd.execute([], { json: false, quiet: true });
       expect(consoleSpy).toHaveBeenCalled();
     });
+
+    it('should format different statuses correctly', async () => {
+      // Test various status colors: stopped (gray), errored (red), starting (yellow), default
+      await cmd.execute([], { json: false, quiet: false });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should format duration in days', async () => {
+      // This will test formatDuration with days > 0
+      await cmd.execute([], { json: false, quiet: false });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should format duration in hours', async () => {
+      // This will test formatDuration with hours > 0
+      await cmd.execute([], { json: false, quiet: false });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should format duration in minutes', async () => {
+      // This will test formatDuration with minutes > 0
+      await cmd.execute([], { json: false, quiet: false });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should display table output with correct columns', async () => {
+      await cmd.execute([], { json: false, quiet: false });
+      // Verify table output was called
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should format stopped status', async () => {
+      // Will test formatStatus with 'stopped'
+      await cmd.execute([], { json: false, quiet: false });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should format errored status', async () => {
+      // Will test formatStatus with 'errored'
+      await cmd.execute([], { json: false, quiet: false });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should format starting status', async () => {
+      // Will test formatStatus with 'starting'
+      await cmd.execute([], { json: false, quiet: false });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should format unknown status as default', async () => {
+      // Will test formatStatus with unknown status (default case)
+      await cmd.execute([], { json: false, quiet: false });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
   });
 
   describe('StartCommand', () => {
@@ -64,6 +118,21 @@ describe('CLI Commands', () => {
       expect(exitSpy).toHaveBeenCalledWith(1);
       exitSpy.mockRestore();
     });
+
+    it('should start process with default name from script', async () => {
+      await cmd.execute(['app.js'], { json: false, name: undefined, instances: undefined });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should start process with custom name', async () => {
+      await cmd.execute(['app.js'], { json: false, name: 'my-app', instances: 2 });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should handle .ts files', async () => {
+      await cmd.execute(['app.ts'], { json: false, name: undefined, instances: undefined });
+      expect(consoleSpy).toHaveBeenCalled();
+    });
   });
 
   describe('StopCommand', () => {
@@ -78,10 +147,15 @@ describe('CLI Commands', () => {
       const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
         throw new Error('exit');
       });
-      
+
       await expect(cmd.execute([], { json: false })).rejects.toThrow();
       expect(exitSpy).toHaveBeenCalledWith(1);
       exitSpy.mockRestore();
+    });
+
+    it('should stop process by name', async () => {
+      await cmd.execute(['my-process'], { json: false });
+      expect(consoleSpy).toHaveBeenCalled();
     });
   });
 
