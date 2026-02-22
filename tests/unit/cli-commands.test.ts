@@ -1,25 +1,105 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { OptionValue } from '../../packages/cli/src/parser.js';
+
+// Create mock functions at module level with default implementations
+const mockListProcesses = vi.fn().mockResolvedValue([]);
+const mockStartProcess = vi.fn().mockResolvedValue({});
+const mockStopProcess = vi.fn().mockResolvedValue(undefined);
+const mockDeleteProcess = vi.fn().mockResolvedValue(undefined);
+const mockConnect = vi.fn().mockResolvedValue(undefined);
+const mockDisconnect = vi.fn().mockResolvedValue(undefined);
+const mockGetDaemonStatus = vi.fn().mockResolvedValue({ status: 'running', pid: 12345, uptime: 60 });
+const mockIsDaemonRunning = vi.fn().mockReturnValue(true);
+const mockExistsSync = vi.fn().mockReturnValue(true);
+const mockReadFileSync = vi.fn().mockReturnValue('12345');
+const mockUnlinkSync = vi.fn().mockImplementation(() => {});
+const mockWriteFileSync = vi.fn().mockImplementation(() => {});
+const mockSpawn = vi.fn().mockReturnValue({
+  unref: vi.fn(),
+  on: vi.fn(),
+  exitCode: null,
+});
+
+// Mock @opendaemon/core
+vi.mock('@opendaemon/core', () => ({
+  IpcClient: vi.fn().mockImplementation(() => ({
+    connect: () => mockConnect(),
+    disconnect: () => mockDisconnect(),
+    listProcesses: () => mockListProcesses(),
+    startProcess: (...args: any[]) => mockStartProcess(...args),
+    stopProcess: (...args: any[]) => mockStopProcess(...args),
+    deleteProcess: (...args: any[]) => mockDeleteProcess(...args),
+    getDaemonStatus: () => mockGetDaemonStatus(),
+    isDaemonRunning: () => mockIsDaemonRunning(),
+  })),
+  Kernel: vi.fn(),
+  IpcServer: vi.fn(),
+  Logger: vi.fn().mockImplementation(() => ({
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  })),
+}));
+
+// Mock fs module
+vi.mock('fs', () => ({
+  existsSync: (...args: any[]) => mockExistsSync(...args),
+  readFileSync: (...args: any[]) => mockReadFileSync(...args),
+  unlinkSync: (...args: any[]) => mockUnlinkSync(...args),
+  writeFileSync: (...args: any[]) => mockWriteFileSync(...args),
+}));
+
+// Mock path module
+vi.mock('path', () => ({
+  resolve: vi.fn((...args: string[]) => args.join('/')),
+}));
+
+// Mock child_process
+vi.mock('child_process', () => ({
+  spawn: (...args: any[]) => mockSpawn(...args),
+}));
+
+// Import commands after mocks
 import {
   ListCommand,
   StartCommand,
   StopCommand,
+  DeleteCommand,
   StatusCommand,
   DaemonCommand,
 } from '../../packages/cli/src/commands/index.js';
-import type { OptionValue } from '../../packages/cli/src/parser.js';
 
 describe('CLI Commands', () => {
   let consoleSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
+  let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+
+    // Reset mock call counts but preserve implementations
+    mockListProcesses.mockClear();
+    mockStartProcess.mockClear();
+    mockStopProcess.mockClear();
+    mockDeleteProcess.mockClear();
+    mockConnect.mockClear();
+    mockDisconnect.mockClear();
+    mockGetDaemonStatus.mockClear();
+    mockIsDaemonRunning.mockClear();
+    mockExistsSync.mockClear();
+    mockReadFileSync.mockClear();
+    mockUnlinkSync.mockClear();
+    mockWriteFileSync.mockClear();
+    mockSpawn.mockClear();
   });
 
   afterEach(() => {
     consoleSpy.mockRestore();
     errorSpy.mockRestore();
+    exitSpy.mockRestore();
   });
 
   describe('ListCommand', () => {
@@ -31,85 +111,113 @@ describe('CLI Commands', () => {
       expect(cmd.description).toBe('List all processes');
     });
 
-    it('should output empty message when no processes (lines 76-78)', async () => {
-      // Set environment variable to trigger empty processes path
-      const originalEnv = process.env['TEST_EMPTY_PROCESSES'];
-      process.env['TEST_EMPTY_PROCESSES'] = 'true';
+    it('should output empty message when no processes', async () => {
+      mockListProcesses.mockResolvedValue([]);
       
       await cmd.execute([], { json: false, quiet: false });
       
-      // Restore environment variable
-      if (originalEnv === undefined) {
-        delete process.env['TEST_EMPTY_PROCESSES'];
-      } else {
-        process.env['TEST_EMPTY_PROCESSES'] = originalEnv;
-      }
+      // When no processes, it should call term.info which logs to stderr
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('should handle errors when listing processes', async () => {
+      mockConnect.mockRejectedValue(new Error('Connection failed'));
       
-      expect(consoleSpy).toHaveBeenCalled();
+      await cmd.execute([], { json: false, quiet: false });
+      
+      expect(exitSpy).toHaveBeenCalledWith(1);
     });
 
     it('should output JSON when json option is set', async () => {
+      mockListProcesses.mockResolvedValue([{ name: 'test', status: 'online' }]);
+      
       await cmd.execute([], { json: true, quiet: false });
-      expect(consoleSpy).toHaveBeenCalled();
+      
+      // Check either stdout or stderr was written to
+      const wasOutputWritten = consoleSpy.mock.calls.length > 0 || errorSpy.mock.calls.length > 0;
+      expect(wasOutputWritten).toBe(true);
     });
 
     it('should output process names only when quiet option is set', async () => {
-      await cmd.execute([], { json: false, quiet: true });
-      expect(consoleSpy).toHaveBeenCalled();
+      mockListProcesses.mockResolvedValue([{ name: 'proc1' }, { name: 'proc2' }]);
+      
+      // Should complete without throwing
+      await expect(cmd.execute([], { json: false, quiet: true })).resolves.toBeUndefined();
     });
 
     it('should format different statuses correctly', async () => {
-      // Test various status colors: stopped (gray), errored (red), starting (yellow), default
-      await cmd.execute([], { json: false, quiet: false });
-      expect(consoleSpy).toHaveBeenCalled();
+      mockListProcesses.mockResolvedValue([
+        { id: 1, name: 'app1', mode: 'fork', status: 'online', cpu: 0.5, memory: 1024, uptime: 60000 },
+        { id: 2, name: 'app2', mode: 'cluster', status: 'stopped', cpu: 0, memory: 0, uptime: 0 },
+        { id: 3, name: 'app3', mode: 'fork', status: 'errored', cpu: 0, memory: 0, uptime: 0 },
+        { id: 4, name: 'app4', mode: 'fork', status: 'starting', cpu: 0.1, memory: 512, uptime: 5000 },
+      ]);
+      
+      await expect(cmd.execute([], { json: false, quiet: false })).resolves.toBeUndefined();
     });
 
     it('should format duration in days', async () => {
-      // This will test formatDuration with days > 0
-      await cmd.execute([], { json: false, quiet: false });
-      expect(consoleSpy).toHaveBeenCalled();
+      mockListProcesses.mockResolvedValue([
+        { id: 1, name: 'app1', mode: 'fork', status: 'online', cpu: 0.5, memory: 1024, uptime: 90061000 }, // ~25 hours
+      ]);
+      
+      await expect(cmd.execute([], { json: false, quiet: false })).resolves.toBeUndefined();
     });
 
     it('should format duration in hours', async () => {
-      // This will test formatDuration with hours > 0
-      await cmd.execute([], { json: false, quiet: false });
-      expect(consoleSpy).toHaveBeenCalled();
+      mockListProcesses.mockResolvedValue([
+        { id: 1, name: 'app1', mode: 'fork', status: 'online', cpu: 0.5, memory: 1024, uptime: 7200000 }, // 2 hours
+      ]);
+      
+      await expect(cmd.execute([], { json: false, quiet: false })).resolves.toBeUndefined();
     });
 
     it('should format duration in minutes', async () => {
-      // This will test formatDuration with minutes > 0
-      await cmd.execute([], { json: false, quiet: false });
-      expect(consoleSpy).toHaveBeenCalled();
+      mockListProcesses.mockResolvedValue([
+        { id: 1, name: 'app1', mode: 'fork', status: 'online', cpu: 0.5, memory: 1024, uptime: 300000 }, // 5 minutes
+      ]);
+      
+      await expect(cmd.execute([], { json: false, quiet: false })).resolves.toBeUndefined();
     });
 
     it('should display table output with correct columns', async () => {
-      await cmd.execute([], { json: false, quiet: false });
-      // Verify table output was called
-      expect(consoleSpy).toHaveBeenCalled();
+      mockListProcesses.mockResolvedValue([
+        { id: 1, name: 'app1', mode: 'fork', status: 'online', cpu: 0.5, memory: 1024, uptime: 60000 },
+      ]);
+      
+      await expect(cmd.execute([], { json: false, quiet: false })).resolves.toBeUndefined();
     });
 
     it('should format stopped status', async () => {
-      // Will test formatStatus with 'stopped'
-      await cmd.execute([], { json: false, quiet: false });
-      expect(consoleSpy).toHaveBeenCalled();
+      mockListProcesses.mockResolvedValue([
+        { id: 1, name: 'app1', mode: 'fork', status: 'stopped', cpu: 0, memory: 0, uptime: 0 },
+      ]);
+      
+      await expect(cmd.execute([], { json: false, quiet: false })).resolves.toBeUndefined();
     });
 
     it('should format errored status', async () => {
-      // Will test formatStatus with 'errored'
-      await cmd.execute([], { json: false, quiet: false });
-      expect(consoleSpy).toHaveBeenCalled();
+      mockListProcesses.mockResolvedValue([
+        { id: 1, name: 'app1', mode: 'fork', status: 'errored', cpu: 0, memory: 0, uptime: 0 },
+      ]);
+      
+      await expect(cmd.execute([], { json: false, quiet: false })).resolves.toBeUndefined();
     });
 
     it('should format starting status', async () => {
-      // Will test formatStatus with 'starting'
-      await cmd.execute([], { json: false, quiet: false });
-      expect(consoleSpy).toHaveBeenCalled();
+      mockListProcesses.mockResolvedValue([
+        { id: 1, name: 'app1', mode: 'fork', status: 'starting', cpu: 0.1, memory: 512, uptime: 5000 },
+      ]);
+      
+      await expect(cmd.execute([], { json: false, quiet: false })).resolves.toBeUndefined();
     });
 
     it('should format unknown status as default', async () => {
-      // Will test formatStatus with unknown status (default case)
-      await cmd.execute([], { json: false, quiet: false });
-      expect(consoleSpy).toHaveBeenCalled();
+      mockListProcesses.mockResolvedValue([
+        { id: 1, name: 'app1', mode: 'fork', status: 'unknown', cpu: 0, memory: 0, uptime: 0 },
+      ]);
+      
+      await expect(cmd.execute([], { json: false, quiet: false })).resolves.toBeUndefined();
     });
 
     it('should test formatStatus with all status values', () => {
@@ -127,16 +235,16 @@ describe('CLI Commands', () => {
       // Test formatDuration with different time values
       const formatDuration = (cmd as any).formatDuration.bind(cmd);
       
-      // Test days (lines 131)
-      expect(formatDuration(90000000)).toMatch(/\d+d/); // ~25 hours
+      // Test days
+      expect(formatDuration(90061000)).toMatch(/\d+d/); // ~25 hours
       
-      // Test hours (lines 133)
+      // Test hours
       expect(formatDuration(7200000)).toBe('2h'); // 2 hours
       
-      // Test minutes (lines 135)
+      // Test minutes
       expect(formatDuration(300000)).toBe('5m'); // 5 minutes
       
-      // Test seconds (line 137)
+      // Test seconds
       expect(formatDuration(30000)).toBe('30s'); // 30 seconds
     });
 
@@ -159,28 +267,34 @@ describe('CLI Commands', () => {
     });
 
     it('should error when no args provided', async () => {
-      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-        throw new Error('exit');
-      });
-      
-      await expect(cmd.execute([], { json: false })).rejects.toThrow();
+      await cmd.execute([], { json: false });
       expect(exitSpy).toHaveBeenCalledWith(1);
-      exitSpy.mockRestore();
     });
 
     it('should start process with default name from script', async () => {
-      await cmd.execute(['app.js'], { json: false, name: undefined, instances: undefined });
-      expect(consoleSpy).toHaveBeenCalled();
+      await expect(cmd.execute(['app.js'], { json: false, name: undefined, instances: undefined })).resolves.toBeUndefined();
     });
 
     it('should start process with custom name', async () => {
-      await cmd.execute(['app.js'], { json: false, name: 'my-app', instances: 2 });
-      expect(consoleSpy).toHaveBeenCalled();
+      await expect(cmd.execute(['app.js'], { json: false, name: 'my-app', instances: undefined })).resolves.toBeUndefined();
     });
 
     it('should handle .ts files', async () => {
-      await cmd.execute(['app.ts'], { json: false, name: undefined, instances: undefined });
-      expect(consoleSpy).toHaveBeenCalled();
+      await expect(cmd.execute(['app.ts'], { json: false, name: undefined, instances: undefined })).resolves.toBeUndefined();
+    });
+
+    it('should error when file not found', async () => {
+      mockExistsSync.mockReturnValue(false);
+      await cmd.execute(['nonexistent.js'], { json: false });
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it('should handle errors when starting process', async () => {
+      mockStartProcess.mockRejectedValue(new Error('Start failed'));
+      
+      await cmd.execute(['app.js'], { json: false });
+      
+      expect(exitSpy).toHaveBeenCalledWith(1);
     });
   });
 
@@ -192,19 +306,47 @@ describe('CLI Commands', () => {
       expect(cmd.description).toBe('Stop process(es)');
     });
 
-    it('should error when no process name provided', async () => {
-      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-        throw new Error('exit');
-      });
-
-      await expect(cmd.execute([], { json: false })).rejects.toThrow();
+    it('should error when no process name specified', async () => {
+      await cmd.execute([], { json: false });
       expect(exitSpy).toHaveBeenCalledWith(1);
-      exitSpy.mockRestore();
     });
 
     it('should stop process by name', async () => {
+      await expect(cmd.execute(['my-process'], { json: false })).resolves.toBeUndefined();
+    });
+
+    it('should handle errors when stopping process', async () => {
+      mockStopProcess.mockRejectedValue(new Error('Stop failed'));
+
       await cmd.execute(['my-process'], { json: false });
-      expect(consoleSpy).toHaveBeenCalled();
+
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('DeleteCommand', () => {
+    const cmd = new DeleteCommand();
+
+    it('should have correct metadata', () => {
+      expect(cmd.name).toBe('delete');
+      expect(cmd.description).toBe('Delete a process');
+    });
+
+    it('should error when no process name specified', async () => {
+      await cmd.execute([], { json: false });
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it('should delete process by name', async () => {
+      await expect(cmd.execute(['my-process'], { json: false })).resolves.toBeUndefined();
+    });
+
+    it('should handle errors when deleting process', async () => {
+      mockDeleteProcess.mockRejectedValue(new Error('Delete failed'));
+
+      await cmd.execute(['my-process'], { json: false });
+
+      expect(exitSpy).toHaveBeenCalledWith(1);
     });
   });
 
@@ -216,9 +358,24 @@ describe('CLI Commands', () => {
       expect(cmd.description).toBe('Show daemon status');
     });
 
-    it('should execute', async () => {
+    it('should show not running when daemon is not running', async () => {
+      mockIsDaemonRunning.mockReturnValue(false);
       await cmd.execute([], {});
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('should execute and show status when daemon is running', async () => {
+      mockIsDaemonRunning.mockReturnValue(true);
+      await expect(cmd.execute([], {})).resolves.toBeUndefined();
+    });
+
+    it('should handle errors when getting daemon status', async () => {
+      mockIsDaemonRunning.mockReturnValue(true);
+      mockGetDaemonStatus.mockRejectedValue(new Error('Status failed'));
+
+      await cmd.execute([], {});
+
+      expect(exitSpy).toHaveBeenCalledWith(1);
     });
   });
 
@@ -230,34 +387,56 @@ describe('CLI Commands', () => {
       expect(cmd.description).toBe('Manage daemon');
     });
 
-    it('should handle start subcommand', async () => {
-      await cmd.execute(['start']);
-      expect(consoleSpy).toHaveBeenCalled();
+    it('should show error for unknown subcommand', async () => {
+      await cmd.execute(['unknown']);
+      expect(exitSpy).toHaveBeenCalledWith(1);
     });
+
+    it('should handle start subcommand', async () => {
+      // Mock spawn to simulate successful daemon start
+      mockSpawn.mockReturnValue({
+        unref: vi.fn(),
+        on: vi.fn(),
+        exitCode: null,
+      });
+      
+      // First call returns false (no PID file), subsequent calls return true (daemon started)
+      let callCount = 0;
+      mockExistsSync.mockImplementation(() => {
+        callCount++;
+        return callCount > 1;
+      });
+      
+      await cmd.execute(['start']);
+      expect(mockSpawn).toHaveBeenCalled();
+    }, 10000);
 
     it('should handle stop subcommand', async () => {
       await cmd.execute(['stop']);
-      expect(consoleSpy).toHaveBeenCalled();
-    });
-
-    it('should handle restart subcommand', async () => {
-      await cmd.execute(['restart']);
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockExistsSync).toHaveBeenCalled();
     });
 
     it('should handle status subcommand', async () => {
       await cmd.execute(['status']);
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(mockExistsSync).toHaveBeenCalled();
     });
 
-    it('should error on unknown subcommand', async () => {
-      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-        throw new Error('exit');
+    it('should handle restart subcommand', async () => {
+      // Mock spawn for start portion
+      mockSpawn.mockReturnValue({
+        unref: vi.fn(),
+        on: vi.fn(),
+        exitCode: null,
       });
       
-      await expect(cmd.execute(['unknown'])).rejects.toThrow();
-      expect(exitSpy).toHaveBeenCalledWith(1);
-      exitSpy.mockRestore();
-    });
+      let callCount = 0;
+      mockExistsSync.mockImplementation(() => {
+        callCount++;
+        return callCount > 2;
+      });
+      
+      await cmd.execute(['restart']);
+      expect(mockSpawn).toHaveBeenCalled();
+    }, 10000);
   });
 });

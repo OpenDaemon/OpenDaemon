@@ -24,8 +24,8 @@
     }
   },
   "bin": {
-    "od": "./packages/cli/dist/index.js",
-    "opendaemon": "./packages/cli/dist/index.js"
+    "od": "./packages/cli/dist/cli.js",
+    "opendaemon": "./packages/cli/dist/cli.js"
   },
   "files": [
     "packages/*/dist/**"
@@ -69,7 +69,18 @@
     "monitoring",
     "typescript"
   ],
-  "author": "Ersin Koc <ersin@opendaemon.dev>",
+  "author": {
+    "name": "Ersin KOÇ",
+    "email": "ersin@opendaemon.dev",
+    "url": "https://x.com/ersinkoc"
+  },
+  "contributors": [
+    {
+      "name": "Ersin KOÇ",
+      "email": "ersin@opendaemon.dev",
+      "url": "https://github.com/ersinkoc"
+    }
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

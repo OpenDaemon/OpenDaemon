@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenDaemon - Process Manager</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+      padding: 20px 0;
+      border-bottom: 1px solid #334155;
+    }
+
+    h1 {
+      font-size: 2rem;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: #64748b;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: #3b82f6;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #2563eb;
+      transform: translateY(-1px);
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+
+    .btn-secondary {
+      background: #334155;
+      color: #e2e8f0;
+    }
+
+    .btn-secondary:hover {
+      background: #475569;
+    }
+
+    .process-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+    }
+
+    .process-card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid #334155;
+      transition: all 0.2s;
+    }
+
+    .process-card:hover {
+      border-color: #3b82f6;
+      transform: translateY(-2px);
+    }
+
+    .process-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .process-name {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #f1f5f9;
+    }
+
+    .process-status {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-online {
+      background: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+    }
+
+    .status-offline {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+
+    .status-starting {
+      background: rgba(245, 158, 11, 0.2);
+      color: #f59e0b;
+    }
+
+    .process-info {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .info-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .info-label {
+      font-size: 0.75rem;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .info-value {
+      font-size: 0.9rem;
+      color: #e2e8f0;
+      font-weight: 500;
+    }
+
+    .process-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .process-actions button {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 0.8rem;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #64748b;
+    }
+
+    .empty-state svg {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 24px;
+      width: 90%;
+      max-width: 500px;
+      border: 1px solid #334155;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .modal-header h2 {
+      font-size: 1.25rem;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: #64748b;
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .close-btn:hover {
+      color: #e2e8f0;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.9rem;
+      color: #94a3b8;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 0.9rem;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+
+    .stats-bar {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 24px;
+      padding: 16px 20px;
+      background: #1e293b;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #3b82f6;
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #334155;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>OpenDaemon</h1>
+        <div class="status">
+          <span class="status-dot"></span>
+          <span id="connection-status">Connected</span>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn-primary" onclick="openModal()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+          </svg>
+          New Process
+        </button>
+        <button class="btn-secondary" onclick="refreshData()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          Refresh
+        </button>
+      </div>
+    </header>
+
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-value" id="total-processes">0</span>
+        <span class="stat-label">Total Processes</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value" id="online-processes">0</span>
+        <span class="stat-label">Online</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value" id="errored-processes">0</span>
+        <span class="stat-label">Errored</span>
+      </div>
+    </div>
+
+    <div id="processes-container" class="process-grid">
+      <!-- Process cards will be inserted here -->
+    </div>
+  </div>
+
+  <!-- Add Process Modal -->
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Start New Process</h2>
+        <button class="close-btn" onclick="closeModal()">&times;</button>
+      </div>
+      
+      <form id="process-form" onsubmit="startProcess(event)">
+        <div class="form-group">
+          <label for="name">Process Name</label>
+          <input type="text" id="name" required placeholder="my-app">
+        </div>
+
+        <div class="form-group">
+          <label for="script">Script Path</label>
+          <input type="text" id="script" required placeholder="app.js">
+        </div>
+
+        <div class="form-group">
+          <label for="instances">Instances</label>
+          <input type="number" id="instances" value="1" min="1" max="10">
+        </div>
+
+        <div class="form-group">
+          <label for="mode">Mode</label>
+          <select id="mode">
+            <option value="fork">Fork</option>
+            <option value="cluster">Cluster</option>
+          </select>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn-primary">Start Process</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = '';
+    let refreshInterval;
+
+    // Load processes on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      refreshData();
+      // Auto-refresh every 5 seconds
+      refreshInterval = setInterval(refreshData, 5000);
+    });
+
+    async function refreshData() {
+      try {
+        const response = await fetch(`${API_URL}/api/processes`);
+        if (!response.ok) throw new Error('Failed to fetch');
+        
+        const processes = await response.json();
+        renderProcesses(processes);
+        updateStats(processes);
+      } catch (err) {
+        console.error('Error fetching processes:', err);
+        document.getElementById('connection-status').textContent = 'Disconnected';
+        document.querySelector('.status-dot').style.background = '#ef4444';
+      }
+    }
+
+    function renderProcesses(processes) {
+      const container = document.getElementById('processes-container');
+      
+      if (processes.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+            </svg>
+            <p>No processes running</p>
+            <p style="font-size: 0.9rem; margin-top: 8px;">Click "New Process" to get started</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = processes.map(proc => `
+        <div class="process-card">
+          <div class="process-header">
+            <span class="process-name">${proc.config?.name || 'Unknown'}</span>
+            <span class="process-status status-${proc.status || 'offline'}">${proc.status || 'unknown'}</span>
+          </div>
+          
+          <div class="process-info">
+            <div class="info-item">
+              <span class="info-label">Mode</span>
+              <span class="info-value">${proc.config?.mode || 'fork'}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Instances</span>
+              <span class="info-value">${proc.config?.instances || 1}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">PID</span>
+              <span class="info-value">${proc.pid || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Restarts</span>
+              <span class="info-value">${proc.restartCount || 0}</span>
+            </div>
+          </div>
+          
+          <div class="process-actions">
+            <button class="btn-secondary" onclick="restartProcess('${proc.config?.name}')" 
+              ${proc.status !== 'online' ? 'disabled' : ''}>Restart</button>
+            <button class="btn-danger" onclick="stopProcess('${proc.config?.name}')"
+              ${proc.status !== 'online' ? 'disabled' : ''}>Stop</button>
+            <button class="btn-danger" onclick="deleteProcess('${proc.config?.name}')"
+              style="flex: 0.5;">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function updateStats(processes) {
+      document.getElementById('total-processes').textContent = processes.length;
+      document.getElementById('online-processes').textContent = 
+        processes.filter(p => p.status === 'online').length;
+      document.getElementById('errored-processes').textContent = 
+        processes.filter(p => p.status === 'errored').length;
+    }
+
+    function openModal() {
+      document.getElementById('modal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.remove('active');
+      document.getElementById('process-form').reset();
+    }
+
+    async function startProcess(event) {
+      event.preventDefault();
+      
+      const config = {
+        name: document.getElementById('name').value,
+        script: document.getElementById('script').value,
+        instances: parseInt(document.getElementById('instances').value),
+        mode: document.getElementById('mode').value,
+      };
+
+      try {
+        const response = await fetch(`${API_URL}/api/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config),
+        });
+
+        if (response.ok) {
+          closeModal();
+          refreshData();
+        } else {
+          alert('Failed to start process');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    async function stopProcess(name) {
+      if (!confirm(`Stop process "${name}"?`)) return;
+      
+      try {
+        const response = await fetch(`${API_URL}/api/stop/${name}`, {
+          method: 'POST',
+        });
+        
+        if (response.ok) {
+          refreshData();
+        } else {
+          alert('Failed to stop process');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    async function restartProcess(name) {
+      if (!confirm(`Restart process "${name}"?`)) return;
+      
+      try {
+        await stopProcess(name);
+        setTimeout(refreshData, 1000);
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    async function deleteProcess(name) {
+      if (!confirm(`Delete process "${name}"? This cannot be undone.`)) return;
+      
+      try {
+        const response = await fetch(`${API_URL}/api/delete/${name}`, {
+          method: 'DELETE',
+        });
+        
+        if (response.ok) {
+          refreshData();
+        } else {
+          alert('Failed to delete process');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    // Close modal on outside click
+    document.getElementById('modal').addEventListener('click', (e) => {
+      if (e.target.id === 'modal') closeModal();
+    });
+  </script>
+</body>
+</html>

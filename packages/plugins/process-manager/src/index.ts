@@ -596,4 +596,11 @@ private handleProcessExit(
       env: {}, // Don't expose env for security
     };
   }
+
+  /**
+   * Get all managed processes (for WebUI and other plugins)
+   */
+  getProcesses(): ManagedProcessInfo[] {
+    return Array.from(this.processes.values());
+  }
 }

@@ -4,14 +4,27 @@ import { Kernel, Logger } from '@opendaemon/core';
 import { IpcServer } from '@opendaemon/core';
 import { ProcessManagerPlugin } from '../../plugins/process-manager/src/index.js';
 import { ConfigManagerPlugin } from '../../plugins/config-manager/src/index.js';
+import { WebuiPlugin } from '../../plugins/webui/src/index.js';
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
 
 /**
+ * Check if process is running
+ */
+export function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Daemon entry point
  */
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const logger = new Logger('daemon');
   
   try {
@@ -28,6 +41,19 @@ async function main(): Promise<void> {
     // Write PID file
     writeFileSync(pidFile, String(process.pid));
 
+    // Load configuration if exists
+    let config: Record<string, unknown> = {};
+    const configPath = resolve('opendaemon.config.json');
+    if (existsSync(configPath)) {
+      try {
+        const configContent = readFileSync(configPath, 'utf-8');
+        config = JSON.parse(configContent);
+        logger.info('Configuration loaded from: ' + configPath);
+      } catch (err) {
+        logger.warn('Failed to load configuration: ' + (err as Error).message);
+      }
+    }
+
     // Create kernel
     const kernel = new Kernel();
 
@@ -35,7 +61,7 @@ async function main(): Promise<void> {
     // Use TCP on Windows (Unix sockets have permission issues), Unix socket on Linux/Mac
     const isWindows = process.platform === 'win32';
     const ipcConfig = isWindows
-      ? { host: '127.0.0.1', port: 9876 }
+      ? { host: '127.0.0.1', port: 9995 }
       : { socketPath: resolve('opendaemon.sock') };
     const ipcServer = new IpcServer(ipcConfig);
 
@@ -45,9 +71,10 @@ async function main(): Promise<void> {
     // Register plugins (they will register their RPC methods now)
     kernel.registerPlugin(new ConfigManagerPlugin());
     kernel.registerPlugin(new ProcessManagerPlugin());
+    kernel.registerPlugin(new WebuiPlugin());
 
-    // Start kernel
-    await kernel.start();
+    // Start kernel with configuration
+    await kernel.start(config);
 
     // Register IPC methods
     ipcServer.registerMethod('daemon.status', () => ({
@@ -94,19 +121,10 @@ async function main(): Promise<void> {
   }
 }
 
-/**
- * Check if process is running
- */
-function isRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+// Only run main if this file is executed directly (not imported)
+if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('daemon.ts') || process.argv[1]?.endsWith('daemon.js')) {
+  main().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
 }
-
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});

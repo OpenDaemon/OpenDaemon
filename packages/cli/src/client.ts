@@ -15,7 +15,7 @@ export class CliClient {
     if (this.isWindows) {
       this.client = new IpcClient({
         host: '127.0.0.1',
-        port: 9876,
+        port: 9995,
         timeout: 30000,
       });
     } else {

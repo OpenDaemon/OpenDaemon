@@ -1,0 +1,9 @@
+{
+  "plugins": {
+    "webui": {
+      "port": 7777,
+      "username": "admin",
+      "password": "NoPass12"
+    }
+  }
+}
