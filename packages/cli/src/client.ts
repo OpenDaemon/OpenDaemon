@@ -115,6 +115,22 @@ export class CliClient {
   }
 
   /**
+   * Get detailed info for a single process
+   */
+  async getProcessInfo(name: string): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('info', { name });
+  }
+
+  /**
+   * Get logs for a process
+   */
+  async getLogs(name: string, lines?: number): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('logs', { name, lines: lines ?? 100 });
+  }
+
+  /**
    * Ensure connected to daemon
    */
   private ensureConnected(): void {

@@ -33,33 +33,26 @@ ${term.bold('USAGE')}
 ${term.bold('COMMANDS')}
 
   Process Management:
-    start    Start a process or processes from config
-    stop     Stop process(es)
-    restart  Restart process(es)
-    reload   Zero-downtime reload
-    delete   Remove process(es)
-    scale    Scale instances
+    start <script>   Start a process
+    stop <name>      Stop a process
+    restart <name>   Restart a process
+    delete <name>    Remove a process
 
   Monitoring:
-    list     List all processes
-    info     Show detailed process information
-    monit    Real-time TUI dashboard
-    status   Show quick status overview
-
-  Logs:
-    logs     View logs
-    flush    Flush logs
+    list / ls        List all processes
+    info <name>      Show detailed process information
+    logs <name>      View process logs
+    status           Show daemon and process overview
 
   Daemon:
-    daemon   Manage daemon (start, stop, restart, status)
-
-  Configuration:
-    init     Generate config file
-    validate Validate config file
+    daemon start     Start the daemon
+    daemon stop      Stop the daemon
+    daemon restart   Restart the daemon
+    daemon status    Show daemon status
 
   Other:
-    help     Show help
-    version  Show version
+    help             Show this help
+    version          Show version
 
 ${term.bold('GLOBAL OPTIONS')}
 

@@ -239,10 +239,10 @@ describe('CLI Commands', () => {
       expect(formatDuration(90061000)).toMatch(/\d+d/); // ~25 hours
       
       // Test hours
-      expect(formatDuration(7200000)).toBe('2h'); // 2 hours
-      
+      expect(formatDuration(7200000)).toBe('2h 0m'); // 2 hours
+
       // Test minutes
-      expect(formatDuration(300000)).toBe('5m'); // 5 minutes
+      expect(formatDuration(300000)).toBe('5m 0s'); // 5 minutes
       
       // Test seconds
       expect(formatDuration(30000)).toBe('30s'); // 30 seconds

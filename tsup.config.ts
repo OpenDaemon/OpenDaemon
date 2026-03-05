@@ -15,7 +15,10 @@ export default defineConfig([
   },
   // CLI package
   {
-    entry: ['packages/cli/src/cli.ts', 'packages/cli/src/daemon.ts'],
+    entry: {
+      cli: 'packages/cli/src/cli.ts',
+      daemon: 'packages/cli/src/daemon.ts',
+    },
     outDir: 'packages/cli/dist',
     format: ['esm'],
     dts: false,
@@ -23,6 +26,9 @@ export default defineConfig([
     clean: true,
     bundle: true,
     target: 'node20',
+    banner: {
+      js: '#!/usr/bin/env node',
+    },
   },
   // SDK package
   {

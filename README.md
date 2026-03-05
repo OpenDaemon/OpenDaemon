@@ -2,29 +2,28 @@
 
 Next-generation process manager for Node.js. Built with TypeScript, zero runtime dependencies, and a plugin-first architecture.
 
-[![CI](https://github.com/opendaemon/opendaemon/actions/workflows/ci.yml/badge.svg)](https://github.com/opendaemon/opendaemon/actions/workflows/ci.yml)
-[![Coverage](https://codecov.io/gh/opendaemon/opendaemon/branch/main/graph/badge.svg)](https://codecov.io/gh/opendaemon/opendaemon)
-[![npm version](https://badge.fury.io/js/opendaemon.svg)](https://www.npmjs.com/package/opendaemon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
 
-- **Zero Runtime Dependencies** - Everything built from scratch
-- **Plugin-First Architecture** - Micro-kernel with extensible plugins
-- **TypeScript Native** - Written in TypeScript, configured in TypeScript
-- **Modern Process Management** - Fork and cluster modes, zero-downtime reloads
-- **Health Checks** - HTTP, TCP, gRPC, and custom script-based health monitoring
-- **Structured Logging** - JSON logs with rotation and compression
-- **Secret Management** - AES-256 encrypted secret storage
-- **WebUI Dashboard** - Modern web interface with authentication
-- **94.41% Test Coverage** - Comprehensive test suite
-- **MIT Licensed** - Truly open source
+- **Zero Runtime Dependencies** - Everything built from scratch, no `node_modules` bloat
+- **Plugin-First Architecture** - Micro-kernel with extensible plugin system and dependency resolution
+- **TypeScript Native** - Written in TypeScript, configured in TypeScript with `defineConfig`
+- **Fork & Cluster Modes** - Single-instance or multi-instance process management
+- **Auto-Restart** - Configurable strategies: `always`, `on-failure`, `unless-stopped`, `never`
+- **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
+- **CPU & Memory Monitoring** - Real-time metrics collection for all managed processes
+- **IPC Communication** - Binary frame protocol + JSON-RPC 2.0 over Unix sockets / TCP
+- **WebUI Dashboard** - Built-in web interface with authentication and live process monitoring
+- **Cross-Platform** - Works on Linux, macOS, and Windows
+- **579 Tests** - Comprehensive test suite across 26 test files
 
 ## Quick Start
 
 ```bash
-# Install globally
-npm install -g opendaemon
+# Install dependencies & build
+npm install
+npm run build
 
 # Start the daemon
 od daemon start
@@ -32,65 +31,144 @@ od daemon start
 # Start a process
 od start app.js --name my-app
 
+# Start with multiple instances (cluster mode)
+od start server.js --name api --instances 4
+
 # List processes
 od list
 
+# View process details
+od info my-app
+
+# View logs
+od logs my-app
+
+# Restart / stop / delete
+od restart my-app
+od stop my-app
+od delete my-app
+
+# Check daemon & process status
+od status
+
 # View WebUI
 open http://localhost:7777
+
+# Stop the daemon
+od daemon stop
 ```
 
 ## Configuration
 
-Create `opendaemon.config.json`:
+Create an `opendaemon.config.ts` (or `.js`, `.json`, `.yaml`):
 
-```json
-{
-  "plugins": {
-    "webui": {
-      "port": 7777,
-      "username": "admin",
-      "password": "your-password"
-    }
+```typescript
+import { defineConfig } from '@opendaemon/sdk';
+
+export default defineConfig({
+  daemon: {
+    pidFile: 'opendaemon.pid',
+    logDir: './logs',
+    shutdownTimeout: 10000,
   },
-  "apps": [
+  apps: [
     {
-      "name": "api",
-      "script": "./dist/api.js",
-      "instances": 4,
-      "healthCheck": {
-        "type": "http",
-        "url": "http://localhost:3000/health"
-      }
-    }
-  ]
-}
+      name: 'api-server',
+      script: './dist/server.js',
+      instances: 4,
+      mode: 'cluster',
+      env: { NODE_ENV: 'production', PORT: '3000' },
+      autoRestart: 'always',
+      maxRestarts: 15,
+      restartDelay: 1000,
+      backoffStrategy: 'exponential',
+      backoffMultiplier: 2,
+      maxBackoffDelay: 30000,
+    },
+    {
+      name: 'worker',
+      script: './dist/worker.js',
+      mode: 'fork',
+      autoRestart: 'on-failure',
+    },
+  ],
+  plugins: {
+    webui: {
+      port: 7777,
+      username: 'admin',
+      password: 'changeme',
+    },
+  },
+});
 ```
 
-## Project Structure
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `od start <script>` | Start a process (`-n` name, `-i` instances) |
+| `od stop <name>` | Stop a process |
+| `od restart <name>` | Restart a process |
+| `od delete <name>` | Delete a process |
+| `od list` / `od ls` | List all processes (`--json`, `-q`) |
+| `od info <name>` | Detailed process info (CPU, memory, PID, uptime) |
+| `od logs <name>` | View process logs |
+| `od status` | Daemon & process status overview |
+| `od daemon start\|stop\|restart\|status` | Manage the daemon |
+| `od help` | Show help |
+
+## Web UI
+
+The built-in dashboard runs at `http://localhost:7777` with the WebUI plugin enabled.
+
+- Real-time process table with status, CPU, memory, uptime, and restart count
+- Start, stop, restart, and delete processes from the browser
+- Stats overview cards (total, online, errored, stopped)
+- Optional authentication (Basic / Bearer token)
+- Auto-refresh every 3 seconds
+- Toast notifications for actions
+
+### REST API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/processes` | List all processes |
+| `POST` | `/api/start` | Start a new process |
+| `POST` | `/api/stop/:name` | Stop a process |
+| `POST` | `/api/restart/:name` | Restart a process |
+| `DELETE` | `/api/delete/:name` | Delete a process |
+| `GET` | `/api/daemon` | Daemon status & uptime |
+| `POST` | `/api/login` | Authenticate (returns Bearer token) |
+
+## Architecture
 
 ```
 opendaemon/
 ├── packages/
-│   ├── core/          # Micro-kernel, event bus, state machine
-│   ├── cli/           # Command-line interface
-│   └── sdk/           # JavaScript/TypeScript SDK
-├── tests/             # Unit, integration, and E2E tests
-├── docs/              # Documentation
-│   ├── architecture/  # SPECIFICATION.md, IMPLEMENTATION.md
-│   └── CONTRIBUTING.md
-├── examples/          # Example applications
-├── CHANGELOG.md       # Release history
-└── README.md         # This file
+│   ├── core/                  # Micro-kernel, event bus, state machine, IPC, plugins
+│   ├── cli/                   # CLI (od), daemon entry, argument parser, output formatting
+│   ├── sdk/                   # TypeScript SDK, defineConfig, metrics runtime
+│   └── plugins/
+│       ├── process-manager/   # Process lifecycle, fork/cluster, metrics, restart strategies
+│       ├── config-manager/    # Config file loading & validation (TS/JS/JSON/YAML)
+│       └── webui/             # HTTP server, REST API, dashboard HTML
+├── tests/
+│   ├── unit/                  # Unit tests
+│   └── integration/           # IPC, kernel, and daemon integration tests
+└── tsup.config.ts             # Build config (core, cli, sdk)
 ```
 
-## Documentation
+### Core Components
 
-- [Architecture](./docs/architecture/) - System specification and implementation details
-- [Contributing Guide](./docs/CONTRIBUTING.md) - How to contribute
-- [Changelog](./CHANGELOG.md) - Release history
-- [API Reference](https://opendaemon.dev/api)
-- [Configuration Guide](https://opendaemon.dev/config)
-- [CLI Reference](https://opendaemon.dev/cli)
+| Component | Description |
+|-----------|-------------|
+| **Kernel** | Micro-kernel managing plugins, state, and lifecycle transitions |
+| **EventBus** | Pub/sub with wildcard patterns (`process:*`), sync & async emit |
+| **StateMachine** | Generic state machine with before/after transition hooks |
+| **StateStore** | Key-value store with subscription support |
+| **IPC Server/Client** | Binary frame protocol (type + length + payload) + JSON-RPC 2.0 |
+| **PluginRegistry** | Dependency graph resolution via topological sort, conflict detection |
+| **Logger** | Structured logging with levels TRACE through FATAL, namespacing |
 
 ## Development
 
@@ -101,44 +179,33 @@ npm install
 # Build all packages
 npm run build
 
-# Run tests
+# Run tests (579 tests, 26 files)
 npm test
 
 # Run tests with coverage
 npm run test:coverage
-
-# Type check
-npm run typecheck
-
-# Lint
-npm run lint
 ```
 
 ## Why OpenDaemon?
 
-OpenDaemon was created to address the limitations of existing process managers:
+| | OpenDaemon | PM2 |
+|---|---|---|
+| Runtime deps | **0** | 30+ |
+| Architecture | Micro-kernel + plugins | Monolithic |
+| TypeScript | Native | Bolted on |
+| Config format | TS, JS, JSON, YAML | JS, JSON, YAML |
+| Plugin system | First-class with DI | Limited |
+| IPC protocol | Binary frames + JSON-RPC 2.0 | Custom |
 
-- **vs PM2**: Modern architecture, TypeScript native, plugin system, better security
-- **vs systemd**: Cross-platform, designed for Node.js, easy configuration
-- **vs Docker**: Lighter weight, designed for development workflows
+## Requirements
+
+- Node.js >= 20.0.0
 
 ## Community
 
 - **Twitter/X**: [@ersinkoc](https://x.com/ersinkoc)
 - **GitHub**: [github.com/ersinkoc](https://github.com/ersinkoc)
-- **Website**: [opendaemon.dev](https://opendaemon.dev)
-- **Issues**: [github.com/opendaemon/opendaemon/issues](https://github.com/opendaemon/opendaemon/issues)
-
-## Contributing
-
-Please read our [Contributing Guide](./docs/CONTRIBUTING.md) before submitting PRs.
 
 ## License
 
-MIT © [Ersin KOÇ](https://github.com/ersinkoc) & Contributors
-
----
-
-**Maintainer**: [Ersin KOÇ](https://x.com/ersinkoc)  
-**Repository**: [github.com/opendaemon/opendaemon](https://github.com/opendaemon/opendaemon)  
-**Website**: [opendaemon.dev](https://opendaemon.dev)
+MIT © [Ersin KOC](https://github.com/ersinkoc) & Contributors

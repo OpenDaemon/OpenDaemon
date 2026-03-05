@@ -5,606 +5,628 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenDaemon - Process Manager</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-tertiary: #334155;
+      --border: #334155;
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --accent-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --radius: 10px;
+      --radius-sm: 6px;
     }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
       min-height: 100vh;
+      line-height: 1.5;
     }
 
-    .container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-
-    header {
+    /* ---- Layout ---- */
+    .navbar {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 56px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 30px;
-      padding: 20px 0;
-      border-bottom: 1px solid #334155;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
     }
-
-    h1 {
-      font-size: 2rem;
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+    .navbar-brand {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 1.2rem; font-weight: 700;
+      background: var(--accent-gradient);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text;
     }
+    .navbar-brand svg { width: 24px; height: 24px; }
+    .navbar-status { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 0.85rem; }
+    .navbar-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+    .navbar-status .dot.offline { background: var(--danger); }
 
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.9rem;
-      color: #64748b;
-    }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
 
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #10b981;
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-
-    .actions {
-      display: flex;
-      gap: 12px;
+    /* ---- Stats ---- */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
       margin-bottom: 24px;
-      flex-wrap: wrap;
     }
-
-    button {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .stat-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
     }
+    .stat-card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 4px; }
+    .stat-card .value { font-size: 1.75rem; font-weight: 700; }
+    .stat-card .value.accent { color: var(--accent); }
+    .stat-card .value.success { color: var(--success); }
+    .stat-card .value.danger { color: var(--danger); }
+    .stat-card .value.warning { color: var(--warning); }
 
-    .btn-primary {
-      background: #3b82f6;
-      color: white;
+    /* ---- Toolbar ---- */
+    .toolbar {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
     }
+    .toolbar h2 { font-size: 1.1rem; font-weight: 600; }
 
-    .btn-primary:hover {
-      background: #2563eb;
-      transform: translateY(-1px);
+    /* ---- Buttons ---- */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px;
+      border: none; border-radius: var(--radius-sm);
+      font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; transition: all 0.15s;
+      text-decoration: none;
     }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); }
+    .btn-secondary:hover:not(:disabled) { background: #475569; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover:not(:disabled) { background: var(--danger-hover); }
+    .btn-sm { padding: 6px 10px; font-size: 0.78rem; }
+    .btn-icon { padding: 6px; }
+    .btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 
-    .btn-danger {
-      background: #ef4444;
-      color: white;
+    /* ---- Process Table ---- */
+    .table-wrap {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
     }
-
-    .btn-danger:hover {
-      background: #dc2626;
-    }
-
-    .btn-secondary {
-      background: #334155;
-      color: #e2e8f0;
-    }
-
-    .btn-secondary:hover {
-      background: #475569;
-    }
-
-    .process-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-      gap: 20px;
-    }
-
-    .process-card {
-      background: #1e293b;
-      border-radius: 12px;
-      padding: 20px;
-      border: 1px solid #334155;
-      transition: all 0.2s;
-    }
-
-    .process-card:hover {
-      border-color: #3b82f6;
-      transform: translateY(-2px);
-    }
-
-    .process-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-
-    .process-name {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: #f1f5f9;
-    }
-
-    .process-status {
-      padding: 4px 12px;
-      border-radius: 20px;
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      text-align: left;
+      padding: 12px 16px;
       font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-
-    .status-online {
-      background: rgba(16, 185, 129, 0.2);
-      color: #10b981;
-    }
-
-    .status-offline {
-      background: rgba(239, 68, 68, 0.2);
-      color: #ef4444;
-    }
-
-    .status-starting {
-      background: rgba(245, 158, 11, 0.2);
-      color: #f59e0b;
-    }
-
-    .process-info {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .info-item {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .info-label {
-      font-size: 0.75rem;
-      color: #64748b;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      color: var(--text-muted);
+      background: rgba(0,0,0,0.2);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
     }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(59, 130, 246, 0.04); }
+    tbody td { padding: 12px 16px; font-size: 0.88rem; white-space: nowrap; }
 
-    .info-value {
-      font-size: 0.9rem;
-      color: #e2e8f0;
-      font-weight: 500;
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 0.72rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.3px;
     }
+    .badge-online { background: rgba(16,185,129,0.15); color: var(--success); }
+    .badge-stopped { background: rgba(100,116,139,0.2); color: var(--text-muted); }
+    .badge-errored { background: rgba(239,68,68,0.15); color: var(--danger); }
+    .badge-starting { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .badge-stopping { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
-    .process-actions {
-      display: flex;
-      gap: 8px;
-    }
+    .actions-cell { display: flex; gap: 6px; }
+    .mono { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace; font-size: 0.82rem; }
 
-    .process-actions button {
-      flex: 1;
-      padding: 8px 12px;
-      font-size: 0.8rem;
-    }
-
+    /* ---- Empty State ---- */
     .empty-state {
-      text-align: center;
-      padding: 60px 20px;
-      color: #64748b;
+      text-align: center; padding: 60px 20px;
+      color: var(--text-muted);
     }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.4; }
+    .empty-state p { margin-top: 8px; font-size: 0.9rem; }
 
-    .empty-state svg {
-      width: 64px;
-      height: 64px;
-      margin-bottom: 16px;
-      opacity: 0.5;
+    /* ---- Modal ---- */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      justify-content: center; align-items: center;
     }
-
+    .modal-backdrop.active { display: flex; }
     .modal {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.8);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px; width: 90%; max-width: 480px;
     }
-
-    .modal.active {
-      display: flex;
+    .modal h2 { font-size: 1.15rem; margin-bottom: 20px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; margin-bottom: 6px; font-size: 0.85rem; color: var(--text-secondary); }
+    .form-group input, .form-group select {
+      width: 100%; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--bg-primary); color: var(--text-primary); font-size: 0.88rem;
     }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--accent); }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+    .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
 
-    .modal-content {
-      background: #1e293b;
-      border-radius: 12px;
-      padding: 24px;
-      width: 90%;
-      max-width: 500px;
-      border: 1px solid #334155;
+    /* ---- Toast ---- */
+    .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      padding: 12px 20px; border-radius: var(--radius-sm);
+      font-size: 0.85rem; font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 360px;
     }
+    .toast-success { background: var(--success); color: #fff; }
+    .toast-error { background: var(--danger); color: #fff; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-
-    .modal-header h2 {
-      font-size: 1.25rem;
-    }
-
-    .close-btn {
-      background: none;
-      border: none;
-      color: #64748b;
-      font-size: 1.5rem;
-      cursor: pointer;
-      padding: 0;
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .close-btn:hover {
-      color: #e2e8f0;
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    label {
-      display: block;
-      margin-bottom: 6px;
-      font-size: 0.9rem;
-      color: #94a3b8;
-    }
-
-    input, select {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #334155;
-      border-radius: 6px;
-      background: #0f172a;
-      color: #e2e8f0;
-      font-size: 0.9rem;
-    }
-
-    input:focus, select:focus {
-      outline: none;
-      border-color: #3b82f6;
-    }
-
-    .form-actions {
-      display: flex;
-      gap: 12px;
-      justify-content: flex-end;
-      margin-top: 24px;
-    }
-
-    .stats-bar {
-      display: flex;
-      gap: 24px;
-      margin-bottom: 24px;
-      padding: 16px 20px;
-      background: #1e293b;
-      border-radius: 8px;
-      border: 1px solid #334155;
-    }
-
-    .stat-item {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .stat-value {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: #3b82f6;
-    }
-
-    .stat-label {
-      font-size: 0.8rem;
-      color: #64748b;
-    }
-
-    .loading {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      border: 2px solid #334155;
-      border-top-color: #3b82f6;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    /* ---- Responsive ---- */
+    @media (max-width: 768px) {
+      .container { padding: 16px; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+      .table-wrap { overflow-x: auto; }
+      table { min-width: 700px; }
     }
   </style>
 </head>
 <body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="url(#grad)" stroke-width="2">
+        <defs><linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#8b5cf6"/></linearGradient></defs>
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+      </svg>
+      OpenDaemon
+    </div>
+    <div class="navbar-status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Connecting...</span>
+      <span style="margin-left:12px;" id="daemonUptime"></span>
+    </div>
+  </nav>
+
   <div class="container">
-    <header>
-      <div>
-        <h1>OpenDaemon</h1>
-        <div class="status">
-          <span class="status-dot"></span>
-          <span id="connection-status">Connected</span>
-        </div>
-      </div>
-      <div class="actions">
-        <button class="btn-primary" onclick="openModal()">
-          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-          </svg>
-          New Process
-        </button>
-        <button class="btn-secondary" onclick="refreshData()">
-          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-          </svg>
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-card"><div class="label">Total Processes</div><div class="value accent" id="statTotal">0</div></div>
+      <div class="stat-card"><div class="label">Online</div><div class="value success" id="statOnline">0</div></div>
+      <div class="stat-card"><div class="label">Errored</div><div class="value danger" id="statErrored">0</div></div>
+      <div class="stat-card"><div class="label">Stopped</div><div class="value warning" id="statStopped">0</div></div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <h2>Processes</h2>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary btn-sm" onclick="refreshData()" title="Refresh">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           Refresh
         </button>
-      </div>
-    </header>
-
-    <div class="stats-bar">
-      <div class="stat-item">
-        <span class="stat-value" id="total-processes">0</span>
-        <span class="stat-label">Total Processes</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-value" id="online-processes">0</span>
-        <span class="stat-label">Online</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-value" id="errored-processes">0</span>
-        <span class="stat-label">Errored</span>
+        <button class="btn btn-primary btn-sm" onclick="openNewProcessModal()">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          New Process
+        </button>
       </div>
     </div>
 
-    <div id="processes-container" class="process-grid">
-      <!-- Process cards will be inserted here -->
+    <!-- Process Table -->
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Mode</th>
+            <th>PID</th>
+            <th>Instances</th>
+            <th>CPU</th>
+            <th>Memory</th>
+            <th>Restarts</th>
+            <th>Uptime</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="processTableBody">
+          <tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text-muted);">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Empty state (shown when no processes) -->
+    <div id="emptyState" style="display:none;">
+      <div class="empty-state">
+        <div class="icon">&#9889;</div>
+        <h3>No processes running</h3>
+        <p>Click "New Process" to start managing your first process.</p>
+      </div>
     </div>
   </div>
 
-  <!-- Add Process Modal -->
-  <div id="modal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Start New Process</h2>
-        <button class="close-btn" onclick="closeModal()">&times;</button>
-      </div>
-      
-      <form id="process-form" onsubmit="startProcess(event)">
+  <!-- New Process Modal -->
+  <div id="newProcessModal" class="modal-backdrop">
+    <div class="modal">
+      <h2>Start New Process</h2>
+      <form id="newProcessForm">
         <div class="form-group">
-          <label for="name">Process Name</label>
-          <input type="text" id="name" required placeholder="my-app">
+          <label for="procName">Process Name</label>
+          <input type="text" id="procName" required placeholder="my-app" autocomplete="off">
         </div>
-
         <div class="form-group">
-          <label for="script">Script Path</label>
-          <input type="text" id="script" required placeholder="app.js">
+          <label for="procScript">Script Path</label>
+          <input type="text" id="procScript" required placeholder="/path/to/app.js" autocomplete="off">
         </div>
-
+        <div class="form-row">
+          <div class="form-group">
+            <label for="procMode">Mode</label>
+            <select id="procMode">
+              <option value="fork">Fork</option>
+              <option value="cluster">Cluster</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="procInstances">Instances</label>
+            <input type="number" id="procInstances" value="1" min="1" max="64">
+          </div>
+        </div>
         <div class="form-group">
-          <label for="instances">Instances</label>
-          <input type="number" id="instances" value="1" min="1" max="10">
+          <label for="procCwd">Working Directory (optional)</label>
+          <input type="text" id="procCwd" placeholder="/path/to/project">
         </div>
-
-        <div class="form-group">
-          <label for="mode">Mode</label>
-          <select id="mode">
-            <option value="fork">Fork</option>
-            <option value="cluster">Cluster</option>
-          </select>
-        </div>
-
         <div class="form-actions">
-          <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
-          <button type="submit" class="btn-primary">Start Process</button>
+          <button type="button" class="btn btn-secondary" onclick="closeNewProcessModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Start</button>
         </div>
       </form>
     </div>
   </div>
 
+  <!-- Toast container -->
+  <div id="toastContainer" class="toast-container"></div>
+
   <script>
-    const API_URL = '';
-    let refreshInterval;
+    // Auth token (if auth is enabled)
+    var token = localStorage.getItem('od_token');
 
-    // Load processes on page load
-    document.addEventListener('DOMContentLoaded', () => {
-      refreshData();
-      // Auto-refresh every 5 seconds
-      refreshInterval = setInterval(refreshData, 5000);
-    });
+    // ---- API helpers ----
+    function apiFetch(url, opts) {
+      opts = opts || {};
+      var headers = opts.headers || {};
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      opts.headers = headers;
+      return fetch(url, opts).then(function(res) {
+        if (res.status === 401) {
+          localStorage.removeItem('od_token');
+          window.location.reload();
+          return null;
+        }
+        return res;
+      });
+    }
 
-    async function refreshData() {
-      try {
-        const response = await fetch(`${API_URL}/api/processes`);
-        if (!response.ok) throw new Error('Failed to fetch');
-        
-        const processes = await response.json();
+    // ---- Toast notifications ----
+    function showToast(message, type) {
+      var container = document.getElementById('toastContainer');
+      var toast = document.createElement('div');
+      toast.className = 'toast toast-' + (type || 'success');
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(function() { toast.remove(); }, 3500);
+    }
+
+    // ---- Formatting helpers ----
+    function formatBytes(bytes) {
+      if (!bytes) return '0 B';
+      var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      var v = bytes, i = 0;
+      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+      return v.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+    }
+
+    function formatDuration(ms) {
+      if (!ms || ms < 0) return '-';
+      var s = Math.floor(ms / 1000);
+      var m = Math.floor(s / 60);
+      var h = Math.floor(m / 60);
+      var d = Math.floor(h / 24);
+      if (d > 0) return d + 'd ' + (h % 24) + 'h';
+      if (h > 0) return h + 'h ' + (m % 60) + 'm';
+      if (m > 0) return m + 'm ' + (s % 60) + 's';
+      return s + 's';
+    }
+
+    function statusBadge(status) {
+      var cls = 'badge badge-' + (status || 'stopped');
+      var span = document.createElement('span');
+      span.className = cls;
+      var dot = document.createElement('span');
+      dot.className = 'dot';
+      span.appendChild(dot);
+      span.appendChild(document.createTextNode(' ' + (status || 'unknown')));
+      return span;
+    }
+
+    // ---- Data loading ----
+    var refreshTimer = null;
+
+    function refreshData() {
+      Promise.all([
+        apiFetch('/api/processes').then(function(r) { return r ? r.json() : []; }),
+        apiFetch('/api/daemon').then(function(r) { return r ? r.json() : null; })
+      ]).then(function(results) {
+        var processes = results[0] || [];
+        var daemon = results[1];
+
         renderProcesses(processes);
         updateStats(processes);
-      } catch (err) {
-        console.error('Error fetching processes:', err);
-        document.getElementById('connection-status').textContent = 'Disconnected';
-        document.querySelector('.status-dot').style.background = '#ef4444';
-      }
+
+        // Update status indicator
+        document.getElementById('statusDot').className = 'dot';
+        document.getElementById('statusText').textContent = 'Connected';
+        if (daemon && daemon.uptime) {
+          document.getElementById('daemonUptime').textContent = 'Uptime: ' + formatDuration(daemon.uptime * 1000);
+        }
+      }).catch(function(err) {
+        console.error('Refresh error:', err);
+        document.getElementById('statusDot').className = 'dot offline';
+        document.getElementById('statusText').textContent = 'Disconnected';
+      });
     }
 
     function renderProcesses(processes) {
-      const container = document.getElementById('processes-container');
-      
-      if (processes.length === 0) {
-        container.innerHTML = `
-          <div class="empty-state">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
-            </svg>
-            <p>No processes running</p>
-            <p style="font-size: 0.9rem; margin-top: 8px;">Click "New Process" to get started</p>
-          </div>
-        `;
+      var tbody = document.getElementById('processTableBody');
+      var emptyState = document.getElementById('emptyState');
+      var tableWrap = document.querySelector('.table-wrap');
+
+      if (!processes || processes.length === 0) {
+        tableWrap.style.display = 'none';
+        emptyState.style.display = 'block';
         return;
       }
 
-      container.innerHTML = processes.map(proc => `
-        <div class="process-card">
-          <div class="process-header">
-            <span class="process-name">${proc.config?.name || 'Unknown'}</span>
-            <span class="process-status status-${proc.status || 'offline'}">${proc.status || 'unknown'}</span>
-          </div>
-          
-          <div class="process-info">
-            <div class="info-item">
-              <span class="info-label">Mode</span>
-              <span class="info-value">${proc.config?.mode || 'fork'}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Instances</span>
-              <span class="info-value">${proc.config?.instances || 1}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">PID</span>
-              <span class="info-value">${proc.pid || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Restarts</span>
-              <span class="info-value">${proc.restartCount || 0}</span>
-            </div>
-          </div>
-          
-          <div class="process-actions">
-            <button class="btn-secondary" onclick="restartProcess('${proc.config?.name}')" 
-              ${proc.status !== 'online' ? 'disabled' : ''}>Restart</button>
-            <button class="btn-danger" onclick="stopProcess('${proc.config?.name}')"
-              ${proc.status !== 'online' ? 'disabled' : ''}>Stop</button>
-            <button class="btn-danger" onclick="deleteProcess('${proc.config?.name}')"
-              style="flex: 0.5;">Delete</button>
-          </div>
-        </div>
-      `).join('');
+      tableWrap.style.display = 'block';
+      emptyState.style.display = 'none';
+
+      // Clear table
+      tbody.textContent = '';
+
+      processes.forEach(function(p) {
+        var tr = document.createElement('tr');
+
+        // ID
+        var tdId = document.createElement('td');
+        tdId.className = 'mono';
+        tdId.textContent = p.id != null ? p.id : '-';
+        tr.appendChild(tdId);
+
+        // Name
+        var tdName = document.createElement('td');
+        tdName.style.fontWeight = '600';
+        tdName.textContent = p.name || 'Unknown';
+        tr.appendChild(tdName);
+
+        // Status
+        var tdStatus = document.createElement('td');
+        tdStatus.appendChild(statusBadge(p.status));
+        tr.appendChild(tdStatus);
+
+        // Mode
+        var tdMode = document.createElement('td');
+        tdMode.textContent = p.mode || 'fork';
+        tr.appendChild(tdMode);
+
+        // PID
+        var tdPid = document.createElement('td');
+        tdPid.className = 'mono';
+        tdPid.textContent = p.pid || '-';
+        tr.appendChild(tdPid);
+
+        // Instances
+        var tdInst = document.createElement('td');
+        tdInst.textContent = (p.runningInstances || 0) + '/' + (p.instances || 1);
+        tr.appendChild(tdInst);
+
+        // CPU
+        var tdCpu = document.createElement('td');
+        tdCpu.className = 'mono';
+        tdCpu.textContent = p.cpu != null ? p.cpu.toFixed(1) + '%' : '-';
+        tr.appendChild(tdCpu);
+
+        // Memory
+        var tdMem = document.createElement('td');
+        tdMem.className = 'mono';
+        tdMem.textContent = formatBytes(p.memory || 0);
+        tr.appendChild(tdMem);
+
+        // Restarts
+        var tdRestart = document.createElement('td');
+        tdRestart.textContent = p.restartCount || 0;
+        tr.appendChild(tdRestart);
+
+        // Uptime
+        var tdUptime = document.createElement('td');
+        tdUptime.textContent = formatDuration(p.uptime);
+        tr.appendChild(tdUptime);
+
+        // Actions
+        var tdActions = document.createElement('td');
+        tdActions.className = 'actions-cell';
+
+        var isOnline = p.status === 'online';
+        var isStopped = p.status === 'stopped' || p.status === 'errored';
+
+        if (isOnline) {
+          var restartBtn = document.createElement('button');
+          restartBtn.className = 'btn btn-secondary btn-sm btn-icon';
+          restartBtn.title = 'Restart';
+          restartBtn.textContent = '\u21BB';
+          restartBtn.onclick = (function(name) { return function() { restartProcess(name); }; })(p.name);
+          tdActions.appendChild(restartBtn);
+
+          var stopBtn = document.createElement('button');
+          stopBtn.className = 'btn btn-danger btn-sm btn-icon';
+          stopBtn.title = 'Stop';
+          stopBtn.textContent = '\u25A0';
+          stopBtn.onclick = (function(name) { return function() { stopProcess(name); }; })(p.name);
+          tdActions.appendChild(stopBtn);
+        }
+
+        if (isStopped) {
+          var startBtn = document.createElement('button');
+          startBtn.className = 'btn btn-primary btn-sm btn-icon';
+          startBtn.title = 'Start';
+          startBtn.textContent = '\u25B6';
+          startBtn.onclick = (function(name) { return function() { restartProcess(name); }; })(p.name);
+          tdActions.appendChild(startBtn);
+        }
+
+        var delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-secondary btn-sm btn-icon';
+        delBtn.title = 'Delete';
+        delBtn.textContent = '\u2715';
+        delBtn.style.color = 'var(--danger)';
+        delBtn.onclick = (function(name) { return function() { deleteProcess(name); }; })(p.name);
+        tdActions.appendChild(delBtn);
+
+        tr.appendChild(tdActions);
+        tbody.appendChild(tr);
+      });
     }
 
     function updateStats(processes) {
-      document.getElementById('total-processes').textContent = processes.length;
-      document.getElementById('online-processes').textContent = 
-        processes.filter(p => p.status === 'online').length;
-      document.getElementById('errored-processes').textContent = 
-        processes.filter(p => p.status === 'errored').length;
+      var total = processes.length;
+      var online = 0, errored = 0, stopped = 0;
+      processes.forEach(function(p) {
+        if (p.status === 'online') online++;
+        else if (p.status === 'errored') errored++;
+        else if (p.status === 'stopped') stopped++;
+      });
+      document.getElementById('statTotal').textContent = total;
+      document.getElementById('statOnline').textContent = online;
+      document.getElementById('statErrored').textContent = errored;
+      document.getElementById('statStopped').textContent = stopped;
     }
 
-    function openModal() {
-      document.getElementById('modal').classList.add('active');
+    // ---- Process actions ----
+    function stopProcess(name) {
+      if (!confirm('Stop process "' + name + '"?')) return;
+      apiFetch('/api/stop/' + encodeURIComponent(name), { method: 'POST' })
+        .then(function(res) {
+          if (res && res.ok) { showToast('Stopped ' + name); refreshData(); }
+          else showToast('Failed to stop ' + name, 'error');
+        })
+        .catch(function(e) { showToast('Error: ' + e.message, 'error'); });
     }
 
-    function closeModal() {
-      document.getElementById('modal').classList.remove('active');
-      document.getElementById('process-form').reset();
+    function restartProcess(name) {
+      apiFetch('/api/restart/' + encodeURIComponent(name), { method: 'POST' })
+        .then(function(res) {
+          if (res && res.ok) { showToast('Restarted ' + name); refreshData(); }
+          else showToast('Failed to restart ' + name, 'error');
+        })
+        .catch(function(e) { showToast('Error: ' + e.message, 'error'); });
     }
 
-    async function startProcess(event) {
-      event.preventDefault();
-      
-      const config = {
-        name: document.getElementById('name').value,
-        script: document.getElementById('script').value,
-        instances: parseInt(document.getElementById('instances').value),
-        mode: document.getElementById('mode').value,
+    function deleteProcess(name) {
+      if (!confirm('Delete process "' + name + '"? This cannot be undone.')) return;
+      apiFetch('/api/delete/' + encodeURIComponent(name), { method: 'DELETE' })
+        .then(function(res) {
+          if (res && res.ok) { showToast('Deleted ' + name); refreshData(); }
+          else showToast('Failed to delete ' + name, 'error');
+        })
+        .catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+    }
+
+    // ---- New Process Modal ----
+    function openNewProcessModal() {
+      document.getElementById('newProcessModal').classList.add('active');
+      document.getElementById('procName').focus();
+    }
+
+    function closeNewProcessModal() {
+      document.getElementById('newProcessModal').classList.remove('active');
+      document.getElementById('newProcessForm').reset();
+    }
+
+    document.getElementById('newProcessForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var config = {
+        name: document.getElementById('procName').value.trim(),
+        script: document.getElementById('procScript').value.trim(),
+        mode: document.getElementById('procMode').value,
+        instances: parseInt(document.getElementById('procInstances').value, 10) || 1
       };
+      var cwd = document.getElementById('procCwd').value.trim();
+      if (cwd) config.cwd = cwd;
 
-      try {
-        const response = await fetch(`${API_URL}/api/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(config),
-        });
-
-        if (response.ok) {
-          closeModal();
+      apiFetch('/api/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      }).then(function(res) {
+        if (res && res.ok) {
+          showToast('Started ' + config.name);
+          closeNewProcessModal();
           refreshData();
         } else {
-          alert('Failed to start process');
+          return res ? res.json() : null;
         }
-      } catch (err) {
-        alert('Error: ' + err.message);
-      }
-    }
-
-    async function stopProcess(name) {
-      if (!confirm(`Stop process "${name}"?`)) return;
-      
-      try {
-        const response = await fetch(`${API_URL}/api/stop/${name}`, {
-          method: 'POST',
-        });
-        
-        if (response.ok) {
-          refreshData();
-        } else {
-          alert('Failed to stop process');
-        }
-      } catch (err) {
-        alert('Error: ' + err.message);
-      }
-    }
-
-    async function restartProcess(name) {
-      if (!confirm(`Restart process "${name}"?`)) return;
-      
-      try {
-        await stopProcess(name);
-        setTimeout(refreshData, 1000);
-      } catch (err) {
-        alert('Error: ' + err.message);
-      }
-    }
-
-    async function deleteProcess(name) {
-      if (!confirm(`Delete process "${name}"? This cannot be undone.`)) return;
-      
-      try {
-        const response = await fetch(`${API_URL}/api/delete/${name}`, {
-          method: 'DELETE',
-        });
-        
-        if (response.ok) {
-          refreshData();
-        } else {
-          alert('Failed to delete process');
-        }
-      } catch (err) {
-        alert('Error: ' + err.message);
-      }
-    }
-
-    // Close modal on outside click
-    document.getElementById('modal').addEventListener('click', (e) => {
-      if (e.target.id === 'modal') closeModal();
+      }).then(function(data) {
+        if (data && data.error) showToast(data.error, 'error');
+      }).catch(function(e) {
+        showToast('Error: ' + e.message, 'error');
+      });
     });
+
+    // Close modal on backdrop click
+    document.getElementById('newProcessModal').addEventListener('click', function(e) {
+      if (e.target === this) closeNewProcessModal();
+    });
+
+    // Keyboard shortcut: Escape to close modal
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeNewProcessModal();
+    });
+
+    // ---- Init ----
+    refreshData();
+    refreshTimer = setInterval(refreshData, 3000);
   </script>
 </body>
 </html>

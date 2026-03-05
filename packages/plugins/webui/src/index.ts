@@ -347,15 +347,9 @@ export class WebuiPlugin implements Plugin {
 
     try {
       if (url === '/api/processes' && method === 'GET') {
-        // Get process list from process manager
-        const processManager = this.context!.getPlugin<{ getProcesses: () => unknown[] }>('process-manager');
-        if (!processManager) {
-          res.writeHead(503);
-          res.end(JSON.stringify({ error: 'Process manager not available' }));
-          return;
-        }
-
-        const processes = processManager.getProcesses();
+        const pm = this.getProcessManager();
+        if (!pm) { res.writeHead(503); res.end(JSON.stringify({ error: 'Process manager not available' })); return; }
+        const processes = pm.getProcesses();
         res.writeHead(200);
         res.end(JSON.stringify(processes));
         return;
@@ -364,34 +358,41 @@ export class WebuiPlugin implements Plugin {
       if (url === '/api/start' && method === 'POST') {
         const body = await this.readBody(req);
         const config = JSON.parse(body);
-        
-        // Start process via RPC
-        this.context!.events.emit('webui:start', config);
-        
+        const pm = this.getProcessManager();
+        if (!pm) { res.writeHead(503); res.end(JSON.stringify({ error: 'Process manager not available' })); return; }
+        const result = await pm.startProcessFromPlugin(config);
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Process start requested' }));
+        res.end(JSON.stringify({ success: true, process: result }));
+        return;
+      }
+
+      if (url.startsWith('/api/restart/') && method === 'POST') {
+        const name = decodeURIComponent(url.replace('/api/restart/', ''));
+        const pm = this.getProcessManager();
+        if (!pm) { res.writeHead(503); res.end(JSON.stringify({ error: 'Process manager not available' })); return; }
+        const result = await pm.restartProcessFromPlugin(name);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, process: result }));
         return;
       }
 
       if (url.startsWith('/api/stop/') && method === 'POST') {
-        const name = url.replace('/api/stop/', '');
-        
-        // Stop process via RPC
-        this.context!.events.emit('webui:stop', { name });
-        
+        const name = decodeURIComponent(url.replace('/api/stop/', ''));
+        const pm = this.getProcessManager();
+        if (!pm) { res.writeHead(503); res.end(JSON.stringify({ error: 'Process manager not available' })); return; }
+        await pm.stopProcessFromPlugin(name);
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Process stop requested' }));
+        res.end(JSON.stringify({ success: true, message: `Stopped ${name}` }));
         return;
       }
 
       if (url.startsWith('/api/delete/') && method === 'DELETE') {
-        const name = url.replace('/api/delete/', '');
-        
-        // Delete process via RPC
-        this.context!.events.emit('webui:delete', { name });
-        
+        const name = decodeURIComponent(url.replace('/api/delete/', ''));
+        const pm = this.getProcessManager();
+        if (!pm) { res.writeHead(503); res.end(JSON.stringify({ error: 'Process manager not available' })); return; }
+        await pm.deleteProcessFromPlugin(name);
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Process delete requested' }));
+        res.end(JSON.stringify({ success: true, message: `Deleted ${name}` }));
         return;
       }
 
@@ -442,7 +443,7 @@ export class WebuiPlugin implements Plugin {
       // Fallback: serve inline HTML if file not found
       res.setHeader('Content-Type', 'text/html');
       res.writeHead(200);
-      res.end(getFallbackHTML());
+      res.end(this.getFallbackHTML());
       return;
     }
 
@@ -463,6 +464,10 @@ export class WebuiPlugin implements Plugin {
     res.setHeader('Content-Type', contentTypes[ext] || 'application/octet-stream');
     res.writeHead(200);
     res.end(readFileSync(fullPath));
+  }
+
+  private getProcessManager(): { getProcesses: () => unknown[]; startProcessFromPlugin: (config: unknown) => Promise<unknown>; stopProcessFromPlugin: (name: string) => Promise<void>; restartProcessFromPlugin: (name: string) => Promise<unknown>; deleteProcessFromPlugin: (name: string) => Promise<void> } | null {
+    return this.context!.getPlugin('process-manager') as ReturnType<typeof this.getProcessManager>;
   }
 
   private readBody(req: IncomingMessage): Promise<string> {
@@ -720,26 +725,71 @@ export class WebuiPlugin implements Plugin {
         return;
       }
       
-      container.innerHTML = processes.map(p => 
-        '<div class="process-card">' +
-          '<h3>' + (p.config?.name || 'Unknown') + '</h3>' +
-          '<p>Status: <span class="status-' + p.status + '">' + p.status + '</span></p>' +
-          '<p>PID: ' + (p.pid || 'N/A') + ' | Mode: ' + (p.config?.mode || 'fork') + '</p>' +
-          '<p>Restarts: ' + (p.restartCount || 0) + '</p>' +
-          '<button onclick="stop(\'' + p.config?.name + '\')">Stop</button>' +
-          '<button onclick="del(\'' + p.config?.name + '\')">Delete</button>' +
-        '</div>'
-      ).join('');
+      container.textContent = '';
+      processes.forEach(function(p) {
+        var card = document.createElement('div');
+        card.className = 'process-card';
+        var h3 = document.createElement('h3');
+        h3.textContent = p.name || 'Unknown';
+        card.appendChild(h3);
+        var statusP = document.createElement('p');
+        statusP.textContent = 'Status: ' + p.status;
+        card.appendChild(statusP);
+        var infoP = document.createElement('p');
+        infoP.textContent = 'PID: ' + (p.pid || 'N/A') + ' | Mode: ' + (p.mode || 'fork');
+        card.appendChild(infoP);
+        var metricsP = document.createElement('p');
+        metricsP.textContent = 'CPU: ' + (p.cpu ? p.cpu.toFixed(1) + '%' : '0%') + ' | Memory: ' + formatBytes(p.memory || 0);
+        card.appendChild(metricsP);
+        var restartP = document.createElement('p');
+        restartP.textContent = 'Restarts: ' + (p.restartCount || 0) + ' | Uptime: ' + formatDuration(p.uptime || 0);
+        card.appendChild(restartP);
+        var stopBtn = document.createElement('button');
+        stopBtn.textContent = 'Stop';
+        stopBtn.onclick = function() { stop(p.name); };
+        card.appendChild(stopBtn);
+        var restartBtn = document.createElement('button');
+        restartBtn.textContent = 'Restart';
+        restartBtn.onclick = function() { restart(p.name); };
+        card.appendChild(restartBtn);
+        var delBtn = document.createElement('button');
+        delBtn.textContent = 'Delete';
+        delBtn.onclick = function() { del(p.name); };
+        card.appendChild(delBtn);
+        container.appendChild(card);
+      });
     }
     
+    function formatBytes(bytes) {
+      if (!bytes) return '0B';
+      var units = ['B', 'KB', 'MB', 'GB'];
+      var v = bytes, i = 0;
+      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+      return v.toFixed(1) + ' ' + units[i];
+    }
+
+    function formatDuration(ms) {
+      if (!ms) return '0s';
+      var s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
+      if (d > 0) return d + 'd ' + (h % 24) + 'h';
+      if (h > 0) return h + 'h ' + (m % 60) + 'm';
+      if (m > 0) return m + 'm ' + (s % 60) + 's';
+      return s + 's';
+    }
+
     async function stop(name) {
-      await apiFetch('/api/stop/' + name, { method: 'POST' });
+      await apiFetch('/api/stop/' + encodeURIComponent(name), { method: 'POST' });
       loadProcesses();
     }
-    
+
+    async function restart(name) {
+      await apiFetch('/api/restart/' + encodeURIComponent(name), { method: 'POST' });
+      loadProcesses();
+    }
+
     async function del(name) {
       if (!confirm('Delete ' + name + '?')) return;
-      await apiFetch('/api/delete/' + name, { method: 'DELETE' });
+      await apiFetch('/api/delete/' + encodeURIComponent(name), { method: 'DELETE' });
       loadProcesses();
     }
     

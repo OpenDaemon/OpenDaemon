@@ -8,19 +8,19 @@
   "types": "./packages/core/dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./packages/core/dist/index.d.ts",
       "import": "./packages/core/dist/index.js",
-      "require": "./packages/core/dist/index.cjs",
-      "types": "./packages/core/dist/index.d.ts"
+      "require": "./packages/core/dist/index.cjs"
     },
     "./sdk": {
+      "types": "./packages/sdk/dist/index.d.ts",
       "import": "./packages/sdk/dist/index.js",
-      "require": "./packages/sdk/dist/index.cjs",
-      "types": "./packages/sdk/dist/index.d.ts"
+      "require": "./packages/sdk/dist/index.cjs"
     },
     "./runtime": {
+      "types": "./packages/sdk/dist/runtime.d.ts",
       "import": "./packages/sdk/dist/runtime.js",
-      "require": "./packages/sdk/dist/runtime.cjs",
-      "types": "./packages/sdk/dist/runtime.d.ts"
+      "require": "./packages/sdk/dist/runtime.cjs"
     }
   },
   "bin": {

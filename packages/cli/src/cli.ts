@@ -9,7 +9,10 @@ import {
   ListCommand,
   StartCommand,
   StopCommand,
+  RestartCommand,
   DeleteCommand,
+  InfoCommand,
+  LogsCommand,
   StatusCommand,
   DaemonCommand,
 } from './commands/index.js';
@@ -77,20 +80,6 @@ async function main(): Promise<void> {
     description: 'Number of instances',
   });
 
-  parser.addOption({
-    name: 'json',
-    alias: 'j',
-    type: 'boolean',
-    description: 'Output as JSON',
-  });
-
-  parser.addOption({
-    name: 'quiet',
-    alias: 'q',
-    type: 'boolean',
-    description: 'Minimal output',
-  });
-
   // Parse arguments
   const args = process.argv.slice(2);
   const parsed = parser.parse(args);
@@ -155,10 +144,31 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       break;
     }
 
+    case 'restart': {
+      const cmd = new RestartCommand();
+      const restartArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await cmd.execute(restartArgs, parsed.options);
+      break;
+    }
+
     case 'delete': {
       const cmd = new DeleteCommand();
       const deleteArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
       await cmd.execute(deleteArgs, parsed.options);
+      break;
+    }
+
+    case 'info': {
+      const cmd = new InfoCommand();
+      const infoArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await cmd.execute(infoArgs, parsed.options);
+      break;
+    }
+
+    case 'logs': {
+      const cmd = new LogsCommand();
+      const logsArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await cmd.execute(logsArgs, parsed.options);
       break;
     }
 

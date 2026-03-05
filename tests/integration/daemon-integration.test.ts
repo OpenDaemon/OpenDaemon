@@ -384,11 +384,14 @@ describe('Daemon Entry Point Integration', () => {
         return process;
       }) as any);
       
-      // PID file exists during shutdown
-      mockExistsSync.mockReturnValue(true);
-      
+      // PID file does NOT exist during startup (so daemon starts normally)
+      mockExistsSync.mockReturnValue(false);
+
       await main();
-      
+
+      // Now set PID file to exist during shutdown
+      mockExistsSync.mockReturnValue(true);
+
       // Trigger SIGTERM handler
       if (handlers['SIGTERM']) {
         try {
@@ -397,7 +400,7 @@ describe('Daemon Entry Point Integration', () => {
           // process.exit throws
         }
       }
-      
+
       // Verify PID file was checked and unlinked
       expect(mockExistsSync).toHaveBeenCalled();
       expect(mockUnlinkSync).toHaveBeenCalledWith(expect.stringContaining('opendaemon.pid'));

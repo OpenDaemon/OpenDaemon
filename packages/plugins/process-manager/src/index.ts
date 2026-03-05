@@ -14,6 +14,12 @@ import { resolve, dirname } from 'path';
 /**
  * Managed process information
  */
+interface LogEntry {
+  timestamp: string;
+  level: 'stdout' | 'stderr';
+  message: string;
+}
+
 interface ManagedProcessInfo {
   id: number;
   config: ProcessConfig;
@@ -26,6 +32,10 @@ interface ManagedProcessInfo {
   childProcess?: ChildProcess | undefined;
   workers: ChildProcess[];
   stopTimeout?: NodeJS.Timeout | undefined;
+  cpu: number;
+  memory: number;
+  metricsInterval?: NodeJS.Timeout | undefined;
+  logs: LogEntry[];
 }
 
 /**
@@ -62,6 +72,7 @@ export class ProcessManagerPlugin implements Plugin {
     context.registerMethod('restart', this.restartProcess.bind(this));
     context.registerMethod('delete', this.deleteProcess.bind(this));
     context.registerMethod('info', this.getProcessInfo.bind(this));
+    context.registerMethod('logs', this.getProcessLogs.bind(this));
   }
 
   /**
@@ -156,6 +167,9 @@ export class ProcessManagerPlugin implements Plugin {
       pids: [],
       restartCount: existing?.restartCount ?? 0,
       workers: [],
+      cpu: 0,
+      memory: 0,
+      logs: existing?.logs ?? [],
     };
 
     this.processes.set(config.name, proc);
@@ -170,6 +184,9 @@ export class ProcessManagerPlugin implements Plugin {
 
       proc.status = 'online';
       proc.startTime = new Date();
+
+      // Start metrics collection
+      this.startMetricsCollection(proc);
 
       this.logger.info(`Process started: ${config.name}`, { pid: proc.pid });
       this.context.events.emit('process:started', { name: config.name, pid: proc.pid });
@@ -229,6 +246,126 @@ export class ProcessManagerPlugin implements Plugin {
   }
 
   /**
+   * Start metrics collection for a process
+   */
+  private startMetricsCollection(proc: ManagedProcessInfo): void {
+    // Clear existing interval
+    if (proc.metricsInterval) {
+      clearInterval(proc.metricsInterval);
+    }
+
+    proc.metricsInterval = setInterval(() => {
+      this.collectMetrics(proc);
+    }, 2000);
+  }
+
+  /**
+   * Stop metrics collection for a process
+   */
+  private stopMetricsCollection(proc: ManagedProcessInfo): void {
+    if (proc.metricsInterval) {
+      clearInterval(proc.metricsInterval);
+      proc.metricsInterval = undefined;
+    }
+  }
+
+  /**
+   * Collect CPU and memory metrics for a process
+   */
+  private collectMetrics(proc: ManagedProcessInfo): void {
+    if (!proc.pid && proc.pids.length === 0) {
+      proc.cpu = 0;
+      proc.memory = 0;
+      return;
+    }
+
+    try {
+      // Use child process usage if available
+      if (proc.childProcess && proc.childProcess.pid && !proc.childProcess.killed) {
+        const usage = process.cpuUsage();
+        proc.cpu = (usage.user + usage.system) / 1000000; // Convert to seconds
+      }
+
+      // Get memory usage from /proc on Linux or via process
+      const pidsToCheck = proc.pids.filter(pid => pid > 0);
+      let totalMemory = 0;
+
+      for (const pid of pidsToCheck) {
+        try {
+          // Try to read /proc/[pid]/status for memory info
+          if (process.platform === 'linux') {
+            const { readFileSync } = require('fs');
+            const status = readFileSync(`/proc/${pid}/status`, 'utf-8');
+            const vmRssMatch = status.match(/VmRSS:\s+(\d+)\s+kB/);
+            if (vmRssMatch?.[1]) {
+              totalMemory += parseInt(vmRssMatch[1], 10) * 1024;
+            }
+          } else {
+            // On other platforms, estimate memory from the process
+            const memUsage = process.memoryUsage();
+            totalMemory += memUsage.rss;
+          }
+        } catch {
+          // Process might have exited
+        }
+      }
+
+      proc.memory = totalMemory;
+    } catch {
+      // Ignore metric collection errors
+    }
+  }
+
+  private static readonly MAX_LOG_LINES = 500;
+
+  /**
+   * Capture stdout/stderr from a child process into the log buffer
+   */
+  private captureOutput(proc: ManagedProcessInfo, child: ChildProcess): void {
+    const addLine = (level: 'stdout' | 'stderr', data: Buffer) => {
+      const lines = data.toString('utf-8').split('\n');
+      for (const line of lines) {
+        if (line.length === 0) continue;
+        this.appendLog(proc, level, line);
+      }
+    };
+
+    if (child.stdout) {
+      child.stdout.on('data', (data: Buffer) => addLine('stdout', data));
+    }
+    if (child.stderr) {
+      child.stderr.on('data', (data: Buffer) => addLine('stderr', data));
+    }
+  }
+
+  /**
+   * Append a log entry, keeping the buffer bounded
+   */
+  private appendLog(proc: ManagedProcessInfo, level: 'stdout' | 'stderr', message: string): void {
+    proc.logs.push({
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+    });
+    // Trim oldest entries when buffer exceeds limit
+    if (proc.logs.length > ProcessManagerPlugin.MAX_LOG_LINES) {
+      proc.logs.splice(0, proc.logs.length - ProcessManagerPlugin.MAX_LOG_LINES);
+    }
+  }
+
+  /**
+   * Get logs for a process (RPC handler)
+   */
+  private async getProcessLogs(params: { name: string; lines?: number }): Promise<LogEntry[]> {
+    const proc = this.processes.get(params.name);
+    if (!proc) {
+      throw new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`);
+    }
+    const lines = params.lines ?? 100;
+    return proc.logs.slice(-lines);
+  }
+
+  /**
    * Start process in fork mode
    */
   private async startFork(proc: ManagedProcessInfo): Promise<void> {
@@ -250,6 +387,9 @@ export class ProcessManagerPlugin implements Plugin {
     if (child.pid) {
       proc.pids = [child.pid];
     }
+
+    // Capture stdout/stderr
+    this.captureOutput(proc, child);
 
     // Handle process events
     child.on('exit', (code, signal) => {
@@ -310,6 +450,9 @@ export class ProcessManagerPlugin implements Plugin {
       proc.pids.push(child.pid);
     }
 
+    // Capture worker stdout/stderr
+    this.captureOutput(proc, child);
+
     child.on('exit', (code, signal) => {
       this.handleWorkerExit(proc, index, code, signal);
     });
@@ -333,6 +476,9 @@ export class ProcessManagerPlugin implements Plugin {
 
     proc.status = 'stopping';
     this.logger.info(`Stopping process: ${proc.config.name}`);
+
+    // Stop metrics collection
+    this.stopMetricsCollection(proc);
 
     // Clear any pending restart timeouts
     if (proc.stopTimeout) {
@@ -364,13 +510,13 @@ export class ProcessManagerPlugin implements Plugin {
     // Wait for processes to exit
     const startTime = Date.now();
     while (Date.now() - startTime < timeout) {
-      const allStopped = proc.workers.every((w) => !w || w.killed) && 
+      const allStopped = proc.workers.every((w) => !w || w.killed) &&
         (!proc.childProcess || proc.childProcess.killed);
-      
+
       if (allStopped) {
         break;
       }
-      
+
       await new Promise((r) => setTimeout(r, 100));
     }
 
@@ -390,65 +536,79 @@ export class ProcessManagerPlugin implements Plugin {
     proc.pids = [];
     proc.childProcess = undefined;
     proc.workers = [];
+    proc.cpu = 0;
+    proc.memory = 0;
 
     this.logger.info(`Process stopped: ${proc.config.name}`);
     this.context.events.emit('process:stopped', { name: proc.config.name });
   }
 
-/**
- * Handle process exit
- */
-private handleProcessExit(
-  proc: ManagedProcessInfo,
-  code: number | null,
-  signal: string | null
-): void {
-  if (this.stopping) {
-    return;
-  }
-
-  this.logger.info(`Process exited: ${proc.config.name}`, { code, signal });
-
-  // Check if should restart
-  const shouldRestart = this.shouldRestart(proc, code);
-
-  if (shouldRestart) {
-    proc.restartCount++;
-    proc.lastRestart = new Date();
-    proc.status = 'starting';
-
-    this.logger.info(`Restarting process: ${proc.config.name}`, {
-      restartCount: proc.restartCount,
-    });
-
-    // Clear any existing timeout
-    if (proc.stopTimeout) {
-      clearTimeout(proc.stopTimeout);
+  /**
+   * Handle process exit
+   */
+  private handleProcessExit(
+    proc: ManagedProcessInfo,
+    code: number | null,
+    signal: string | null
+  ): void {
+    if (this.stopping) {
+      return;
     }
 
-    proc.stopTimeout = setTimeout(() => {
-      proc.stopTimeout = undefined;
-      if (proc.status === 'stopping' || proc.status === 'stopped') {
-        // Process was manually stopped during restart delay
-        return;
+    this.logger.info(`Process exited: ${proc.config.name}`, { code, signal });
+
+    // Stop metrics collection
+    this.stopMetricsCollection(proc);
+
+    // Check if should restart
+    const shouldRestart = this.shouldRestart(proc, code);
+
+    if (shouldRestart) {
+      proc.restartCount++;
+      proc.lastRestart = new Date();
+      proc.status = 'starting';
+
+      this.logger.info(`Restarting process: ${proc.config.name}`, {
+        restartCount: proc.restartCount,
+      });
+
+      // Clear any existing timeout
+      if (proc.stopTimeout) {
+        clearTimeout(proc.stopTimeout);
       }
-      if (proc.config.mode === 'cluster' && typeof proc.config.instances === 'number' && proc.config.instances > 1) {
-        this.startCluster(proc).catch((err) => {
-          this.logger.error(`Failed to restart cluster: ${proc.config.name}`, undefined, err);
-          proc.status = 'errored';
-        });
-      } else {
-        this.startFork(proc).catch((err) => {
-          this.logger.error(`Failed to restart: ${proc.config.name}`, undefined, err);
-          proc.status = 'errored';
-        });
-      }
-    }, proc.config.restartDelay ?? 1000);
-  } else {
-    proc.status = code === 0 ? 'stopped' : 'errored';
-    this.context.events.emit('process:exit', { name: proc.config.name, code, signal });
+
+      const delay = this.calculateRestartDelay(proc);
+
+      proc.stopTimeout = setTimeout(() => {
+        proc.stopTimeout = undefined;
+        if (proc.status === 'stopping' || proc.status === 'stopped') {
+          return;
+        }
+        if (proc.config.mode === 'cluster' && typeof proc.config.instances === 'number' && proc.config.instances > 1) {
+          this.startCluster(proc).then(() => {
+            proc.status = 'online';
+            proc.startTime = new Date();
+            this.startMetricsCollection(proc);
+          }).catch((err) => {
+            this.logger.error(`Failed to restart cluster: ${proc.config.name}`, undefined, err);
+            proc.status = 'errored';
+          });
+        } else {
+          this.startFork(proc).then(() => {
+            proc.status = 'online';
+            proc.startTime = new Date();
+            this.startMetricsCollection(proc);
+          }).catch((err) => {
+            this.logger.error(`Failed to restart: ${proc.config.name}`, undefined, err);
+            proc.status = 'errored';
+          });
+        }
+      }, delay);
+    } else {
+      proc.status = code === 0 ? 'stopped' : 'errored';
+      this.context.events.emit('process:exit', { name: proc.config.name, code, signal });
+    }
   }
-}
 
   /**
    * Handle worker exit
@@ -469,10 +629,8 @@ private handleProcessExit(
     const shouldRestart = this.shouldRestart(proc, code);
 
     if (shouldRestart) {
-      // Store worker restart timeout in a map attached to proc
       const workerTimeouts = (proc as ManagedProcessInfo & { workerTimeouts?: Map<number, NodeJS.Timeout> }).workerTimeouts ??= new Map();
 
-      // Clear existing timeout for this worker
       const existingTimeout = workerTimeouts.get(index);
       if (existingTimeout) {
         clearTimeout(existingTimeout);
@@ -481,7 +639,6 @@ private handleProcessExit(
       workerTimeouts.set(index, setTimeout(() => {
         workerTimeouts.delete(index);
         if (proc.status === 'stopping' || proc.status === 'stopped') {
-          // Process was manually stopped during restart delay
           return;
         }
         this.startWorker(proc, index).catch((err) => {
@@ -492,11 +649,34 @@ private handleProcessExit(
   }
 
   /**
+   * Calculate restart delay with backoff
+   */
+  private calculateRestartDelay(proc: ManagedProcessInfo): number {
+    const baseDelay = proc.config.restartDelay ?? 1000;
+    const strategy = proc.config.backoffStrategy ?? 'fixed';
+    const multiplier = proc.config.backoffMultiplier ?? 2;
+    const maxDelay = proc.config.maxBackoffDelay ?? 30000;
+
+    switch (strategy) {
+      case 'linear':
+        return Math.min(baseDelay * proc.restartCount, maxDelay);
+      case 'exponential': {
+        const delay = baseDelay * Math.pow(multiplier, proc.restartCount - 1);
+        const jitter = delay * 0.1 * Math.random();
+        return Math.min(delay + jitter, maxDelay);
+      }
+      case 'fixed':
+      default:
+        return baseDelay;
+    }
+  }
+
+  /**
    * Check if process should restart
    */
   private shouldRestart(proc: ManagedProcessInfo, code: number | null): boolean {
     const strategy = proc.config.autoRestart;
-    
+
     if (strategy === false || strategy === 'never') {
       return false;
     }
@@ -548,9 +728,12 @@ private handleProcessExit(
         if (typeof value === 'string') {
           env[key] = value;
         }
-        // TODO: Handle SecretReference
       }
     }
+
+    // Add OpenDaemon metadata
+    env['OD_PROCESS_NAME'] = config.name;
+    env['OD_MANAGED'] = '1';
 
     return env;
   }
@@ -586,21 +769,49 @@ private handleProcessExit(
       pids: proc.pids,
       restartCount: proc.restartCount,
       uptime,
-      cpu: 0, // TODO: Implement CPU monitoring
-      memory: 0, // TODO: Implement memory monitoring
+      cpu: proc.cpu,
+      memory: proc.memory,
       script: proc.config.script,
       cwd: proc.config.cwd,
       createdAt: now.toISOString(),
       startedAt: proc.startTime?.toISOString(),
       errorMessage: proc.status === 'errored' ? 'Process exited with error' : undefined,
-      env: {}, // Don't expose env for security
+      env: {},
     };
   }
 
   /**
    * Get all managed processes (for WebUI and other plugins)
    */
-  getProcesses(): ManagedProcessInfo[] {
-    return Array.from(this.processes.values());
+  getProcesses(): ProcessInfo[] {
+    return Array.from(this.processes.values()).map((proc) => this.toProcessInfo(proc));
+  }
+
+  /**
+   * Start a process (for WebUI and other plugins)
+   */
+  async startProcessFromPlugin(config: ProcessConfig): Promise<ProcessInfo> {
+    return this.startProcess(config);
+  }
+
+  /**
+   * Stop a process (for WebUI and other plugins)
+   */
+  async stopProcessFromPlugin(name: string): Promise<void> {
+    return this.stopProcess({ name });
+  }
+
+  /**
+   * Restart a process (for WebUI and other plugins)
+   */
+  async restartProcessFromPlugin(name: string): Promise<ProcessInfo> {
+    return this.restartProcess({ name });
+  }
+
+  /**
+   * Delete a process (for WebUI and other plugins)
+   */
+  async deleteProcessFromPlugin(name: string): Promise<void> {
+    return this.deleteProcess({ name });
   }
 }
