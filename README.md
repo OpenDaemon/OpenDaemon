@@ -14,6 +14,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
 - **Metrics** - Host, process and app metrics (`opendaemon/runtime` counters, gauges, histograms) as Prometheus text at `/metrics` or JSON; `maxMemory` restarts
 - **Persistent Logs** - JSON-lines log files per process with size rotation, gzip, search (`--grep`, `--since`) and live follow (`-f`)
+- **Watch Mode** - `--watch` restarts on file changes (recursive `fs.watch`, ignore patterns, debounce)
 - **Dependencies** - Start order from `dependencies` (waits for healthy dependencies), reverse-order shutdown, cycle detection
 - **Health Checks** - HTTP(S), TCP, script, command, memory, CPU and composite checks with automatic restart or stop
 - **IPC Communication** - Binary frame protocol + JSON-RPC 2.0 over Unix sockets / TCP
@@ -142,6 +143,22 @@ apps:
 
 Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their environment. Checks pause while a process is restarting. `notify` and `none` only report the state: it shows in `od health` and is emitted as the `health:status:unhealthy` event. `grpc` checks are not supported yet.
 
+## Watch Mode
+
+Use `od start app.js --watch` or set `watch` on an app, and the process restarts gracefully when its files change:
+
+```yaml
+apps:
+  - name: dev-server
+    script: ./src/server.js
+    watch:
+      paths: [./src]              # default: the app's cwd (or its script's directory)
+      ignore: ['*.test.js', 'src/generated/**']
+      delay: 1000                 # debounce in ms (default 1000)
+```
+
+`watch: true` uses the defaults. `node_modules`, `.git`, `*.log`, `logs`, `coverage`, `dist` and the daemon's log directory are always ignored. In a pattern, `*` and `?` match within one path segment and `**` matches across segments. A pattern without `/` matches any segment. A burst of saves causes one restart, and each change is logged.
+
 ## Dependencies
 
 List the apps an app needs in `dependencies`. Independent apps start in parallel. An app with dependencies starts once each of them is online, and healthy if it has a `healthCheck`:
@@ -216,7 +233,7 @@ Set `maxMemory: '512M'` on an app (or `od start app.js --max-memory 512M`) to re
 
 | Command | Description |
 |---------|-------------|
-| `od start <script>` | Start a process (`-n` name, `-i` instances, `--env KEY=value`, `--max-memory 512M`) |
+| `od start <script>` | Start a process (`-n` name, `-i` instances, `--env KEY=value`, `--max-memory 512M`, `--watch`) |
 | `od stop <name>` | Stop a process |
 | `od restart <name>` | Restart a process |
 | `od delete <name>` | Delete a process |
@@ -269,6 +286,7 @@ opendaemon/
 │       ├── health-check/      # Scheduled health checks, thresholds, restart/stop actions
 │       ├── log-manager/       # Persistent JSON-lines logs, rotation, search, follow
 │       ├── metrics-collector/ # Host/process/app metrics, Prometheus and JSON
+│       ├── watch-mode/        # Restart on file changes
 │       └── webui/             # HTTP server, REST API, dashboard HTML
 ├── tests/
 │   ├── unit/                  # Unit tests

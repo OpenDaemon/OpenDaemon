@@ -220,6 +220,7 @@ export class StartCommand implements Command {
         cwd: process.cwd(),
         ...(Object.keys(env).length > 0 ? { env } : {}),
         ...(maxMemory === undefined ? {} : { maxMemory }),
+        ...(options['watch'] === true ? { watch: true } : {}),
       };
 
       await client.startProcess(processConfig);

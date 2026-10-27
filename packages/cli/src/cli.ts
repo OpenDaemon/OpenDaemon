@@ -97,6 +97,13 @@ async function main(): Promise<void> {
   });
 
   parser.addOption({
+    name: 'watch',
+    alias: 'w',
+    type: 'boolean',
+    description: 'Restart the process when files in its directory change',
+  });
+
+  parser.addOption({
     name: 'max-memory',
     type: 'string',
     description: 'Restart the process when it exceeds this memory (e.g. 512M)',

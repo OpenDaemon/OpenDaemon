@@ -512,7 +512,7 @@ Phase 9: Final Polish
 - [x] Metrics collection
 - [ ] Secret manager
 - [ ] TUI dashboard
-- [ ] Watch mode
+- [x] Watch mode
 - [ ] Scheduler
 - [ ] Deploy strategies
 

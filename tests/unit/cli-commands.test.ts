@@ -313,6 +313,11 @@ describe('CLI Commands', () => {
         }));
       });
 
+      it('should enable watch mode with --watch', async () => {
+        await cmd.execute(['app.js'], { watch: true });
+        expect(mockStartProcess).toHaveBeenCalledWith(expect.objectContaining({ watch: true }));
+      });
+
       it('should reject an --env entry without "="', async () => {
         await cmd.execute(['app.js'], { env: ['PORT'] });
         expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid --env "PORT"'));

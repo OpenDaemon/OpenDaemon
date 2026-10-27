@@ -222,7 +222,8 @@ export interface MetricSnapshot {
  * Watch mode configuration
  */
 export interface WatchConfig {
-  paths: string[];
+  /** Default: the app's cwd, or its script's directory */
+  paths?: string[];
   ignore?: string[];
   delay?: number;
   clearConsole?: boolean;
