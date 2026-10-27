@@ -30,7 +30,6 @@
   "files": [
     "packages/*/dist/**"
   ],
-
   "engines": {
     "node": ">=20.0.0"
   },
@@ -50,6 +49,7 @@
   },
   "dependencies": {},
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^3.0.0",
     "@vitest/ui": "^3.0.0",
@@ -58,6 +58,7 @@
     "rimraf": "^6.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.72.1",
     "vitest": "^3.0.0"
   },
   "keywords": [

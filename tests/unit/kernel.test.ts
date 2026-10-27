@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Kernel } from '../../packages/core/src/kernel.js';
-import { ErrorCode } from '../../packages/core/src/errors/index.js';
 import type { Plugin, PluginContext } from '../../packages/core/src/plugins/types.js';
+import type { DaemonConfig, MetricDefinition } from '../../packages/core/src/types.js';
 
 describe('Kernel', () => {
   let kernel: Kernel;
@@ -189,7 +189,7 @@ describe('Kernel', () => {
 
     it('should store config', async () => {
       const config = { test: true };
-      await kernel.start(config);
+      await kernel.start(config as DaemonConfig);
       
       expect(kernel.getConfig()).toEqual(config);
       
@@ -477,7 +477,7 @@ describe('Kernel', () => {
       await kernel.start();
 
       // Call registerMetric - should log warning
-      receivedContext?.registerMetric({});
+      receivedContext?.registerMetric({} as MetricDefinition);
 
       await kernel.stop();
     });
@@ -726,6 +726,7 @@ describe('Kernel', () => {
         version: '1.0.0',
         description: 'Error plugin',
         install: vi.fn().mockImplementation(() => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error -- test deliberately throws a non-Error string
           throw 'String error';
         }),
       };
@@ -741,6 +742,7 @@ describe('Kernel', () => {
         version: '1.0.0',
         description: 'Error plugin',
         install: vi.fn().mockImplementation(() => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error -- test deliberately throws a non-Error object
           throw { message: 'Object error' };
         }),
       };

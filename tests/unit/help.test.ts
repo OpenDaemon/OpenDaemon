@@ -21,7 +21,7 @@ vi.mock('url', () => ({
 vi.mock('./output.js', () => ({
   term: {
     bold: (text: string) => `**${text}**`,
-    color: (color: string, text: string) => text,
+    color: (_color: string, text: string) => text,
   },
 }));
 
@@ -102,7 +102,7 @@ describe('Help Module', () => {
       showHelp();
 
       expect(mockConsoleLog).toHaveBeenCalled();
-      const helpOutput = mockConsoleLog.mock.calls[0][0];
+      const helpOutput = mockConsoleLog.mock.calls[0]![0];
       expect(helpOutput).toContain('OpenDaemon');
       expect(helpOutput).toContain('USAGE');
       expect(helpOutput).toContain('COMMANDS');
@@ -116,7 +116,7 @@ describe('Help Module', () => {
       const { showHelp } = await import('../../packages/cli/src/commands/help.js');
       showHelp();
 
-      const helpOutput = mockConsoleLog.mock.calls[0][0];
+      const helpOutput = mockConsoleLog.mock.calls[0]![0];
       expect(helpOutput).toContain('OpenDaemon');
       expect(helpOutput).toContain('start');
       expect(helpOutput).toContain('stop');

@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fileURLToPath } from 'url';
 
 // Mock console
 const mockConsoleLog = vi.fn();
@@ -40,7 +39,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected - module may throw
       }
       
@@ -56,7 +55,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
       
@@ -69,7 +68,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected to exit with error
       }
     });
@@ -79,7 +78,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -89,7 +88,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -99,7 +98,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -109,7 +108,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -130,7 +129,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -142,7 +141,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -152,7 +151,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -162,7 +161,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -172,7 +171,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -182,7 +181,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -192,7 +191,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -202,7 +201,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -212,7 +211,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -224,7 +223,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -234,7 +233,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -244,7 +243,7 @@ describe('CLI Entry Point', () => {
       
       try {
         await import('../../packages/cli/src/cli.js');
-      } catch (e) {
+      } catch {
         // Expected
       }
     });
@@ -261,17 +260,19 @@ describe('CLI Entry Point', () => {
       }
     });
 
-    it('should handle string errors', async () => {
+    it('should handle string errors', () => {
       // Simulate command that throws string
       const testThrow = () => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- test deliberately throws a non-Error string
         throw 'String error';
       };
       
       expect(() => testThrow()).toThrow('String error');
     });
 
-    it('should handle object errors', async () => {
+    it('should handle object errors', () => {
       const testThrow = () => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- test deliberately throws a non-Error object
         throw { message: 'Object error' };
       };
       

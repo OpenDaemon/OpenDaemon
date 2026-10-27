@@ -50,7 +50,7 @@ vi.mock('../../packages/cli/src/output.js', () => ({
 
 describe('CLI Entry Point Integration', () => {
   let originalArgv: string[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   let exitSpy: any;
 
   beforeEach(() => {

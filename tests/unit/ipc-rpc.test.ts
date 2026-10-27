@@ -52,6 +52,14 @@ describe('JSON-RPC', () => {
       });
     });
 
+    it('should send null result for void methods so the response survives a round trip', () => {
+      const response = createResponse(7, undefined);
+
+      expect(response.result).toBeNull();
+      const parsed = parseResponse(Buffer.from(JSON.stringify(response)));
+      expect(parsed).toEqual({ jsonrpc: '2.0', id: 7, result: null });
+    });
+
     it('should create response with null id', () => {
       const response = createResponse(null, 'data');
       

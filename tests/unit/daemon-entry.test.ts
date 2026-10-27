@@ -8,7 +8,6 @@ const mockUnlinkSync = vi.fn();
 const mockProcessKill = vi.fn();
 const mockProcessOn = vi.fn();
 const mockProcessExit = vi.fn();
-const mockConsoleError = vi.fn();
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
 
@@ -52,11 +51,11 @@ vi.mock('@opendaemon/core', async () => {
   };
 });
 
-vi.mock('../../plugins/process-manager/src/index.js', () => ({
+vi.mock('../../packages/plugins/process-manager/src/index.js', () => ({
   ProcessManagerPlugin: vi.fn(),
 }));
 
-vi.mock('../../plugins/config-manager/src/index.js', () => ({
+vi.mock('../../packages/plugins/config-manager/src/index.js', () => ({
   ConfigManagerPlugin: vi.fn(),
 }));
 
@@ -93,7 +92,7 @@ describe('Daemon Entry Point', () => {
       );
     });
 
-    it('should check for existing daemon', async () => {
+    it('should check for existing daemon', () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue('12345');
       mockProcessKill.mockImplementation(() => {
@@ -117,7 +116,7 @@ describe('Daemon Entry Point', () => {
       }
     });
 
-    it('should exit if daemon already running', async () => {
+    it('should exit if daemon already running', () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue('12345');
       
@@ -131,7 +130,6 @@ describe('Daemon Entry Point', () => {
       });
       
       // Simulate the check - process IS running, so it should exit
-      let exitCalled = false;
       const checkRunning = () => {
         if (mockExistsSync('/test/opendaemon.pid')) {
           const pid = parseInt(mockReadFileSync('/test/opendaemon.pid', 'utf-8'), 10);
@@ -139,7 +137,6 @@ describe('Daemon Entry Point', () => {
             mockProcessKill(pid, 0);
             // If we get here, process is running - should exit
             mockProcessExit(1);
-            exitCalled = true;
           } catch {
             // Process not running - continue
           }
@@ -157,7 +154,7 @@ describe('Daemon Entry Point', () => {
       expect(mockProcessExit).toHaveBeenCalledWith(1);
     });
 
-    it('should overwrite stale PID file', async () => {
+    it('should overwrite stale PID file', () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue('99999');
       mockProcessKill.mockImplementation(() => {
@@ -199,8 +196,8 @@ describe('Daemon Entry Point', () => {
 
     it('should register plugins', async () => {
       const { Kernel } = await import('@opendaemon/core');
-      const { ConfigManagerPlugin } = await import('../../plugins/config-manager/src/index.js');
-      const { ProcessManagerPlugin } = await import('../../plugins/process-manager/src/index.js');
+      const { ConfigManagerPlugin } = await import('../../packages/plugins/config-manager/src/index.js');
+      const { ProcessManagerPlugin } = await import('../../packages/plugins/process-manager/src/index.js');
       
       const kernel = new Kernel();
       kernel.registerPlugin(new ConfigManagerPlugin());
@@ -246,7 +243,7 @@ describe('Daemon Entry Point', () => {
       expect(server.start).toHaveBeenCalled();
     });
 
-    it('should log successful startup', async () => {
+    it('should log successful startup', () => {
       mockLoggerInfo('Daemon started successfully');
       expect(mockLoggerInfo).toHaveBeenCalledWith('Daemon started successfully');
     });
@@ -254,13 +251,12 @@ describe('Daemon Entry Point', () => {
 
   describe('shutdown handling', () => {
     it('should handle SIGTERM', async () => {
-      const handlers: Record<string, Function> = {};
-      const originalOn = process.on;
+      const handlers: Record<string, (...args: any[]) => unknown> = {};
       
-      vi.spyOn(process, 'on').mockImplementation((event: string, handler: (...args: any[]) => void) => {
+      vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return process;
-      });
+      }) as typeof process.on);
       
       const { Kernel } = await import('@opendaemon/core');
       const { IpcServer } = await import('@opendaemon/core');
@@ -279,7 +275,7 @@ describe('Daemon Entry Point', () => {
         mockProcessExit(0);
       };
       
-      process.on('SIGTERM', () => shutdown('SIGTERM'));
+      process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
       
       expect(process.on).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
       
@@ -305,7 +301,7 @@ describe('Daemon Entry Point', () => {
         mockProcessExit(0);
       };
       
-      const handler = () => shutdown('SIGINT');
+      const handler = () => { void shutdown('SIGINT'); };
       process.on('SIGINT', handler);
       
       expect(process.on).toHaveBeenCalledWith('SIGINT', expect.any(Function));
@@ -325,7 +321,7 @@ describe('Daemon Entry Point', () => {
         mockProcessExit(0);
       };
       
-      const handler = () => shutdown('SIGHUP');
+      const handler = () => { void shutdown('SIGHUP'); };
       process.on('SIGHUP', handler);
       
       expect(process.on).toHaveBeenCalledWith('SIGHUP', expect.any(Function));
@@ -355,7 +351,7 @@ describe('Daemon Entry Point', () => {
       expect(() => new Kernel()).toThrow('Startup failed');
     });
 
-    it('should log fatal errors', async () => {
+    it('should log fatal errors', () => {
       const error = new Error('Fatal error');
       mockLoggerError('Failed to start daemon', undefined, error);
       
@@ -366,7 +362,7 @@ describe('Daemon Entry Point', () => {
       );
     });
 
-    it('should exit on fatal error', async () => {
+    it('should exit on fatal error', () => {
       mockProcessExit.mockImplementation((code?: number) => {
         throw new Error(`Exit ${code}`);
       });
@@ -384,8 +380,8 @@ describe('Daemon Entry Point', () => {
       expect(fatalError).toThrow('Exit 1');
     });
 
-    it('should handle non-Error throws', async () => {
-      const error = 'String error';
+    it('should handle non-Error throws', () => {
+      const error: unknown = 'String error';
       const wrappedError = error instanceof Error ? error : new Error(String(error));
       
       expect(wrappedError).toBeInstanceOf(Error);
@@ -418,7 +414,7 @@ describe('Daemon Entry Point', () => {
       const { IpcServer } = await import('@opendaemon/core');
       
       const kernel = new Kernel();
-      const server = new IpcServer({ socketPath: '/test/opendaemon.sock' });
+      new IpcServer({ socketPath: '/test/opendaemon.sock' });
       
       const shutdownHandler = async () => {
         await kernel.stop();

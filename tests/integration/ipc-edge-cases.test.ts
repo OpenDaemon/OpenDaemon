@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { IpcServer } from '../../packages/core/src/ipc/server.js';
 import { IpcClient } from '../../packages/core/src/ipc/client.js';
-import { createServer, type Server, type Socket } from 'net';
 
 describe('IPC Server Edge Cases', () => {
   let server: IpcServer;
@@ -9,8 +8,8 @@ describe('IPC Server Edge Cases', () => {
 
   beforeEach(() => {
     socketPath = process.platform === 'win32' 
-      ? '\\\\.\\pipe\\test-ipc-edge-' + Date.now()
-      : '/tmp/test-ipc-edge-' + Date.now() + '.sock';
+      ? '\\\\.\\pipe\\test-ipc-edge-' + String(Date.now())
+      : '/tmp/test-ipc-edge-' + String(Date.now()) + '.sock';
     server = new IpcServer({ socketPath });
   });
 
@@ -136,7 +135,7 @@ describe('IPC Server Edge Cases', () => {
 
       try {
         // Send notification - may or may not be supported
-        await client.notify('notify.method', { test: true });
+        client.notify('notify.method', { test: true });
 
         // Give it time to process
         await new Promise(resolve => setTimeout(resolve, 100));

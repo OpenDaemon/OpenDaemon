@@ -55,7 +55,7 @@ describe('Error System', () => {
       );
 
       const json = error.toJSON();
-      expect(json.cause).toEqual({
+      expect(json['cause']).toEqual({
         name: 'OriginalError',
         message: 'Original error',
       });
@@ -70,10 +70,10 @@ describe('Error System', () => {
 
       const json = error.toJSON();
 
-      expect(json.name).toBe('DaemonError');
-      expect(json.code).toBe(ErrorCode.DAEMON_NOT_RUNNING);
-      expect(json.message).toBe('Test error');
-      expect(json.context).toEqual({ key: 'value' });
+      expect(json['name']).toBe('DaemonError');
+      expect(json['code']).toBe(ErrorCode.DAEMON_NOT_RUNNING);
+      expect(json['message']).toBe('Test error');
+      expect(json['context']).toEqual({ key: 'value' });
     });
   });
 

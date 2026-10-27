@@ -106,7 +106,7 @@ describe('StateStore', () => {
       const store = new StateStore();
 
       store.set('counter', 0);
-      store.update('counter', (old) => (old ?? 0) + 1);
+      store.update<number>('counter', (old) => (old ?? 0) + 1);
 
       expect(store.get('counter')).toBe(1);
     });
@@ -204,7 +204,7 @@ describe('StateStore', () => {
       const handler = vi.fn();
 
       store.subscribe('counter', handler);
-      store.update('counter', (old) => (old ?? 0) + 1);
+      store.update<number>('counter', (old) => (old ?? 0) + 1);
 
       expect(store.get('counter')).toBe(1);
       expect(handler).toHaveBeenCalledWith(1, undefined);
@@ -227,7 +227,7 @@ describe('StateStore', () => {
       const store = new StateStore();
 
       // Should not throw
-      expect(() => store.clear()).not.toThrow();
+      expect(() => { store.clear(); }).not.toThrow();
       expect(store.size()).toBe(0);
     });
 

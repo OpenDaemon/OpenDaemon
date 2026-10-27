@@ -1,6 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { ChildProcess } from 'child_process';
-import { EventEmitter } from 'events';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Create a mock for spawn
 const mockSpawn = vi.fn();
@@ -80,8 +78,6 @@ describe('Signal Handling', () => {
 });
 
 describe('PID File Operations', () => {
-  const fs = require('fs');
-  const path = require('path');
   
   beforeEach(() => {
     vi.resetModules();

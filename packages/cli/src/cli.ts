@@ -192,7 +192,7 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
 }
 
 // Run main
-main().catch(err => {
+main().catch((err: unknown) => {
   console.error('Unexpected error:', err);
   process.exit(1);
 });

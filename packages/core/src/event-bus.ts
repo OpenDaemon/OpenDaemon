@@ -46,9 +46,9 @@ interface Subscription {
  * ```
  */
 export class EventBus {
-  private subscriptions = new Map<string, Set<Subscription>>();
-  private onceSubscriptions = new Map<string, Set<Subscription>>();
-  private wildcardSubscriptions = new Set<Subscription>();
+  private readonly subscriptions = new Map<string, Set<Subscription>>();
+  private readonly onceSubscriptions = new Map<string, Set<Subscription>>();
+  private readonly wildcardSubscriptions = new Set<Subscription>();
 
   /**
    * Subscribe to an event
@@ -68,7 +68,7 @@ export class EventBus {
       this.subscriptions.set(event, subs);
     }
 
-    return () => this.off(event, handler);
+    return () => { this.off(event, handler); };
   }
 
   /**
@@ -94,7 +94,7 @@ export class EventBus {
       this.onceSubscriptions.set(event, subs);
     }
 
-    return () => this.off(event, handler);
+    return () => { this.off(event, handler); };
   }
 
   /**
@@ -149,14 +149,16 @@ export class EventBus {
    * @returns Promise that resolves when all handlers complete
    */
   async emitAsync(event: string, data?: unknown): Promise<void> {
-    const promises: Array<Promise<void> | void> = [];
+    // Each handler runs inside a Promise executor so a synchronous throw is caught
+    // like a rejection and cannot skip the remaining handlers
+    const promises: Array<Promise<void>> = [];
 
     // Exact matches
     const subscriptions = this.subscriptions.get(event);
     if (subscriptions) {
       for (const sub of subscriptions) {
         promises.push(
-          Promise.resolve(sub.handler(data)).catch(err => {
+          new Promise<void>((resolve) => { resolve(sub.handler(data)); }).catch((err: unknown) => {
             console.error(`Error in async event handler for ${event}:`, err);
           })
         );
@@ -168,7 +170,7 @@ export class EventBus {
     if (onceSubs) {
       for (const sub of onceSubs) {
         promises.push(
-          Promise.resolve(sub.handler(data)).catch(err => {
+          new Promise<void>((resolve) => { resolve(sub.handler(data)); }).catch((err: unknown) => {
             console.error(`Error in async once event handler for ${event}:`, err);
           })
         );
@@ -180,7 +182,7 @@ export class EventBus {
     for (const sub of this.wildcardSubscriptions) {
       if (sub.regex?.test(event)) {
         promises.push(
-          Promise.resolve(sub.handler(data)).catch(err => {
+          new Promise<void>((resolve) => { resolve(sub.handler(data)); }).catch((err: unknown) => {
             console.error(`Error in async wildcard handler for ${event}:`, err);
           })
         );

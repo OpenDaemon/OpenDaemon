@@ -85,7 +85,7 @@ export class DaemonError extends Error {
   constructor(
     code: ErrorCode,
     message: string,
-    context: ErrorContext | undefined = undefined,
+    context?: ErrorContext,
     cause?: Error
   ) {
     super(message, { cause });
@@ -93,10 +93,8 @@ export class DaemonError extends Error {
     this.code = code;
     this.context = context;
 
-    // Maintains proper stack trace for where our error was thrown
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, DaemonError);
-    }
+    // Maintains proper stack trace for where our error was thrown (always present on V8/Node)
+    Error.captureStackTrace(this, DaemonError);
   }
 
   /**
@@ -147,9 +145,9 @@ export class ConfigError extends DaemonError {
   constructor(
     code: ErrorCode,
     message: string,
-    configPath: string | undefined = undefined,
-    context: ErrorContext | undefined = undefined,
-    cause: Error | undefined = undefined
+    configPath?: string,
+    context?: ErrorContext,
+    cause?: Error
   ) {
     super(code, message, { ...context, configPath }, cause);
     this.name = 'ConfigError';

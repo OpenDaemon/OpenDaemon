@@ -20,7 +20,7 @@ export interface LogEntry {
   levelName: string;
   namespace: string;
   message: string;
-  data: unknown | undefined;
+  data: unknown;
   error: Error | undefined;
 }
 
@@ -46,7 +46,7 @@ export class Logger {
   private static globalLevel: LogLevel = LogLevel.INFO;
   private static handlers: LogHandler[] = [Logger.consoleHandler];
 
-  private namespace: string;
+  private readonly namespace: string;
 
   /**
    * Create a new logger with namespace
@@ -177,8 +177,8 @@ export class Logger {
   private log(
     level: LogLevel,
     message: string,
-    data: unknown = undefined,
-    error: Error | undefined = undefined
+    data?: unknown,
+    error?: Error
   ): void {
     if (level < Logger.globalLevel) {
       return;
@@ -206,7 +206,7 @@ export class Logger {
   /**
    * Default console handler
    */
-  private static consoleHandler(entry: LogEntry): void {
+  private static consoleHandler(this: void, entry: LogEntry): void {
     const timestamp = entry.timestamp;
     const level = entry.levelName.padEnd(5);
     const namespace = entry.namespace;

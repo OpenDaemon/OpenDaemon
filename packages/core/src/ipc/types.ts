@@ -46,7 +46,8 @@ export interface IpcSocket {
 /**
  * RPC method handler
  */
-export type RpcMethodHandler = (params: unknown, socket: IpcSocket) => unknown | Promise<unknown>;
+// The result may be a value or a Promise of one; `unknown` already covers both
+export type RpcMethodHandler = (params: unknown, socket: IpcSocket) => unknown;
 
 /**
  * IPC Server interface

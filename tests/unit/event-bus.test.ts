@@ -90,6 +90,18 @@ describe('EventBus', () => {
   });
 
   describe('emitAsync', () => {
+    it('should isolate a handler that throws synchronously from the other handlers', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const bus = new EventBus();
+      const second = vi.fn();
+      bus.on('test', () => { throw new Error('boom'); });
+      bus.on('test', second);
+
+      await expect(bus.emitAsync('test', 1)).resolves.toBeUndefined();
+      expect(second).toHaveBeenCalledWith(1);
+      errorSpy.mockRestore();
+    });
+
     it('should wait for async handlers', async () => {
       const bus = new EventBus();
       const results: number[] = [];
@@ -349,7 +361,7 @@ describe('EventBus', () => {
       const handler = vi.fn();
 
       // Should not throw
-      expect(() => bus.off('nonexistent', handler)).not.toThrow();
+      expect(() => { bus.off('nonexistent', handler); }).not.toThrow();
     });
 
     it('should remove all wildcard subscriptions when off called without handler (lines 208-213)', () => {

@@ -27,8 +27,8 @@ export type StateSubscriber<T> = (value: T, oldValue: T | undefined) => void;
  * ```
  */
 export class StateStore {
-  private data = new Map<string, unknown>();
-  private subscribers = new Map<string, Set<StateSubscriber<unknown>>>();
+  private readonly data = new Map<string, unknown>();
+  private readonly subscribers = new Map<string, Set<StateSubscriber<unknown>>>();
 
   /**
    * Get a value from the store

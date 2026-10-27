@@ -13,7 +13,7 @@ describe('IPC', () => {
   let server: IpcServer;
   let client: IpcClient;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     // Clean up any existing socket (Unix only)
     if (process.platform !== 'win32' && existsSync(socketPath)) {
       unlinkSync(socketPath);

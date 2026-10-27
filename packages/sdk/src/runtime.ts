@@ -18,7 +18,7 @@ export interface MetricValue {
  * Counter metric
  */
 export class Counter {
-  private values = new Map<string, number>();
+  private readonly values = new Map<string, number>();
   readonly name: string;
   readonly help: string;
 
@@ -55,7 +55,7 @@ export class Counter {
  * Gauge metric
  */
 export class Gauge {
-  private values = new Map<string, number>();
+  private readonly values = new Map<string, number>();
   readonly name: string;
   readonly help: string;
 
@@ -99,8 +99,8 @@ export class Gauge {
  * Histogram metric
  */
 export class Histogram {
-  private buckets = new Map<string, number[]>();
-  private bucketBounds: number[];
+  private readonly buckets = new Map<string, number[]>();
+  private readonly bucketBounds: number[];
   readonly name: string;
   readonly help: string;
 
@@ -168,9 +168,9 @@ export class Histogram {
  * Metrics registry
  */
 class MetricsRegistry {
-  private counters = new Map<string, Counter>();
-  private gauges = new Map<string, Gauge>();
-  private histograms = new Map<string, Histogram>();
+  private readonly counters = new Map<string, Counter>();
+  private readonly gauges = new Map<string, Gauge>();
+  private readonly histograms = new Map<string, Histogram>();
 
   /**
    * Create or get a counter

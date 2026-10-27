@@ -2,8 +2,9 @@ import type { OptionValue } from '../parser.js';
 import { term } from '../output.js';
 import { CliClient } from '../client.js';
 import { resolve } from 'path';
-import { existsSync, readFileSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync, openSync, closeSync, statSync } from 'fs';
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 
 /**
  * Command handler interface
@@ -222,9 +223,9 @@ export class StopCommand implements Command {
   options = [{ name: 'json', type: 'boolean' as const, description: 'Output as JSON' }];
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
-    if (args.length === 0) { term.error('No process name specified'); process.exit(1); }
-
     const name = args[0];
+    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
+
     const spinner = term.spinner(`Stopping ${name}...`);
     spinner.start();
 
@@ -251,9 +252,9 @@ export class RestartCommand implements Command {
   options = [];
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
-    if (args.length === 0) { term.error('No process name specified'); process.exit(1); }
-
     const name = args[0];
+    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
+
     const spinner = term.spinner(`Restarting ${name}...`);
     spinner.start();
 
@@ -280,9 +281,9 @@ export class DeleteCommand implements Command {
   options = [{ name: 'json', type: 'boolean' as const, description: 'Output as JSON' }];
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
-    if (args.length === 0) { term.error('No process name specified'); process.exit(1); }
-
     const name = args[0];
+    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
+
     const spinner = term.spinner(`Deleting ${name}...`);
     spinner.start();
 
@@ -309,19 +310,20 @@ export class InfoCommand implements Command {
   options = [];
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
-    if (args.length === 0) { term.error('No process name specified'); process.exit(1); }
+    const name = args[0];
+    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
 
     try {
       const client = new CliClient();
       await client.connect();
-      const info = await client.getProcessInfo(args[0]) as {
+      const info = await client.getProcessInfo(name) as {
         id: number; name: string; status: string; mode: string; pid: number;
         instances: number; runningInstances: number; cpu: number; memory: number;
         restartCount: number; uptime: number; script: string; cwd: string; startedAt: string;
       } | null;
       await client.disconnect();
 
-      if (!info) { term.error(`Process "${args[0]}" not found`); process.exit(1); }
+      if (!info) { term.error(`Process "${name}" not found`); process.exit(1); }
 
       console.log(`\n${term.bold(info.name)}`);
       console.log(term.keyValue('  Status', info.status));
@@ -352,16 +354,17 @@ export class LogsCommand implements Command {
   options = [];
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
-    if (args.length === 0) { term.error('No process name specified'); process.exit(1); }
+    const name = args[0];
+    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
 
     try {
       const client = new CliClient();
       await client.connect();
-      const logs = await client.getLogs(args[0]);
+      const logs = await client.getLogs(name);
       await client.disconnect();
 
       if (Array.isArray(logs) && logs.length === 0) {
-        term.info(`No logs available for "${args[0]}"`);
+        term.info(`No logs available for "${name}"`);
         return;
       }
 
@@ -437,15 +440,32 @@ function formatDuration(ms: number): string {
 
 const PID_FILE = 'opendaemon.pid';
 const SOCKET_FILE = 'opendaemon.sock';
+const LOG_FILE = 'opendaemon.log';
+
+/**
+ * Last lines the daemon wrote to its log since `offset`, for explaining a failed start
+ */
+function readLogTail(logFile: string, offset: number, lines = 10): string {
+  try {
+    const output = readFileSync(logFile).subarray(offset).toString('utf-8').trim();
+    // Stack frames would push the actual error message out of view
+    const meaningful = output.split('\n').filter((line) => !/^\s+at /.test(line));
+    return meaningful.length > 0 ? `\n${meaningful.slice(-lines).join('\n')}` : '';
+  } catch {
+    return '';
+  }
+}
 
 function isProcessRunning(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
 function getDaemonScriptPath(): string {
-  const currentDir = resolve(process.cwd(), 'packages', 'cli');
-  const distPath = resolve(currentDir, 'dist', 'daemon.js');
-  const srcPath = resolve(currentDir, 'src', 'daemon.ts');
+  // Resolve next to this module, not cwd, so `od` works from any directory.
+  // Bundled: dist/chunk-*.js sits beside dist/daemon.js. Source: src/commands/../daemon.ts
+  const moduleDir = fileURLToPath(new URL('.', import.meta.url));
+  const distPath = resolve(moduleDir, 'daemon.js');
+  const srcPath = resolve(moduleDir, '..', 'daemon.ts');
   if (existsSync(distPath)) return distPath;
   return srcPath;
 }
@@ -493,7 +513,12 @@ export class DaemonCommand implements Command {
       const daemonScript = getDaemonScriptPath();
       if (!existsSync(daemonScript)) throw new Error(`Daemon script not found: ${daemonScript}`);
 
-      const child = spawn(process.execPath, [daemonScript], { detached: true, stdio: 'ignore' });
+      // Daemon output goes to a log file instead of being discarded, so a failed start can be explained
+      const logFile = resolve(LOG_FILE);
+      const logOffset = existsSync(logFile) ? statSync(logFile).size : 0;
+      const logFd = openSync(logFile, 'a');
+      const child = spawn(process.execPath, [daemonScript], { detached: true, stdio: ['ignore', logFd, logFd] });
+      closeSync(logFd);
 
       await new Promise<void>((resolve, reject) => {
         let attempts = 0;
@@ -504,7 +529,10 @@ export class DaemonCommand implements Command {
             const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
             if (isProcessRunning(pid)) { resolve(); return; }
           }
-          if (child.exitCode !== null && child.exitCode !== 0) { reject(new Error(`Daemon exited with code ${child.exitCode}`)); return; }
+          if (child.exitCode !== null && child.exitCode !== 0) {
+            reject(new Error(`Daemon exited with code ${child.exitCode}${readLogTail(logFile, logOffset)}`));
+            return;
+          }
           if (attempts >= maxAttempts) { reject(new Error('Daemon failed to start within timeout')); return; }
           setTimeout(checkStarted, 100);
         };
@@ -543,7 +571,7 @@ export class DaemonCommand implements Command {
         const checkStopped = () => {
           attempts++;
           if (!isProcessRunning(pid)) { resolve(); return; }
-          if (attempts >= 100) { try { process.kill(pid, 'SIGKILL'); } catch {} resolve(); return; }
+          if (attempts >= 100) { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } resolve(); return; }
           setTimeout(checkStopped, 100);
         };
         setTimeout(checkStopped, 100);

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   encodeFrame,
   decodeFrames,
@@ -92,8 +92,8 @@ describe('IPC Protocol', () => {
       const { frames, remaining } = decodeFrames(frame);
       
       expect(frames).toHaveLength(1);
-      expect(frames[0].type).toBe(FrameType.JSON_RPC_REQUEST);
-      expect(frames[0].payload.toString()).toBe('{"jsonrpc":"2.0"}');
+      expect(frames[0]!.type).toBe(FrameType.JSON_RPC_REQUEST);
+      expect(frames[0]!.payload.toString()).toBe('{"jsonrpc":"2.0"}');
       expect(remaining.length).toBe(0);
     });
 
@@ -107,8 +107,8 @@ describe('IPC Protocol', () => {
       const { frames, remaining } = decodeFrames(combined);
       
       expect(frames).toHaveLength(2);
-      expect(frames[0].type).toBe(FrameType.JSON_RPC_REQUEST);
-      expect(frames[1].type).toBe(FrameType.JSON_RPC_RESPONSE);
+      expect(frames[0]!.type).toBe(FrameType.JSON_RPC_REQUEST);
+      expect(frames[1]!.type).toBe(FrameType.JSON_RPC_RESPONSE);
       expect(remaining.length).toBe(0);
     });
 
@@ -169,8 +169,8 @@ describe('IPC Protocol', () => {
       const { frames } = decodeFrames(frame);
       
       expect(frames).toHaveLength(1);
-      expect(frames[0].type).toBe(FrameType.HEARTBEAT);
-      expect(frames[0].payload.length).toBe(0);
+      expect(frames[0]!.type).toBe(FrameType.HEARTBEAT);
+      expect(frames[0]!.payload.length).toBe(0);
     });
   });
 

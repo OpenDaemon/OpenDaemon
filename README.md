@@ -60,10 +60,12 @@ od daemon stop
 
 ## Configuration
 
-Create an `opendaemon.config.ts` (or `.js`, `.json`, `.yaml`):
+Create an `opendaemon.config.ts` (or `.js`, `.mjs`, `.json`, `.yaml`, or an `opendaemon` field in `package.json`) in the directory where you run `od daemon start`. TypeScript configs are loaded with Node's built-in type stripping and need Node.js >= 22.18; on older versions use `.js`, `.json` or `.yaml`.
+
+If the daemon fails to start, the reason is printed and its full output is in `opendaemon.log`.
 
 ```typescript
-import { defineConfig } from '@opendaemon/sdk';
+import { defineConfig } from 'opendaemon/sdk';
 
 export default defineConfig({
   daemon: {

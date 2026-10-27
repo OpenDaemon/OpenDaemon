@@ -5,6 +5,14 @@ import { Logger } from './utils/logger.js';
 import { PluginRegistry } from './plugins/registry.js';
 import type { Plugin, PluginContext } from './plugins/types.js';
 import type { DaemonConfig } from './types.js';
+import type { RpcMethodHandler } from './ipc/types.js';
+
+/**
+ * The part of IpcServer the kernel needs; kept structural to avoid a hard dependency
+ */
+interface MethodRegistrar {
+  registerMethod(name: string, handler: RpcMethodHandler): void;
+}
 import {
   DaemonError,
   ErrorCode,
@@ -55,15 +63,15 @@ type DaemonEvent =
  */
 export class Kernel {
   private config: DaemonConfig = {};
-  private stateMachine: StateMachine<DaemonState, DaemonEvent>;
-  private registry: PluginRegistry;
-  private events: EventBus;
-  private store: StateStore;
-  private logger: Logger;
+  private readonly stateMachine: StateMachine<DaemonState, DaemonEvent>;
+  private readonly registry: PluginRegistry;
+  private readonly events: EventBus;
+  private readonly store: StateStore;
+  private readonly logger: Logger;
   private watchdog: NodeJS.Timeout | undefined;
   private readonly watchdogInterval = 30000; // 30 seconds
-  private ipcServer: unknown; // Reference to IPC server for RPC method registration
-  private pendingMethodRegistrations: Array<{ name: string; handler: (...args: unknown[]) => unknown | Promise<unknown> }> = []; // Buffer for RPC methods registered before IPC server is ready
+  private ipcServer: MethodRegistrar | undefined; // Reference to IPC server for RPC method registration
+  private pendingMethodRegistrations: Array<{ name: string; handler: RpcMethodHandler }> = []; // Buffer for RPC methods registered before IPC server is ready
 
   /**
    * Create a new kernel instance
@@ -146,14 +154,14 @@ export class Kernel {
    *
    * @param server - IPC server instance
    */
-  setIpcServer(server: unknown): void {
+  setIpcServer(server: MethodRegistrar | undefined): void {
     this.ipcServer = server;
 
     // Flush any pending method registrations
     if (server && this.pendingMethodRegistrations.length > 0) {
       this.logger.debug(`Flushing ${this.pendingMethodRegistrations.length} pending RPC method registrations`);
       for (const { name, handler } of this.pendingMethodRegistrations) {
-        (server as any).registerMethod(name, handler);
+        server.registerMethod(name, handler);
       }
       this.pendingMethodRegistrations = [];
     }
@@ -230,7 +238,7 @@ export class Kernel {
         if (plugin.onStop) {
           const timeout = this.config.daemon?.shutdownTimeout ?? 10000;
           await this.withTimeout(
-            plugin.onStop(this.createPluginContext(plugin)),
+            Promise.resolve(plugin.onStop(this.createPluginContext(plugin))),
             timeout,
             `Plugin "${plugin.name}" onStop timeout`
           );
@@ -374,12 +382,12 @@ export class Kernel {
       registerMethod: (name: string, handler: unknown): void => {
         // Forward to IPC server if available, otherwise buffer for later
         if (this.ipcServer) {
-          (this.ipcServer as any).registerMethod(name, handler as (...args: unknown[]) => unknown | Promise<unknown>);
+          this.ipcServer.registerMethod(name, handler as RpcMethodHandler);
         } else {
           // Buffer the registration for when IPC server is set
           this.pendingMethodRegistrations.push({
             name,
-            handler: handler as (...args: unknown[]) => unknown | Promise<unknown>,
+            handler: handler as RpcMethodHandler,
           });
           this.logger.debug(`Buffered RPC method registration: ${name}`);
         }
@@ -406,7 +414,9 @@ export class Kernel {
    */
   private startWatchdog(): void {
     this.watchdog = setInterval(() => {
-      this.runHealthChecks();
+      this.runHealthChecks().catch((err: unknown) => {
+        this.logger.error('Watchdog health check failed', undefined, err as Error);
+      });
     }, this.watchdogInterval);
   }
 
@@ -460,22 +470,25 @@ export class Kernel {
   /**
    * Execute a promise with timeout
    */
-  private async withTimeout<T>(
-    promise: Promise<T> | void,
+  private async withTimeout(
+    promise: Promise<void>,
     timeoutMs: number,
     message: string
-  ): Promise<T | void> {
-    if (!promise) {
-      return;
+  ): Promise<void> {
+    // Clear the timer once the race settles, otherwise every successful call
+    // leaves a pending timeout that keeps the event loop alive
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new DaemonError(ErrorCode.TIMEOUT, message));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
-
-    return Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new DaemonError(ErrorCode.TIMEOUT, message));
-        }, timeoutMs);
-      }),
-    ]);
   }
 }

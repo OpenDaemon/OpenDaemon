@@ -113,10 +113,12 @@ export function createResponse(
   id: number | string | null,
   result: unknown
 ): JsonRpcResponse {
+  // JSON-RPC 2.0 requires a result member on success; undefined would be dropped by
+  // JSON.stringify and the client would discard the response, so void methods send null
   return {
     jsonrpc: '2.0',
     id,
-    result,
+    result: result === undefined ? null : result,
   };
 }
 

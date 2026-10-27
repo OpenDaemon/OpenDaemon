@@ -7,7 +7,8 @@ import type { DaemonError } from '../errors/index.js';
 /**
  * RPC handler function type
  */
-export type RpcHandler = (params: unknown) => unknown | Promise<unknown>;
+// The result may be a value or a Promise of one; `unknown` already covers both
+export type RpcHandler = (params: unknown) => unknown;
 
 /**
  * Hook handler function type
@@ -90,7 +91,7 @@ export interface PluginContext {
    * @param handler - Handler function
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerMethod(name: string, handler: (...args: any[]) => unknown | Promise<unknown>): void;
+  registerMethod(name: string, handler: (...args: any[]) => unknown): void;
 
   /**
    * Register a hook into another plugin's lifecycle

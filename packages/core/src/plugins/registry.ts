@@ -37,8 +37,8 @@ interface DependencyNode {
  * ```
  */
 export class PluginRegistry {
-  private plugins = new Map<string, RegisteredPlugin>();
-  private graph = new Map<string, DependencyNode>();
+  private readonly plugins = new Map<string, RegisteredPlugin>();
+  private readonly graph = new Map<string, DependencyNode>();
 
   /**
    * Register a plugin
@@ -247,7 +247,10 @@ export class PluginRegistry {
 
     // Sort by priority (stable sort)
     const sorted = order
-      .map(name => this.plugins.get(name)!)
+      .flatMap((name) => {
+        const registered = this.plugins.get(name);
+        return registered ? [registered] : [];
+      })
       .sort((a, b) => {
         const priorityA = a.plugin.priority ?? 100;
         const priorityB = b.plugin.priority ?? 100;

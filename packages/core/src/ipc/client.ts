@@ -25,10 +25,10 @@ interface PendingRequest {
 export class IpcClient implements IIpcClient {
   private socket: Socket | undefined;
   private buffer: Buffer = Buffer.alloc(0);
-  private pendingRequests = new Map<string | number, PendingRequest>();
-  private notificationHandlers: Array<(method: string, params: unknown) => void> = [];
-  private config: Required<IpcClientConfig>;
-  private logger: Logger;
+  private readonly pendingRequests = new Map<string | number, PendingRequest>();
+  private readonly notificationHandlers: Array<(method: string, params: unknown) => void> = [];
+  private readonly config: Required<IpcClientConfig>;
+  private readonly logger: Logger;
   private connected = false;
   private requestId = 0;
 
@@ -55,7 +55,7 @@ export class IpcClient implements IIpcClient {
         // Unix socket connection
         this.socket = createConnection(this.config.socketPath, () => {
           this.connected = true;
-          this.logger.info(`Connected to IPC server at ${this.config.socketPath}`);
+          this.logger.debug(`Connected to IPC server at ${this.config.socketPath}`);
           resolve();
         });
       } else {
@@ -65,7 +65,7 @@ export class IpcClient implements IIpcClient {
           port: this.config.port,
         }, () => {
           this.connected = true;
-          this.logger.info(`Connected to IPC server at ${this.config.host}:${this.config.port}`);
+          this.logger.debug(`Connected to IPC server at ${this.config.host}:${this.config.port}`);
           resolve();
         });
       }
@@ -76,7 +76,7 @@ export class IpcClient implements IIpcClient {
 
       this.socket.on('close', () => {
         this.connected = false;
-        this.logger.info('Disconnected from IPC server');
+        this.logger.debug('Disconnected from IPC server');
         
         // Reject all pending requests
         for (const request of this.pendingRequests.values()) {
@@ -99,12 +99,13 @@ export class IpcClient implements IIpcClient {
   /**
    * Disconnect from IPC server
    */
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     if (this.socket) {
       this.socket.end();
-      this.socket = undefined as unknown as Socket;
+      this.socket = undefined;
       this.connected = false;
     }
+    return Promise.resolve();
   }
 
   /**
@@ -118,7 +119,8 @@ export class IpcClient implements IIpcClient {
    * Call an RPC method
    */
   async call(method: string, params?: unknown): Promise<unknown> {
-    if (!this.connected || !this.socket) {
+    const socket = this.socket;
+    if (!this.connected || !socket) {
       throw new IpcError(ErrorCode.IPC_ERROR, 'Not connected to server');
     }
 
@@ -144,9 +146,9 @@ export class IpcClient implements IIpcClient {
       const payload = serialize(request);
       const frame = encodeFrame(FrameType.JSON_RPC_REQUEST, payload);
       
-      const success = this.socket!.write(frame);
+      const success = socket.write(frame);
       if (!success) {
-        this.socket!.once('drain', () => {
+        socket.once('drain', () => {
           this.logger.debug(`Request ${id} drained`);
         });
       }
@@ -186,7 +188,7 @@ export class IpcClient implements IIpcClient {
     this.buffer = Buffer.concat([this.buffer, data]);
 
     const { frames, remaining } = decodeFrames(this.buffer);
-    this.buffer = remaining as unknown as Buffer;
+    this.buffer = remaining;
 
     for (const frame of frames) {
       switch (frame.type) {

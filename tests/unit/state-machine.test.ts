@@ -91,12 +91,12 @@ describe('StateMachine', () => {
   });
 
   describe('getValidEvents', () => {
-    it('should return valid events for current state', () => {
+    it('should return valid events for current state', async () => {
       const machine = createMachine();
 
       expect(machine.getValidEvents()).toEqual(['start']);
 
-      machine.transition('start');
+      await machine.transition('start');
 
       expect(machine.getValidEvents()).toEqual(['pause', 'stop']);
     });
