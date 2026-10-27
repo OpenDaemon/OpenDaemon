@@ -14,6 +14,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
 - **Metrics** - Host, process and app metrics (`opendaemon/runtime` counters, gauges, histograms) as Prometheus text at `/metrics` or JSON; `maxMemory` restarts
 - **Persistent Logs** - JSON-lines log files per process with size rotation, gzip, search (`--grep`, `--since`) and live follow (`-f`)
+- **Dependencies** - Start order from `dependencies` (waits for healthy dependencies), reverse-order shutdown, cycle detection
 - **Health Checks** - HTTP(S), TCP, script, command, memory, CPU and composite checks with automatic restart or stop
 - **IPC Communication** - Binary frame protocol + JSON-RPC 2.0 over Unix sockets / TCP
 - **WebUI Dashboard** - Built-in web interface with authentication and live process monitoring
@@ -140,6 +141,26 @@ apps:
 | `composite` | the `checks` pass together (`and`) or any one passes (`or`) | `checks`, `operator` |
 
 Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their environment. Checks pause while a process is restarting. `notify` and `none` only report the state: it shows in `od health` and is emitted as the `health:status:unhealthy` event. `grpc` checks are not supported yet.
+
+## Dependencies
+
+List the apps an app needs in `dependencies`. Independent apps start in parallel. An app with dependencies starts once each of them is online, and healthy if it has a `healthCheck`:
+
+```yaml
+apps:
+  - name: database
+    script: ./db-proxy.js
+    healthCheck: { type: tcp, port: 5432 }
+  - name: api
+    script: ./api.js
+    dependencies: [database]
+    dependencyTimeout: 60000   # ms to wait before giving up (default 60000)
+  - name: gateway
+    script: ./gateway.js
+    dependencies: [api]
+```
+
+While an app waits, `od list` shows it as `waiting`. If a dependency fails or the timeout passes, the app is marked `errored` and `od info` shows the reason. Unknown or circular dependencies are rejected when the config loads. When the daemon stops, it stops dependents before the apps they depend on. `od stop <name>` stops only that app.
 
 ## Logs
 

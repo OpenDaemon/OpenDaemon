@@ -22,6 +22,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 - 1.1.2: no npm workspaces; packages are wired via tsup bundling and relative imports
 - 5.1.2 / 5.1.3: `ManagedProcessInfo` is a plain record with status strings, not a class driven by the StateMachine
 - 5.2.2: TypeScript configs rely on Node's type stripping (Node >= 22.18); there is no bundled loader for Node 20
+- 7.2.4: cascade order applies to daemon shutdown; `od stop <name>` does not cascade, and there is no cascade restart
 - 5.4.3 / 5.4.5: log rotation is size-based only (no time/age rotation); follow streams over IPC, not WebSocket
 - 5.3.x: health-check plugin done for process/http/https/tcp/script/command/memory/cpu/composite; `grpc` is not implemented
 - 8.1.x: coverage is 86% statements with plugins measured; CI gates on a ratchet just below that, not on 100%
@@ -323,11 +324,11 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 ### 7.2 Dependency Resolver Plugin
 | ID | Task | Priority | Complexity | Dependencies | Status |
 |----|------|----------|------------|--------------|--------|
-| 7.2.1 | Implement DAG builder | High | L | 2.6.2 | ⬜ |
-| 7.2.2 | Implement dependency resolution | High | L | 7.2.1 | ⬜ |
-| 7.2.3 | Implement circular detection | High | M | 7.2.1 | ⬜ |
-| 7.2.4 | Implement cascade operations | Medium | M | 7.2.2 | ⬜ |
-| 7.2.5 | Write dependency tests | Medium | L | 7.2.4 | ⬜ |
+| 7.2.1 | Implement DAG builder | High | L | 2.6.2 | ✅ |
+| 7.2.2 | Implement dependency resolution | High | L | 7.2.1 | ✅ |
+| 7.2.3 | Implement circular detection | High | M | 7.2.1 | ✅ |
+| 7.2.4 | Implement cascade operations | Medium | M | 7.2.2 | 🟡 |
+| 7.2.5 | Write dependency tests | Medium | L | 7.2.4 | ✅ |
 
 ### 7.3 Secret Manager Plugin
 | ID | Task | Priority | Complexity | Dependencies | Status |
@@ -552,10 +553,10 @@ Phase 9: Final Polish
 | 4. Plugin System | 20 | 18 | 90% |
 | 5. Core Plugins | 29 | 22 | 76% |
 | 6. CLI | 25 | 23 | 92% |
-| 7. Advanced Features | 26 | 6 | 23% |
+| 7. Advanced Features | 26 | 10 | 38% |
 | 8. Testing & Quality | 17 | 6 | 35% |
 | 9. Final Polish | 14 | 3 | 21% |
-| **Total** | **202** | **143** | **71%** |
+| **Total** | **202** | **147** | **73%** |
 
 **Estimated Duration**: 7 weeks (working full-time)
 **Start Date**: 2025-02-21

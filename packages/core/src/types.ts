@@ -144,6 +144,9 @@ export interface ProcessConfig {
   // Health check
   healthCheck?: HealthCheckConfig;
 
+  /** How long to wait for `dependencies` before giving up, in ms (default 60000) */
+  dependencyTimeout?: number;
+
   // Logging
   logFile?: string;
   errorLogFile?: string;
@@ -159,6 +162,7 @@ export interface ProcessConfig {
   detached?: boolean;
   cron?: string;
   watch?: boolean | WatchConfig;
+  /** Apps that must be online (and healthy, if they have a health check) before this one starts */
   dependencies?: string[];
 
   // Metadata
@@ -251,7 +255,9 @@ export type ProcessStatus =
   | 'stopping'
   | 'stopped'
   | 'errored'
-  | 'reloading';
+  | 'reloading'
+  /** Not started yet: waiting for its dependencies to be ready */
+  | 'waiting';
 
 /**
  * Process information

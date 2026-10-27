@@ -1,5 +1,5 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
-import { Logger, parseBytes } from '../../../core/src/index.js';
+import { Logger, parseBytes, dependencyLevels } from '../../../core/src/index.js';
 import { DaemonError, ErrorCode, ProcessError } from '../../../core/src/index.js';
 import type {
   ProcessConfig,
@@ -61,6 +61,8 @@ interface ManagedProcessInfo {
   metricsInterval?: NodeJS.Timeout | undefined;
   cpuSamples?: Map<number, { ticks: number; at: number }> | undefined;
   /** A maxMemory restart is in progress (metrics keep arriving meanwhile) */
+  /** Why the process is waiting or errored without having run (shown in od info) */
+  statusReason?: string | undefined;
   memoryRestarting?: boolean;
   logs: LogEntry[];
 }
@@ -80,6 +82,8 @@ export class ProcessManagerPlugin implements Plugin {
   private context!: PluginContext;
   private readonly logger: Logger;
   private stopping = false;
+  /** Dependency levels of the configured apps (level 0 has no dependencies) */
+  private startLevels: string[][] = [];
 
   constructor() {
     this.logger = new Logger('process-manager');
@@ -109,17 +113,111 @@ export class ProcessManagerPlugin implements Plugin {
   async onStart(context: PluginContext): Promise<void> {
     this.logger.info('Process manager starting');
 
-    // Load processes from config
-    const config = context.config;
-    if (config.apps) {
-      for (const appConfig of config.apps) {
-        try {
-          await this.startProcess(appConfig);
-        } catch (err) {
-          this.logger.error(`Failed to start ${appConfig.name}`, undefined, err as Error);
-        }
+    // Load processes from config. Independent apps start in parallel and are awaited; an app
+    // with `dependencies` starts once they are ready, in the background, so the daemon (and its
+    // IPC) comes up without waiting for health checks.
+    const apps = context.config.apps ?? [];
+    let levels: string[][];
+    try {
+      levels = dependencyLevels(apps);
+    } catch (err) {
+      this.logger.error(`Not starting apps: ${(err as Error).message}`);
+      return;
+    }
+    this.startLevels = levels;
+
+    const byName = new Map(apps.map((app) => [app.name, app]));
+    const ready = new Map<string, Promise<boolean>>();
+    for (const name of levels.flat()) {
+      const app = byName.get(name);
+      if (app) ready.set(name, this.startWhenDependenciesReady(app, ready));
+    }
+    const independent = apps
+      .filter((app) => (app.dependencies ?? []).length === 0)
+      .map((app) => ready.get(app.name))
+      .filter((p): p is Promise<boolean> => p !== undefined);
+    await Promise.all(independent);
+  }
+
+  /**
+   * Start an app once every dependency is ready; resolves whether it was started. Readiness of
+   * this app (healthy, when it has a health check) is checked by its own dependents.
+   */
+  private async startWhenDependenciesReady(app: ProcessConfig, ready: Map<string, Promise<boolean>>): Promise<boolean> {
+    const deps = app.dependencies ?? [];
+    if (deps.length > 0) {
+      this.markWaiting(app, `waiting for ${deps.join(', ')}`);
+      const started = await Promise.all(deps.map((dep) => ready.get(dep) ?? Promise.resolve(false)));
+      const failedDep = deps.find((_dep, i) => !started[i]);
+      const notReady = failedDep ?? await this.waitForDependencies(deps, app.dependencyTimeout ?? 60000);
+      // Stopped or deleted while waiting: the user cancelled it
+      if (this.processes.get(app.name)?.status !== 'waiting') return false;
+      if (notReady !== undefined) {
+        this.markErrored(app, `dependency "${notReady}" did not become ready`);
+        return false;
       }
     }
+
+    try {
+      await this.startProcess(app);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to start ${app.name}`, undefined, err as Error);
+      return false;
+    }
+  }
+
+  /**
+   * Wait until every app is online, and healthy when it has a health check. Returns the first
+   * app that is still not ready when the timeout passes, or undefined when all are ready.
+   */
+  private async waitForDependencies(names: string[], timeout: number): Promise<string | undefined> {
+    const health = this.context.getPlugin('health-check') as unknown as
+      { getReports?: (name?: string) => Array<{ status: string }> } | undefined;
+    const isReady = (name: string): boolean => {
+      const proc = this.processes.get(name);
+      if (proc?.status !== 'online') return false;
+      if (!proc.config.healthCheck || !health?.getReports) return true;
+      return health.getReports(name)[0]?.status === 'healthy';
+    };
+
+    const deadline = Date.now() + timeout;
+    while (!this.stopping) {
+      const pending = names.find((name) => !isReady(name));
+      if (pending === undefined) return undefined;
+      if (Date.now() >= deadline) return pending;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return names[0];
+  }
+
+  /**
+   * Show an app that has not started yet in `od list`, with the reason
+   */
+  private markWaiting(app: ProcessConfig, reason: string): void {
+    this.processes.set(app.name, this.placeholder(app, 'waiting', reason));
+  }
+
+  private markErrored(app: ProcessConfig, reason: string): void {
+    this.logger.error(`Not starting ${app.name}: ${reason}`);
+    this.processes.set(app.name, this.placeholder(app, 'errored', reason));
+  }
+
+  private placeholder(app: ProcessConfig, status: ProcessStatus, reason: string): ManagedProcessInfo {
+    const existing = this.processes.get(app.name);
+    return {
+      id: existing?.id ?? this.nextId++,
+      config: app,
+      status,
+      pids: [],
+      restartCount: existing?.restartCount ?? 0,
+      workerPids: new Map(),
+      customMetrics: new Map(),
+      cpu: 0,
+      memory: 0,
+      logs: existing?.logs ?? [],
+      statusReason: reason,
+    };
   }
 
   /**
@@ -129,18 +227,23 @@ export class ProcessManagerPlugin implements Plugin {
     this.stopping = true;
     this.logger.info('Process manager stopping');
 
-    // Stop all processes
-    const promises = Array.from(this.processes.values()).map(async (proc) => {
-      try {
-        // Same budget as `od stop`; it must stay below the CLI's 10s wait before it SIGKILLs
-        // the daemon, otherwise children that ignore SIGTERM are orphaned
-        await this.stopProcessInternal(proc, 'SIGTERM', proc.config.killTimeout ?? 5000);
-      } catch (err) {
-        this.logger.error(`Failed to stop ${proc.config.name}`, undefined, err as Error);
-      }
-    });
+    // Stop dependents before what they depend on: first anything started outside the config
+    // (od start), then the configured apps level by level in reverse. Each group stops in parallel.
+    const remaining = new Map(this.processes);
+    const levels = [...this.startLevels].reverse().map((level) =>
+      level.map((name) => remaining.get(name)).filter((p): p is ManagedProcessInfo => p !== undefined));
+    for (const level of levels) for (const proc of level) remaining.delete(proc.config.name);
+    const groups = [[...remaining.values()], ...levels];
 
-    await Promise.all(promises);
+    for (const group of groups) {
+      await Promise.all(group.map(async (proc) => {
+        try {
+          await this.stopProcessInternal(proc, 'SIGTERM', proc.config.killTimeout ?? 5000);
+        } catch (err) {
+          this.logger.error(`Failed to stop ${proc.config.name}`, undefined, err as Error);
+        }
+      }));
+    }
     this.processes.clear();
   }
 
@@ -165,7 +268,7 @@ export class ProcessManagerPlugin implements Plugin {
   private async startProcess(config: ProcessConfig): Promise<ProcessInfo> {
     // Check if already exists
     const existing = this.processes.get(config.name);
-    if (existing && existing.status !== 'stopped' && existing.status !== 'errored') {
+    if (existing && existing.status !== 'stopped' && existing.status !== 'errored' && existing.status !== 'waiting') {
       throw new ProcessError(
         ErrorCode.PROCESS_ALREADY_EXISTS,
         config.name,
@@ -955,7 +1058,7 @@ export class ProcessManagerPlugin implements Plugin {
       cwd: proc.config.cwd,
       createdAt: now.toISOString(),
       startedAt: proc.startTime?.toISOString(),
-      errorMessage: proc.status === 'errored' ? 'Process exited with error' : undefined,
+      errorMessage: proc.statusReason ?? (proc.status === 'errored' ? 'Process exited with error' : undefined),
       env: {},
     };
   }

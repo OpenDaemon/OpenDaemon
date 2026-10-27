@@ -91,6 +91,11 @@ describe('ConfigManagerPlugin.load', () => {
     ['a non-object app entry', JSON.stringify({ apps: [null] }), /must be an object/],
     ['apps that is not an array', JSON.stringify({ apps: {} }), /apps must be an array/],
     ['malformed JSON', '{ nope', /Failed to parse JSON config/],
+    ['circular dependencies', JSON.stringify({ apps: [
+      { name: 'a', script: './a.js', dependencies: ['b'] }, { name: 'b', script: './b.js', dependencies: ['a'] },
+    ] }), /Circular dependency: a -> b -> a/],
+    ['an unknown dependency', JSON.stringify({ apps: [{ name: 'a', script: './a.js', dependencies: ['db'] }] }),
+      /depends on unknown app "db"/],
   ])('should reject %s with a ConfigError', async (_name, content, message) => {
     write('opendaemon.config.json', content);
     await expect(load()).rejects.toBeInstanceOf(ConfigError);

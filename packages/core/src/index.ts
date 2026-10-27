@@ -61,6 +61,7 @@ export type {
 // Utilities
 export { Logger, LogLevel, type LogEntry, type LogHandler } from './utils/logger.js';
 export { parseBytes } from './utils/bytes.js';
+export { dependencyLevels, type DependencyNode } from './utils/dependencies.js';
 
 // IPC
 export {

@@ -121,6 +121,8 @@ export class ListCommand implements Command {
         return term.color('yellow', '◌ starting');
       case 'stopping':
         return term.color('yellow', '◌ stopping');
+      case 'waiting':
+        return term.color('yellow', '◌ waiting');
       default:
         return status;
     }
@@ -339,6 +341,7 @@ export class InfoCommand implements Command {
         id: number; name: string; status: string; mode: string; pid: number;
         instances: number; runningInstances: number; cpu: number; memory: number;
         restartCount: number; uptime: number; script: string; cwd: string; startedAt: string;
+        errorMessage?: string;
       } | null;
       await client.disconnect();
 
@@ -346,6 +349,7 @@ export class InfoCommand implements Command {
 
       console.log(`\n${term.bold(info.name)}`);
       console.log(term.keyValue('  Status', info.status));
+      if (info.errorMessage) console.log(term.keyValue('  Reason', info.errorMessage));
       console.log(term.keyValue('  Mode', info.mode));
       console.log(term.keyValue('  PID', String(info.pid || 'N/A')));
       console.log(term.keyValue('  Instances', `${info.runningInstances}/${info.instances}`));
@@ -791,7 +795,9 @@ export class DaemonCommand implements Command {
         const checkStopped = () => {
           attempts++;
           if (!isProcessRunning(pid)) { resolve(); return; }
-          if (attempts >= 100) { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } resolve(); return; }
+          // The daemon stops apps level by level (dependents first), each up to its killTimeout;
+          // killing it early would orphan whatever it is still stopping, so allow a minute
+          if (attempts >= 600) { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } resolve(); return; }
           setTimeout(checkStopped, 100);
         };
         setTimeout(checkStopped, 100);
