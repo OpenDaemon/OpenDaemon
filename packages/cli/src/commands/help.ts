@@ -43,6 +43,7 @@ ${term.bold('COMMANDS')}
     stop <name>      Stop a process
     restart <name>   Restart a process
     delete <name>    Remove a process
+    scale <name> <n> Change cluster workers (number or max)
 
   Monitoring:
     list / ls        List all processes

@@ -86,6 +86,7 @@ export class ProcessManagerPlugin implements Plugin {
     context.registerMethod('delete', this.deleteProcess.bind(this));
     context.registerMethod('info', this.getProcessInfo.bind(this));
     context.registerMethod('logs', this.getProcessLogs.bind(this));
+    context.registerMethod('scale', this.scaleProcess.bind(this));
   }
 
   /**
@@ -429,6 +430,37 @@ export class ProcessManagerPlugin implements Plugin {
     if (proc.logs.length > ProcessManagerPlugin.MAX_LOG_LINES) {
       proc.logs.splice(0, proc.logs.length - ProcessManagerPlugin.MAX_LOG_LINES);
     }
+  }
+
+  /**
+   * Change the number of workers of a running cluster without restarting it
+   */
+  private scaleProcess(params: { name: string; instances: unknown }): Promise<ProcessInfo> {
+    const proc = this.processes.get(params.name);
+    if (!proc) {
+      return Promise.reject(new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`));
+    }
+    if (proc.config.mode !== 'cluster') {
+      return Promise.reject(new ProcessError(
+        ErrorCode.PROCESS_INVALID_CONFIG, params.name,
+        `Process "${params.name}" runs in fork mode; scaling needs mode: cluster`
+      ));
+    }
+    const requested = params.instances === 'max' ? 'max' : Number(params.instances);
+    if (requested !== 'max' && (!Number.isInteger(requested) || requested < 1)) {
+      return Promise.reject(new ProcessError(
+        ErrorCode.PROCESS_INVALID_CONFIG, params.name, `Instances must be a positive integer or "max"`
+      ));
+    }
+
+    // Persist it, so a later restart of the whole cluster keeps the new size
+    proc.config = { ...proc.config, instances: requested };
+    const primary = proc.childProcess;
+    if (primary?.connected) {
+      primary.send({ type: 'od:scale', instances: this.resolveInstances(proc.config) });
+    }
+    this.logger.info(`Scaled ${params.name} to ${String(this.resolveInstances(proc.config))} instances`);
+    return Promise.resolve(this.toProcessInfo(proc));
   }
 
   /**

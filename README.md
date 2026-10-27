@@ -179,6 +179,7 @@ Time-based rotation, retention by age and WebSocket streaming are not implemente
 | `od stop <name>` | Stop a process |
 | `od restart <name>` | Restart a process |
 | `od delete <name>` | Delete a process |
+| `od scale <name> <n\|max>` | Change the number of cluster workers without a restart |
 | `od list` / `od ls` | List all processes (`--json`, `-q`) |
 | `od info <name>` | Detailed process info (CPU, memory, PID, uptime) |
 | `od logs [name]` | Logs of one or all processes (`--lines N`, `-f`, `--grep RE`, `--since 2h`, `--json`) |

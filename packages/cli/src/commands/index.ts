@@ -347,6 +347,36 @@ export class InfoCommand implements Command {
 }
 
 /**
+ * Scale command - change the number of cluster workers
+ */
+export class ScaleCommand implements Command {
+  name = 'scale';
+  description = 'Change the number of cluster workers';
+  options = [];
+
+  async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
+    const [name, count] = args;
+    const instances = count === 'max' ? 'max' : Number(count);
+    if (name === undefined || count === undefined || (instances !== 'max' && (!Number.isInteger(instances) || instances < 1))) {
+      term.error('Usage: od scale <name> <instances|max>');
+      process.exit(1);
+      return;
+    }
+
+    try {
+      const client = new CliClient();
+      await client.connect();
+      const info = await client.scaleProcess(name, instances) as { instances: number };
+      await client.disconnect();
+      term.success(`Scaled ${name} to ${String(info.instances)} instance(s)`);
+    } catch (err) {
+      term.error(`Failed to scale: ${(err instanceof Error ? err : new Error(String(err))).message}`);
+      process.exit(1);
+    }
+  }
+}
+
+/**
  * Health command - show health check status
  */
 export class HealthCommand implements Command {

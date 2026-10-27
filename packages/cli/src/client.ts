@@ -145,6 +145,14 @@ export class CliClient {
   }
 
   /**
+   * Change the number of cluster workers
+   */
+  async scaleProcess(name: string, instances: number | 'max'): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('scale', { name, instances });
+  }
+
+  /**
    * Query persisted logs (log-manager): name, lines, grep, since (epoch ms), source
    */
   async queryLogs(query: Record<string, unknown>): Promise<unknown> {

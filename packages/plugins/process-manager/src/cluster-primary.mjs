@@ -5,6 +5,9 @@
 // child processes would each fail with EADDRINUSE. Plain JavaScript so it runs on every
 // supported Node version without a build step.
 //
+// Messages from the daemon:
+//   { type: 'od:scale', instances }  add workers, or gracefully retire the highest-numbered ones
+//
 // Messages to the daemon:
 //   { type: 'od:worker', event: 'online' | 'exit' | 'restart', index, pid, code?, signal? }
 //   { type: 'od:log', index, pid, source: 'stdout' | 'stderr', message }
@@ -12,7 +15,7 @@
 import cluster from 'node:cluster';
 
 const script = process.env.OD_CLUSTER_SCRIPT;
-const instances = Number(process.env.OD_CLUSTER_INSTANCES || '1');
+let instances = Number(process.env.OD_CLUSTER_INSTANCES || '1');
 const args = JSON.parse(process.env.OD_CLUSTER_ARGS || '[]');
 /** @type {{ autoRestart?: boolean | string, restartDelay?: number, maxRestarts?: number, killTimeout?: number }} */
 const policy = JSON.parse(process.env.OD_CLUSTER_POLICY || '{}');
@@ -35,6 +38,10 @@ cluster.setupPrimary({ exec: script, args, silent: true });
 
 let stopping = false;
 const restarts = new Map();
+/** index -> live worker */
+const workers = new Map();
+/** indices being retired by a scale-down: their exit is expected, not a crash */
+const retiring = new Set();
 const ready = new Set();
 let reportedReady = false;
 
@@ -67,6 +74,7 @@ function relay(stream, index, pid, source) {
 function fork(index) {
   const worker = cluster.fork({ OD_WORKER_ID: String(index), OD_WORKER_COUNT: String(instances) });
   const pid = worker.process.pid;
+  workers.set(index, worker);
   relay(worker.process.stdout, index, pid, 'stdout');
   relay(worker.process.stderr, index, pid, 'stderr');
 
@@ -81,7 +89,9 @@ function fork(index) {
     }
   });
   worker.on('exit', (code, signal) => {
+    if (workers.get(index) === worker) workers.delete(index);
     send({ type: 'od:worker', event: 'exit', index, pid, code, signal });
+    if (retiring.delete(index)) return;
     if (stopping) {
       if (Object.keys(cluster.workers ?? {}).length === 0) process.exit(0);
       return;
@@ -89,13 +99,34 @@ function fork(index) {
     if (shouldRestart(index, code)) {
       restarts.set(index, (restarts.get(index) ?? 0) + 1);
       send({ type: 'od:worker', event: 'restart', index, pid });
-      setTimeout(() => { if (!stopping) fork(index); }, policy.restartDelay ?? 1000);
+      setTimeout(() => { if (!stopping && index < instances) fork(index); }, policy.restartDelay ?? 1000);
     } else if (Object.keys(cluster.workers ?? {}).length === 0) {
       // Every worker is gone for good: exit so the daemon applies its own policy to the app
       process.exit(code ?? 1);
     }
   });
 }
+
+function scale(target) {
+  if (stopping || !Number.isInteger(target) || target < 1) return;
+  const previous = instances;
+  instances = target;
+  for (let i = previous; i < target; i++) {
+    if (!workers.has(i)) fork(i);
+  }
+  for (const [index, worker] of workers) {
+    if (index >= target) {
+      retiring.add(index);
+      // disconnect() lets the worker finish in-flight requests; force it after killTimeout
+      worker.disconnect();
+      setTimeout(() => { if (!worker.isDead()) worker.process.kill('SIGKILL'); }, policy.killTimeout ?? 5000).unref();
+    }
+  }
+}
+
+process.on('message', (message) => {
+  if (message && message.type === 'od:scale') scale(Number(message.instances));
+});
 
 function shutdown(signal) {
   if (stopping) return;

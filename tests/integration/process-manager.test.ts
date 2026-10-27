@@ -278,6 +278,40 @@ describe('ProcessManagerPlugin', () => {
         await waitFor(() => before.every((pid) => !alive(pid)), 3000);
       });
 
+      it('should scale a running cluster up and down without restarting it', async () => {
+        type Info = { runningInstances: number; instances: number; pids: number[]; restartCount: number; pid: number };
+        const info = async () => await methods.get('info')!({ name: 'web' }) as Info;
+        const started = await methods.get('start')!({ name: 'web', script: clusterScript, mode: 'cluster', instances: 2, killTimeout: 500 }) as Info;
+        await waitFor(async () => (await info()).runningInstances === 2);
+
+        expect(await methods.get('scale')!({ name: 'web', instances: 4 })).toMatchObject({ instances: 4 });
+        await waitFor(async () => (await info()).runningInstances === 4);
+        const atFour = await info();
+
+        await methods.get('scale')!({ name: 'web', instances: 1 });
+        await waitFor(async () => (await info()).runningInstances === 1);
+        const atOne = await info();
+        // Same primary, retired workers are gone, and retiring them is not a crash restart
+        expect(atOne.pid).toBe(started.pid);
+        expect(atOne.restartCount).toBe(0);
+        const retired = atFour.pids.filter((pid) => !atOne.pids.includes(pid));
+        expect(retired).toHaveLength(3);
+        await waitFor(() => retired.every((pid) => !alive(pid)), 3000);
+
+        await methods.get('stop')!({ name: 'web' });
+      });
+
+      it('should refuse to scale fork-mode processes or to an invalid size', async () => {
+        await methods.get('start')!({ name: 'single', script: clusterScript, killTimeout: 500 });
+        await expect(methods.get('scale')!({ name: 'single', instances: 3 })).rejects.toThrow(/fork mode; scaling needs mode: cluster/);
+        await methods.get('stop')!({ name: 'single' });
+
+        await methods.get('start')!({ name: 'web', script: clusterScript, mode: 'cluster', instances: 1, killTimeout: 500 });
+        await expect(methods.get('scale')!({ name: 'web', instances: 0 })).rejects.toThrow(/positive integer/);
+        await expect(methods.get('scale')!({ name: 'nope', instances: 2 })).rejects.toThrow(/not found/);
+        await methods.get('stop')!({ name: 'web' });
+      });
+
       it("should resolve instances 'max' to the CPU count", async () => {
         const info = await methods.get('start')!({ name: 'web', script: clusterScript, mode: 'cluster', instances: 'max', killTimeout: 500 }) as { instances: number };
         expect(info.instances).toBe(availableParallelism());

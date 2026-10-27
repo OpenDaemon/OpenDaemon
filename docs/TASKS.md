@@ -292,7 +292,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 | 6.3.6 | Implement logs command | High | M | 6.1.4, 3.3.4 | ✅ |
 | 6.3.7 | Implement daemon commands | High | L | 6.1.4, 3.3.3 | ✅ |
 | 6.3.8 | Implement delete command | High | M | 6.3.2 | ✅ |
-| 6.3.9 | Implement scale command | Medium | M | 6.1.4, 3.3.3 | ⬜ |
+| 6.3.9 | Implement scale command | Medium | M | 6.1.4, 3.3.3 | ✅ |
 | 6.3.10 | Write command tests | High | XL | 6.3.9 | 🟡 |
 
 ### 6.4 CLI Entry Point
@@ -551,11 +551,11 @@ Phase 9: Final Polish
 | 3. IPC System | 18 | 15 | 83% |
 | 4. Plugin System | 20 | 18 | 90% |
 | 5. Core Plugins | 29 | 22 | 76% |
-| 6. CLI | 25 | 22 | 88% |
+| 6. CLI | 25 | 23 | 92% |
 | 7. Advanced Features | 26 | 1 | 4% |
 | 8. Testing & Quality | 17 | 6 | 35% |
 | 9. Final Polish | 14 | 3 | 21% |
-| **Total** | **202** | **137** | **68%** |
+| **Total** | **202** | **138** | **68%** |
 
 **Estimated Duration**: 7 weeks (working full-time)
 **Start Date**: 2025-02-21

@@ -11,6 +11,7 @@ const mockGetDaemonStatus = vi.fn().mockResolvedValue({ status: 'running', pid: 
 const mockGetHealth = vi.fn().mockResolvedValue([]);
 const mockQueryLogs = vi.fn().mockResolvedValue([]);
 const mockShutdown = vi.fn().mockResolvedValue({ ok: true });
+const mockScale = vi.fn().mockResolvedValue({ instances: 4 });
 const mockFlushLogs = vi.fn().mockResolvedValue({ flushed: [] });
 const mockIsDaemonRunning = vi.fn().mockReturnValue(true);
 const mockExistsSync = vi.fn().mockReturnValue(true);
@@ -45,6 +46,7 @@ vi.mock('@opendaemon/core', () => ({
         case 'health': return mockGetHealth(params);
         case 'logs.query': return mockQueryLogs(params);
         case 'daemon.shutdown': return mockShutdown();
+        case 'scale': return mockScale(params);
         case 'logs.flush': return mockFlushLogs(params);
         default: return Promise.resolve(undefined);
       }
@@ -92,6 +94,7 @@ import {
   HealthCommand,
   LogsCommand,
   FlushCommand,
+  ScaleCommand,
   parseSince,
   DaemonCommand,
 } from '../../packages/cli/src/commands/index.js';
@@ -471,6 +474,28 @@ describe('CLI Commands', () => {
       await cmd.execute([], { grep: '(' });
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to get logs: Invalid --grep pattern'));
       expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('ScaleCommand', () => {
+    const cmd = new ScaleCommand();
+
+    beforeEach(() => {
+      mockExistsSync.mockReturnValue(true);
+      mockScale.mockClear();
+    });
+
+    it.each([[['web', '4'], 4], [['web', 'max'], 'max']])('should scale %j', async (args, instances) => {
+      await cmd.execute(args, {});
+      expect(mockScale).toHaveBeenCalledWith({ name: 'web', instances });
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Scaled web to 4 instance(s)'));
+    });
+
+    it.each([[[]], [['web']], [['web', '0']], [['web', '2.5']], [['web', 'lots']]])('should print usage for %j', async (args) => {
+      await cmd.execute(args, {});
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: od scale <name> <instances|max>'));
+      expect(exitSpy).toHaveBeenCalledWith(1);
+      expect(mockScale).not.toHaveBeenCalled();
     });
   });
 

@@ -14,6 +14,7 @@ import {
   InfoCommand,
   LogsCommand,
   FlushCommand,
+  ScaleCommand,
   HealthCommand,
   StatusCommand,
   DaemonCommand,
@@ -203,6 +204,13 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       const cmd = new LogsCommand();
       const logsArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
       await cmd.execute(logsArgs, parsed.options);
+      break;
+    }
+
+    case 'scale': {
+      const cmd = new ScaleCommand();
+      const scaleArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await cmd.execute(scaleArgs, parsed.options);
       break;
     }
 
