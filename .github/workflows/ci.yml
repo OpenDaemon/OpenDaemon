@@ -64,8 +64,8 @@ jobs:
 
       - name: Test CLI
         run: |
-          node ./packages/cli/dist/index.js --version
-          node ./packages/cli/dist/index.js --help
+          node ./packages/cli/dist/cli.js --version
+          node ./packages/cli/dist/cli.js --help
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

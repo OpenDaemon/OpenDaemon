@@ -3,10 +3,16 @@ import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { term } from '../output.js';
 
+// Injected by tsup from the root package.json; undefined when running from source
+declare const __OPENDAEMON_VERSION__: string | undefined;
+
 /**
  * Get package version
  */
 function getVersion(): string {
+  if (typeof __OPENDAEMON_VERSION__ === 'string') {
+    return __OPENDAEMON_VERSION__;
+  }
   try {
     const __dirname = fileURLToPath(new URL('.', import.meta.url));
     const pkg = JSON.parse(

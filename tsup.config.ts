@@ -1,4 +1,7 @@
+import { readFileSync } from 'fs';
 import { defineConfig } from 'tsup';
+
+const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
 export default defineConfig([
   // Core package
@@ -27,6 +30,9 @@ export default defineConfig([
     bundle: true,
     target: 'node20',
     // No banner: cli.ts and daemon.ts carry their own shebang, which esbuild preserves
+    define: {
+      __OPENDAEMON_VERSION__: JSON.stringify(version),
+    },
   },
   // SDK package
   {
