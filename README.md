@@ -13,6 +13,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Auto-Restart** - Configurable strategies: `always`, `on-failure`, `unless-stopped`, `never`
 - **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
 - **CPU & Memory Monitoring** - Real-time metrics collection for all managed processes
+- **Persistent Logs** - JSON-lines log files per process with size rotation, gzip, search (`--grep`, `--since`) and live follow (`-f`)
 - **Health Checks** - HTTP(S), TCP, script, command, memory, CPU and composite checks with automatic restart or stop
 - **IPC Communication** - Binary frame protocol + JSON-RPC 2.0 over Unix sockets / TCP
 - **WebUI Dashboard** - Built-in web interface with authentication and live process monitoring
@@ -141,6 +142,36 @@ apps:
 
 Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their environment. Checks pause while a process is restarting. `notify` and `none` only report the state: it shows in `od health` and is emitted as the `health:status:unhealthy` event. `grpc` checks are not supported yet.
 
+## Logs
+
+The `log-manager` plugin writes each process's stdout and stderr to `<logDir>/<name>-out.log` and `<name>-error.log`, one JSON object per line (`timestamp`, `level`, `pid`, `processName`, `instanceId`, `message`, `source`). `logDir` comes from `daemon.logDir` and defaults to `./logs`. Logs survive daemon restarts.
+
+```bash
+od logs api --lines 50             # last 50 lines of api (stdout and stderr, merged by time)
+od logs -f                         # follow all processes; --lines 0 to skip history
+od logs --grep 'ERROR|WARN' --since 2h
+od logs api --json | jq .message   # raw entries
+od flush api                       # empty api's log files
+```
+
+Rotation is size-based. Set the defaults under `plugins.log-manager`, and override them per app with `logRotation`:
+
+```yaml
+plugins:
+  log-manager:
+    maxSize: 10M      # rotate when a file would pass this size (default 10M)
+    maxFiles: 5       # rotated files to keep: name.log.1 ... name.log.5 (default 5)
+    compress: true    # gzip rotated files (default true)
+apps:
+  - name: chatty
+    script: ./chatty.js
+    logRotation:
+      maxSize: 100M
+      enabled: true   # false: never rotate
+```
+
+Time-based rotation, retention by age and WebSocket streaming are not implemented yet.
+
 ## CLI Commands
 
 | Command | Description |
@@ -151,7 +182,8 @@ Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their en
 | `od delete <name>` | Delete a process |
 | `od list` / `od ls` | List all processes (`--json`, `-q`) |
 | `od info <name>` | Detailed process info (CPU, memory, PID, uptime) |
-| `od logs <name>` | View process logs |
+| `od logs [name]` | Logs of one or all processes (`--lines N`, `-f`, `--grep RE`, `--since 2h`, `--json`) |
+| `od flush [name]` | Empty log files |
 | `od health [name]` | Health check status (last result, consecutive failures) |
 | `od status` | Daemon & process status overview |
 | `od daemon start\|stop\|restart\|status` | Manage the daemon |
@@ -192,6 +224,7 @@ opendaemon/
 │       ├── process-manager/   # Process lifecycle, fork/cluster, metrics, restart strategies
 │       ├── config-manager/    # Config file loading & validation (TS/JS/JSON/YAML)
 │       ├── health-check/      # Scheduled health checks, thresholds, restart/stop actions
+│       ├── log-manager/       # Persistent JSON-lines logs, rotation, search, follow
 │       └── webui/             # HTTP server, REST API, dashboard HTML
 ├── tests/
 │   ├── unit/                  # Unit tests

@@ -398,38 +398,123 @@ export class HealthCommand implements Command {
 }
 
 /**
- * Logs command - view process logs
+ * Parse --since: a relative duration ("30s", "15m", "2h", "1d") or an absolute date
+ */
+export function parseSince(value: string, now = Date.now()): number | undefined {
+  const relative = /^(\d+)\s*(s|m|h|d)$/.exec(value.trim());
+  if (relative?.[1] && relative[2]) {
+    const unit = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[relative[2] as 's' | 'm' | 'h' | 'd'];
+    return now - Number(relative[1]) * unit;
+  }
+  const absolute = Date.parse(value);
+  return Number.isNaN(absolute) ? undefined : absolute;
+}
+
+interface LogLine {
+  timestamp: string;
+  processName: string;
+  instanceId?: number;
+  source: 'stdout' | 'stderr';
+  message: string;
+}
+
+/**
+ * Logs command - view, search and follow process logs
  */
 export class LogsCommand implements Command {
   name = 'logs';
   description = 'View process logs';
   options = [];
 
-  async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
+  async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
     const name = args[0];
-    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
+    const json = options['json'] === true;
+    const follow = options['follow'] === true;
+    const lines = typeof options['lines'] === 'number' ? options['lines'] : 100;
+    const grep = typeof options['grep'] === 'string' ? options['grep'] : undefined;
+
+    let since: number | undefined;
+    if (options['since'] !== undefined) {
+      since = parseSince(String(options['since']));
+      if (since === undefined) {
+        term.error(`Invalid --since "${String(options['since'])}" (use e.g. 30m, 2h, 1d or a date)`);
+        process.exit(1);
+        return;
+      }
+    }
+
+    const filter = {
+      ...(name === undefined ? {} : { name }),
+      ...(grep === undefined ? {} : { grep }),
+    };
+    const print = (entry: LogLine) => {
+      if (json) {
+        console.log(JSON.stringify(entry));
+        return;
+      }
+      const label = `${entry.processName}${entry.instanceId === undefined ? '' : `[${String(entry.instanceId)}]`}`;
+      const tag = term.color(entry.source === 'stderr' ? 'red' : 'cyan', label);
+      console.log(`${term.dim(entry.timestamp)} ${tag} ${entry.message}`);
+    };
 
     try {
       const client = new CliClient();
       await client.connect();
-      const logs = await client.getLogs(name);
-      await client.disconnect();
+      const entries = await client.queryLogs({ ...filter, lines, ...(since === undefined ? {} : { since }) }) as LogLine[];
+      entries.forEach(print);
+      if (entries.length === 0 && !follow && !json) {
+        term.info(name === undefined ? 'No logs found' : `No logs found for "${name}"`);
+      }
 
-      if (Array.isArray(logs) && logs.length === 0) {
-        term.info(`No logs available for "${name}"`);
+      if (!follow) {
+        await client.disconnect();
         return;
       }
 
-      if (Array.isArray(logs)) {
-        for (const entry of logs) {
-          const e = entry as { timestamp: string; level: string; message: string };
-          console.log(`${term.dim(e.timestamp)} [${e.level}] ${e.message}`);
-        }
-      } else {
-        console.log(String(logs));
-      }
+      await client.followLogs(filter, (entry) => { print(entry as LogLine); });
+      // Stream until Ctrl+C or until the daemon goes away
+      await new Promise<void>((resolveFollow) => {
+        const timer = setInterval(() => {
+          if (!client.isConnected()) {
+            clearInterval(timer);
+            resolveFollow();
+          }
+        }, 500);
+        process.once('SIGINT', () => {
+          clearInterval(timer);
+          resolveFollow();
+        });
+      });
+      await client.disconnect();
     } catch (err) {
       term.error(`Failed to get logs: ${(err instanceof Error ? err : new Error(String(err))).message}`);
+      process.exit(1);
+    }
+  }
+}
+
+/**
+ * Flush command - empty log files
+ */
+export class FlushCommand implements Command {
+  name = 'flush';
+  description = 'Empty process log files';
+  options = [];
+
+  async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
+    const name = args[0];
+    try {
+      const client = new CliClient();
+      await client.connect();
+      const { flushed } = await client.flushLogs(name) as { flushed: string[] };
+      await client.disconnect();
+      if (flushed.length === 0) {
+        term.info('No logs to flush');
+      } else {
+        term.success(`Flushed logs: ${flushed.join(', ')}`);
+      }
+    } catch (err) {
+      term.error(`Failed to flush logs: ${(err instanceof Error ? err : new Error(String(err))).message}`);
       process.exit(1);
     }
   }

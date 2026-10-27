@@ -170,7 +170,7 @@ describe('Daemon Entry Point Integration', () => {
       await main();
       
       const names = mockKernelRegisterPlugin.mock.calls.map((call) => (call[0] as { name: string }).name);
-      expect(names).toEqual(['config-manager', 'process-manager', 'health-check', 'webui']);
+      expect(names).toEqual(['config-manager', 'log-manager', 'process-manager', 'health-check', 'webui']);
     });
 
     it('should start kernel', async () => {

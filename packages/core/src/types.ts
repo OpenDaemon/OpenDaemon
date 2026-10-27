@@ -180,6 +180,22 @@ export interface LogRotationConfig {
 }
 
 /**
+ * One line of process output, as written by the log-manager plugin (one JSON object per line)
+ */
+export interface ProcessLogEntry {
+  /** ISO8601 timestamp */
+  timestamp: string;
+  /** stdout lines are `info`, stderr lines are `error` */
+  level: 'info' | 'error';
+  pid: number;
+  processName: string;
+  /** Worker index in cluster mode */
+  instanceId?: number;
+  message: string;
+  source: 'stdout' | 'stderr';
+}
+
+/**
  * Watch mode configuration
  */
 export interface WatchConfig {
