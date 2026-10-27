@@ -9,6 +9,8 @@ const mockConnect = vi.fn().mockResolvedValue(undefined);
 const mockDisconnect = vi.fn().mockResolvedValue(undefined);
 const mockGetDaemonStatus = vi.fn().mockResolvedValue({ status: 'running', pid: 12345, uptime: 60 });
 const mockGetHealth = vi.fn().mockResolvedValue([]);
+const mockQueryLogs = vi.fn().mockResolvedValue([]);
+const mockFlushLogs = vi.fn().mockResolvedValue({ flushed: [] });
 const mockIsDaemonRunning = vi.fn().mockReturnValue(true);
 const mockExistsSync = vi.fn().mockReturnValue(true);
 const mockReadFileSync = vi.fn().mockReturnValue('12345');
@@ -40,6 +42,8 @@ vi.mock('@opendaemon/core', () => ({
         case 'delete': return mockDeleteProcess(params);
         case 'daemon.status': return mockGetDaemonStatus();
         case 'health': return mockGetHealth(params);
+        case 'logs.query': return mockQueryLogs(params);
+        case 'logs.flush': return mockFlushLogs(params);
         default: return Promise.resolve(undefined);
       }
     },
@@ -83,6 +87,9 @@ import {
   DeleteCommand,
   StatusCommand,
   HealthCommand,
+  LogsCommand,
+  FlushCommand,
+  parseSince,
   DaemonCommand,
 } from '../../packages/cli/src/commands/index.js';
 
@@ -396,6 +403,92 @@ describe('CLI Commands', () => {
       await cmd.execute();
 
       expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('parseSince', () => {
+    const now = Date.parse('2026-01-02T00:00:00Z');
+
+    it.each([
+      ['30s', now - 30_000],
+      ['15m', now - 900_000],
+      ['2h', now - 7_200_000],
+      ['1d', now - 86_400_000],
+      ['2026-01-01T12:00:00Z', Date.parse('2026-01-01T12:00:00Z')],
+      ['soon', undefined],
+      ['5w', undefined],
+    ])('parseSince(%j)', (input, expected) => {
+      expect(parseSince(input, now)).toBe(expected);
+    });
+  });
+
+  describe('LogsCommand', () => {
+    const cmd = new LogsCommand();
+    const entry = { timestamp: '2026-01-01T00:00:00.000Z', processName: 'web', source: 'stderr', message: 'boom', level: 'error', pid: 1 };
+
+    beforeEach(() => {
+      mockExistsSync.mockReturnValue(true);
+      mockQueryLogs.mockReset();
+      mockQueryLogs.mockResolvedValue([]);
+    });
+
+    it('should query all processes with the default line count', async () => {
+      await cmd.execute([], {});
+      expect(mockQueryLogs).toHaveBeenCalledWith({ lines: 100 });
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No logs found'));
+    });
+
+    it('should pass name, lines, grep and since, and print entries', async () => {
+      mockQueryLogs.mockResolvedValue([entry]);
+      const before = Date.now();
+      await cmd.execute(['web'], { lines: 5, grep: 'boo', since: '1h' });
+
+      const query = mockQueryLogs.mock.calls[0]![0] as { since: number };
+      expect(query).toMatchObject({ name: 'web', lines: 5, grep: 'boo' });
+      expect(query.since).toBeGreaterThanOrEqual(before - 3_600_000);
+      expect(query.since).toBeLessThanOrEqual(Date.now() - 3_600_000);
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringMatching(/2026-01-01T00:00:00.000Z.*web.*boom/));
+    });
+
+    it('should print raw JSON lines with --json', async () => {
+      mockQueryLogs.mockResolvedValue([entry]);
+      await cmd.execute(['web'], { json: true });
+      expect(consoleSpy).toHaveBeenCalledWith(JSON.stringify(entry));
+    });
+
+    it('should reject an invalid --since without calling the daemon', async () => {
+      await cmd.execute([], { since: 'yesterday-ish' });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid --since'));
+      expect(exitSpy).toHaveBeenCalledWith(1);
+      expect(mockQueryLogs).not.toHaveBeenCalled();
+    });
+
+    it('should exit 1 when the query fails', async () => {
+      mockQueryLogs.mockRejectedValueOnce(new Error('Invalid --grep pattern'));
+      await cmd.execute([], { grep: '(' });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to get logs: Invalid --grep pattern'));
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('FlushCommand', () => {
+    const cmd = new FlushCommand();
+
+    beforeEach(() => {
+      mockExistsSync.mockReturnValue(true);
+      mockFlushLogs.mockReset();
+    });
+
+    it('should flush one process or report that there was nothing', async () => {
+      mockFlushLogs.mockResolvedValue({ flushed: ['web'] });
+      await cmd.execute(['web'], {});
+      expect(mockFlushLogs).toHaveBeenCalledWith({ name: 'web' });
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Flushed logs: web'));
+
+      mockFlushLogs.mockResolvedValue({ flushed: [] });
+      await cmd.execute([], {});
+      expect(mockFlushLogs).toHaveBeenLastCalledWith({});
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No logs to flush'));
     });
   });
 

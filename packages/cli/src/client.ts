@@ -144,6 +144,40 @@ export class CliClient {
   }
 
   /**
+   * Query persisted logs (log-manager): name, lines, grep, since (epoch ms), source
+   */
+  async queryLogs(query: Record<string, unknown>): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('logs.query', query);
+  }
+
+  /**
+   * Stream new log entries matching the query to onEntry until the connection closes
+   */
+  async followLogs(query: Record<string, unknown>, onEntry: (entry: unknown) => void): Promise<void> {
+    this.ensureConnected();
+    this.client.onNotification((method, params) => {
+      if (method === 'log') onEntry(params);
+    });
+    await this.client.call('logs.follow', query);
+  }
+
+  /**
+   * Empty the log files of one process, or all of them
+   */
+  async flushLogs(name?: string): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('logs.flush', name === undefined ? {} : { name });
+  }
+
+  /**
+   * Whether the connection to the daemon is still open
+   */
+  isConnected(): boolean {
+    return this.connected && this.client.isConnected();
+  }
+
+  /**
    * Get health check status for all monitored processes, or one by name
    */
   async getHealth(name?: string): Promise<unknown> {

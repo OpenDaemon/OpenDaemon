@@ -13,6 +13,7 @@ import {
   DeleteCommand,
   InfoCommand,
   LogsCommand,
+  FlushCommand,
   HealthCommand,
   StatusCommand,
   DaemonCommand,
@@ -23,6 +24,12 @@ import { term } from './output.js';
  * CLI entry point
  */
 async function main(): Promise<void> {
+  // `od logs | head` closes stdout early; that is a normal way to stop reading, not a crash
+  process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EPIPE') process.exit(0);
+    throw err;
+  });
+
   const parser = new CommandParser();
 
   // Global options
@@ -79,6 +86,32 @@ async function main(): Promise<void> {
     alias: 'i',
     type: 'number',
     description: 'Number of instances',
+  });
+
+  // Log options
+  parser.addOption({
+    name: 'lines',
+    type: 'number',
+    description: 'Number of log lines',
+  });
+
+  parser.addOption({
+    name: 'follow',
+    alias: 'f',
+    type: 'boolean',
+    description: 'Follow log output',
+  });
+
+  parser.addOption({
+    name: 'grep',
+    type: 'string',
+    description: 'Filter log messages by regular expression',
+  });
+
+  parser.addOption({
+    name: 'since',
+    type: 'string',
+    description: 'Only logs since a duration (2h) or date',
   });
 
   // Parse arguments
@@ -170,6 +203,13 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       const cmd = new LogsCommand();
       const logsArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
       await cmd.execute(logsArgs, parsed.options);
+      break;
+    }
+
+    case 'flush': {
+      const cmd = new FlushCommand();
+      const flushArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await cmd.execute(flushArgs, parsed.options);
       break;
     }
 

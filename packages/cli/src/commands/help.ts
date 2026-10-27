@@ -47,7 +47,8 @@ ${term.bold('COMMANDS')}
   Monitoring:
     list / ls        List all processes
     info <name>      Show detailed process information
-    logs <name>      View process logs
+    logs [name]      View logs (--lines N, -f, --grep RE, --since 2h, --json)
+    flush [name]     Empty log files
     health [name]    Show health check status
     status           Show daemon and process overview
 
