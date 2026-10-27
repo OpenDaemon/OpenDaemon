@@ -22,6 +22,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 - 1.1.2: no npm workspaces; packages are wired via tsup bundling and relative imports
 - 5.1.2 / 5.1.3: `ManagedProcessInfo` is a plain record with status strings, not a class driven by the StateMachine
 - 5.2.2: TypeScript configs rely on Node's type stripping (Node >= 22.18); there is no bundled loader for Node 20
+- 7.5.x: `od monit` has the process list, CPU/memory sparklines, health and logs; no sorting/filtering, mouse or themes, and no event-loop metrics (not collected)
 - 7.2.4: cascade order applies to daemon shutdown; `od stop <name>` does not cascade, and there is no cascade restart
 - 5.4.3 / 5.4.5: log rotation is size-based only (no time/age rotation); follow streams over IPC, not WebSocket
 - 5.3.x: health-check plugin done for process/http/https/tcp/script/command/memory/cpu/composite; `grpc` is not implemented
@@ -350,12 +351,12 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 ### 7.5 TUI Dashboard Plugin
 | ID | Task | Priority | Complexity | Dependencies | Status |
 |----|------|----------|------------|--------------|--------|
-| 7.5.1 | Implement screen abstraction | Medium | L | None | ⬜ |
-| 7.5.2 | Implement process list view | Medium | L | 6.2.1 | ⬜ |
-| 7.5.3 | Implement metrics view | Medium | M | 7.5.2 | ⬜ |
-| 7.5.4 | Implement log view | Medium | M | 7.5.2 | ⬜ |
-| 7.5.5 | Implement keyboard handling | Medium | M | 7.5.2 | ⬜ |
-| 7.5.6 | Write TUI tests | Low | L | 7.5.5 | ⬜ |
+| 7.5.1 | Implement screen abstraction | Medium | L | None | ✅ |
+| 7.5.2 | Implement process list view | Medium | L | 6.2.1 | ✅ |
+| 7.5.3 | Implement metrics view | Medium | M | 7.5.2 | 🟡 |
+| 7.5.4 | Implement log view | Medium | M | 7.5.2 | ✅ |
+| 7.5.5 | Implement keyboard handling | Medium | M | 7.5.2 | ✅ |
+| 7.5.6 | Write TUI tests | Low | L | 7.5.5 | ✅ |
 
 ---
 
@@ -511,7 +512,7 @@ Phase 9: Final Polish
 - [x] Health checks
 - [x] Metrics collection
 - [x] Secret manager
-- [ ] TUI dashboard
+- [x] TUI dashboard
 - [x] Watch mode
 - [x] Scheduler
 - [ ] Deploy strategies
@@ -553,10 +554,10 @@ Phase 9: Final Polish
 | 4. Plugin System | 20 | 18 | 90% |
 | 5. Core Plugins | 29 | 22 | 76% |
 | 6. CLI | 25 | 23 | 92% |
-| 7. Advanced Features | 26 | 19 | 73% |
+| 7. Advanced Features | 26 | 24 | 92% |
 | 8. Testing & Quality | 17 | 6 | 35% |
 | 9. Final Polish | 14 | 4 | 29% |
-| **Total** | **202** | **157** | **78%** |
+| **Total** | **202** | **162** | **80%** |
 
 **Estimated Duration**: 7 weeks (working full-time)
 **Start Date**: 2025-02-21

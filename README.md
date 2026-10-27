@@ -20,6 +20,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Dependencies** - Start order from `dependencies` (waits for healthy dependencies), reverse-order shutdown, cycle detection
 - **Health Checks** - HTTP(S), TCP, script, command, memory, CPU and composite checks with automatic restart or stop
 - **IPC Communication** - Binary frame protocol + JSON-RPC 2.0 over Unix sockets / TCP
+- **Terminal Dashboard** - `od monit`, htop-style, with sparklines, health and live logs (raw ANSI, no dependencies)
 - **WebUI Dashboard** - Built-in web interface with authentication and live process monitoring
 - **Cross-Platform** - Works on Linux, macOS, and Windows
 - **Tested End to End** - Unit and integration tests that spawn real processes, sockets and HTTP servers; CI on Linux, macOS and Windows
@@ -293,6 +294,7 @@ Set `maxMemory: '512M'` on an app (or `od start app.js --max-memory 512M`) to re
 | `od metrics` | Prometheus metrics (`--json` for the JSON report) |
 | `od health [name]` | Health check status (last result, consecutive failures) |
 | `od status` | Daemon & process status overview |
+| `od monit` | Live terminal dashboard: processes, CPU/memory sparklines, health, logs; `r` restart, `s` stop |
 | `od daemon start\|stop\|restart\|status` | Manage the daemon |
 | `od help` | Show help |
 

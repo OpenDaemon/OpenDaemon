@@ -9,7 +9,7 @@ declare const __OPENDAEMON_VERSION__: string | undefined;
 /**
  * Get package version
  */
-function getVersion(): string {
+export function getVersion(): string {
   if (typeof __OPENDAEMON_VERSION__ === 'string') {
     return __OPENDAEMON_VERSION__;
   }
@@ -55,6 +55,7 @@ ${term.bold('COMMANDS')}
     cron             Scheduled jobs: next run and last result
     secret <action>  Encrypted secrets: set, get, list, delete, export, rotate
     status           Show daemon and process overview
+    monit            Live terminal dashboard
 
   Daemon:
     daemon start     Start the daemon

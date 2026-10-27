@@ -23,6 +23,7 @@ import {
   DaemonCommand,
 } from './commands/index.js';
 import { term } from './output.js';
+import { MonitCommand } from './tui/monit.js';
 
 /**
  * CLI entry point
@@ -233,6 +234,11 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       const cmd = new SecretCommand();
       const secretArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
       await cmd.execute(secretArgs, parsed.options);
+      break;
+    }
+
+    case 'monit': {
+      await new MonitCommand().execute(parsed.args, parsed.options);
       break;
     }
 
