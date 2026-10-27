@@ -5,6 +5,7 @@ import { IpcServer } from '@opendaemon/core';
 import { ProcessManagerPlugin } from '../../plugins/process-manager/src/index.js';
 import { ConfigManagerPlugin } from '../../plugins/config-manager/src/index.js';
 import { WebuiPlugin } from '../../plugins/webui/src/index.js';
+import { HealthCheckPlugin } from '../../plugins/health-check/src/index.js';
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
@@ -64,6 +65,7 @@ export async function main(): Promise<void> {
     // Register plugins (they will register their RPC methods now)
     kernel.registerPlugin(configManager);
     kernel.registerPlugin(new ProcessManagerPlugin());
+    kernel.registerPlugin(new HealthCheckPlugin());
     kernel.registerPlugin(new WebuiPlugin());
 
     // Start kernel with configuration

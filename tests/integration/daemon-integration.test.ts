@@ -166,8 +166,8 @@ describe('Daemon Entry Point Integration', () => {
     it('should register plugins', async () => {
       await main();
       
-      // Both ConfigManagerPlugin and ProcessManagerPlugin should be registered
-      expect(mockKernelRegisterPlugin).toHaveBeenCalledTimes(3);
+      const names = mockKernelRegisterPlugin.mock.calls.map((call) => (call[0] as { name: string }).name);
+      expect(names).toEqual(['config-manager', 'process-manager', 'health-check', 'webui']);
     });
 
     it('should start kernel', async () => {

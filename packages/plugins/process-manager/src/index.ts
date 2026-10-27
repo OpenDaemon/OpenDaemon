@@ -842,6 +842,13 @@ export class ProcessManagerPlugin implements Plugin {
   }
 
   /**
+   * Configuration a process was started with (for the health-check and other plugins)
+   */
+  getProcessConfig(name: string): ProcessConfig | undefined {
+    return this.processes.get(name)?.config;
+  }
+
+  /**
    * Start a process (for WebUI and other plugins)
    */
   async startProcessFromPlugin(config: ProcessConfig): Promise<ProcessInfo> {
