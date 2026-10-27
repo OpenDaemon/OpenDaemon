@@ -176,5 +176,55 @@ describe('ProcessManagerPlugin', () => {
         unlinkSync(busyScriptPath);
       }
     });
+
+    describe('minUptime readiness', () => {
+      const scripts: string[] = [];
+      const script = (name: string, body: string) => {
+        const path = resolve(`./test-ready-${name}.js`);
+        writeFileSync(path, body);
+        scripts.push(path);
+        return path;
+      };
+
+      afterEach(() => {
+        for (const path of scripts.splice(0)) {
+          if (existsSync(path)) unlinkSync(path);
+        }
+      });
+
+      it('should treat an app that never sends ready as started once minUptime elapses', async () => {
+        const info = await methods.get('start')!({
+          name: 'plain', script: script('plain', 'setInterval(() => {}, 1000);'), minUptime: 200, killTimeout: 300,
+        }) as { status: string };
+        expect(info.status).toBe('online');
+        await methods.get('stop')!({ name: 'plain' });
+      });
+
+      it('should finish starting as soon as the app sends ready', async () => {
+        const started = Date.now();
+        await methods.get('start')!({
+          name: 'eager', script: script('eager', "process.send('ready'); setInterval(() => {}, 1000);"),
+          minUptime: 5000, killTimeout: 300,
+        });
+        expect(Date.now() - started).toBeLessThan(2000);
+        await methods.get('stop')!({ name: 'eager' });
+      });
+
+      it('should fail the start when the app exits before minUptime', async () => {
+        await expect(methods.get('start')!({
+          name: 'crash', script: script('crash', 'process.exit(3);'), minUptime: 2000, autoRestart: 'never',
+        })).rejects.toThrow(/exited before it was ready/);
+      });
+
+      it('should apply minUptime to every cluster worker', async () => {
+        const info = await methods.get('start')!({
+          name: 'cluster', script: script('cluster', 'setInterval(() => {}, 1000);'),
+          mode: 'cluster', instances: 2, minUptime: 200, killTimeout: 300,
+        }) as { status: string; pids: number[] };
+        expect(info.status).toBe('online');
+        expect(info.pids).toHaveLength(2);
+        await methods.get('stop')!({ name: 'cluster' });
+      });
+    });
   });
 });

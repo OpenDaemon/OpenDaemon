@@ -119,19 +119,16 @@ export class ProcessManagerPlugin implements Plugin {
   /**
    * List all processes
    */
-  private async listProcesses(): Promise<ProcessInfo[]> {
-    return Array.from(this.processes.values()).map((proc) => this.toProcessInfo(proc));
+  private listProcesses(): Promise<ProcessInfo[]> {
+    return Promise.resolve(Array.from(this.processes.values()).map((proc) => this.toProcessInfo(proc)));
   }
 
   /**
    * Get process info by name
    */
-  private async getProcessInfo(params: { name: string }): Promise<ProcessInfo | null> {
+  private getProcessInfo(params: { name: string }): Promise<ProcessInfo | null> {
     const proc = this.processes.get(params.name);
-    if (!proc) {
-      return null;
-    }
-    return this.toProcessInfo(proc);
+    return Promise.resolve(proc ? this.toProcessInfo(proc) : null);
   }
 
   /**
@@ -298,7 +295,7 @@ export class ProcessManagerPlugin implements Plugin {
    */
   private collectProcMetrics(proc: ManagedProcessInfo, pids: number[]): void {
     const now = Date.now();
-    const samples = (proc.cpuSamples ??= new Map());
+    const samples = (proc.cpuSamples ??= new Map<number, { ticks: number; at: number }>());
     let cpu = 0;
     let memory = 0;
 
@@ -397,13 +394,13 @@ export class ProcessManagerPlugin implements Plugin {
   /**
    * Get logs for a process (RPC handler)
    */
-  private async getProcessLogs(params: { name: string; lines?: number }): Promise<LogEntry[]> {
+  private getProcessLogs(params: { name: string; lines?: number }): Promise<LogEntry[]> {
     const proc = this.processes.get(params.name);
     if (!proc) {
-      throw new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`);
+      return Promise.reject(new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`));
     }
     const lines = params.lines ?? 100;
-    return proc.logs.slice(-lines);
+    return Promise.resolve(proc.logs.slice(-lines));
   }
 
   /**
@@ -459,16 +456,22 @@ export class ProcessManagerPlugin implements Plugin {
     proc.pids = [];
 
     for (let i = 0; i < instances; i++) {
-      await this.startWorker(proc, i);
+      this.startWorker(proc, i);
     }
 
     proc.pid = proc.pids[0];
+
+    // Same readiness rule as fork mode, waited for all workers together
+    const minUptime = config.minUptime;
+    if (minUptime) {
+      await Promise.all(proc.workers.map((worker) => this.waitForReady(worker, minUptime)));
+    }
   }
 
   /**
    * Start a single worker
    */
-  private async startWorker(proc: ManagedProcessInfo, index: number): Promise<void> {
+  private startWorker(proc: ManagedProcessInfo, index: number): void {
     const config = proc.config;
     const scriptPath = resolve(config.script);
     const cwd = config.cwd ? resolve(config.cwd) : dirname(scriptPath);
@@ -624,8 +627,8 @@ export class ProcessManagerPlugin implements Plugin {
             proc.status = 'online';
             proc.startTime = new Date();
             this.startMetricsCollection(proc);
-          }).catch((err) => {
-            this.logger.error(`Failed to restart cluster: ${proc.config.name}`, undefined, err);
+          }).catch((err: unknown) => {
+            this.logger.error(`Failed to restart cluster: ${proc.config.name}`, undefined, err as Error);
             proc.status = 'errored';
           });
         } else {
@@ -633,8 +636,8 @@ export class ProcessManagerPlugin implements Plugin {
             proc.status = 'online';
             proc.startTime = new Date();
             this.startMetricsCollection(proc);
-          }).catch((err) => {
-            this.logger.error(`Failed to restart: ${proc.config.name}`, undefined, err);
+          }).catch((err: unknown) => {
+            this.logger.error(`Failed to restart: ${proc.config.name}`, undefined, err as Error);
             proc.status = 'errored';
           });
         }
@@ -676,9 +679,11 @@ export class ProcessManagerPlugin implements Plugin {
         if (proc.status === 'stopping' || proc.status === 'stopped') {
           return;
         }
-        this.startWorker(proc, index).catch((err) => {
-          this.logger.error(`Failed to restart worker: ${proc.config.name}[${index}]`, undefined, err);
-        });
+        try {
+          this.startWorker(proc, index);
+        } catch (err) {
+          this.logger.error(`Failed to restart worker: ${proc.config.name}[${index}]`, undefined, err as Error);
+        }
       }, proc.config.restartDelay ?? 1000));
     }
   }
@@ -737,18 +742,32 @@ export class ProcessManagerPlugin implements Plugin {
   /**
    * Wait for process to be ready
    */
-  private async waitForReady(child: ChildProcess, timeout: number): Promise<void> {
+  private waitForReady(child: ChildProcess, timeout: number): Promise<void> {
+    // Started once the app sends 'ready', or if it is still running after `timeout` ms
+    // (spec: "ready signal or timeout"); exiting before either is a failed start
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error('Process ready timeout'));
-      }, timeout);
-
-      child.once('message', (msg) => {
-        if (msg === 'ready' || (typeof msg === 'object' && (msg as { type: string }).type === 'ready')) {
-          clearTimeout(timer);
+      const cleanup = () => {
+        clearTimeout(timer);
+        child.off('message', onMessage);
+        child.off('exit', onExit);
+      };
+      const onMessage = (msg: unknown) => {
+        if (msg === 'ready' || (typeof msg === 'object' && msg !== null && (msg as { type?: unknown }).type === 'ready')) {
+          cleanup();
           resolve();
         }
-      });
+      };
+      const onExit = (code: number | null, signal: string | null) => {
+        cleanup();
+        reject(new Error(`Process exited before it was ready (code ${String(code)}, signal ${String(signal)})`));
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, timeout);
+
+      child.on('message', onMessage);
+      child.once('exit', onExit);
     });
   }
 
