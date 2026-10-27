@@ -11,6 +11,8 @@ import { MetricsCollectorPlugin } from '../../plugins/metrics-collector/src/inde
 import { WatchModePlugin } from '../../plugins/watch-mode/src/index.js';
 import { SchedulerPlugin } from '../../plugins/scheduler/src/index.js';
 import { SecretManagerPlugin } from '../../plugins/secret-manager/src/index.js';
+import { NotificationPlugin } from '../../plugins/notification/src/index.js';
+import { AuditLoggerPlugin } from '../../plugins/audit-logger/src/index.js';
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync, chmodSync } from 'fs';
 import { randomBytes } from 'crypto';
@@ -96,6 +98,10 @@ export async function main(): Promise<void> {
     kernel.setIpcServer(ipcServer);
 
     // Register plugins (they will register their RPC methods now)
+    // Registered first so it sees every later plugin's lifecycle events; also observes all RPC calls
+    const audit = new AuditLoggerPlugin(home);
+    ipcServer.onCall((call) => { audit.recordCall(call); });
+    kernel.registerPlugin(audit);
     kernel.registerPlugin(configManager);
     kernel.registerPlugin(new SecretManagerPlugin(home));
     kernel.registerPlugin(new LogManagerPlugin());
@@ -104,6 +110,7 @@ export async function main(): Promise<void> {
     kernel.registerPlugin(new MetricsCollectorPlugin());
     kernel.registerPlugin(new WatchModePlugin());
     kernel.registerPlugin(new SchedulerPlugin());
+    kernel.registerPlugin(new NotificationPlugin());
     kernel.registerPlugin(new WebuiPlugin());
 
     // Start kernel with configuration

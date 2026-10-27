@@ -16,6 +16,7 @@ let mockReadFileSync: ReturnType<typeof vi.fn>;
 let mockWriteFileSync: ReturnType<typeof vi.fn>;
 let mockUnlinkSync: ReturnType<typeof vi.fn>;
 let mockChmodSync: ReturnType<typeof vi.fn>;
+const callObservers: Array<(call: unknown) => void> = [];
 
 // Track registered methods
 const registeredMethods: Record<string, (...args: any[]) => unknown> = {};
@@ -49,6 +50,7 @@ vi.mock('@opendaemon/core', () => ({
     },
     start: () => mockIpcServerStart(),
     stop: () => mockIpcServerStop(),
+    onCall: (observer: (call: unknown) => void) => { callObservers.push(observer); },
   })),
   Logger: vi.fn().mockImplementation(() => ({
     info: (...args: any[]) => mockLoggerInfo(...args),
@@ -171,7 +173,7 @@ describe('Daemon Entry Point Integration', () => {
       await main();
       
       const names = mockKernelRegisterPlugin.mock.calls.map((call) => (call[0] as { name: string }).name);
-      expect(names).toEqual(['config-manager', 'secret-manager', 'log-manager', 'process-manager', 'health-check', 'metrics-collector', 'watch-mode', 'scheduler', 'webui']);
+      expect(names).toEqual(['audit-logger', 'config-manager', 'secret-manager', 'log-manager', 'process-manager', 'health-check', 'metrics-collector', 'watch-mode', 'scheduler', 'notification', 'webui']);
     });
 
     it('should start kernel', async () => {
@@ -225,6 +227,16 @@ describe('Daemon Entry Point Integration', () => {
       
       expect(registeredMethods['daemon.status']).toBeDefined();
       expect(registeredMethods['daemon.shutdown']).toBeDefined();
+    });
+
+    it('should observe every RPC call for the audit log', async () => {
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      callObservers.length = 0;
+      await main();
+
+      expect(callObservers).toHaveLength(1);
+      // A read-only call is skipped by default; an observer error must not escape
+      expect(() => { callObservers[0]?.({ method: 'list', params: undefined, ok: true, duration: 1, connection: 'c' }); }).not.toThrow();
     });
 
     it('should start IPC server', async () => {

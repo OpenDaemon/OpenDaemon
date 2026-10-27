@@ -291,6 +291,7 @@ export class WebuiPlugin implements Plugin {
       const { username, password } = JSON.parse(body) as { username?: unknown; password?: unknown };
 
       if (typeof username === 'string' && typeof password === 'string' && this.checkCredentials(username, password)) {
+        this.context.events.emit('auth:login', { user: username, ok: true, ip: req.socket.remoteAddress });
         res.writeHead(200);
         res.end(JSON.stringify({ 
           success: true, 
@@ -298,6 +299,9 @@ export class WebuiPlugin implements Plugin {
           message: 'Login successful'
         }));
       } else {
+        this.context.events.emit('auth:login', {
+          user: typeof username === 'string' ? username : undefined, ok: false, ip: req.socket.remoteAddress,
+        });
         res.writeHead(401);
         res.end(JSON.stringify({ error: 'Invalid credentials' }));
       }

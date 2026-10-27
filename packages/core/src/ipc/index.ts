@@ -16,7 +16,7 @@ export {
 } from './rpc.js';
 
 // IPC Server/Client
-export { IpcServer } from './server.js';
+export { IpcServer, type IpcCall } from './server.js';
 export { IpcClient } from './client.js';
 export type {
   IpcServerConfig,

@@ -191,16 +191,8 @@ function parseScalar(value: string, lineNo?: number): unknown {
     if (!value.endsWith("'") || value.length < 2) throw new YamlError('Unterminated string', lineNo);
     return value.slice(1, -1).replace(/''/g, "'");
   }
-  if (value.startsWith('[')) {
-    if (!value.endsWith(']')) throw new YamlError('Unterminated flow sequence', lineNo);
-    const inner = value.slice(1, -1).trim();
-    return inner === '' ? [] : splitFlow(inner).map((item) => parseScalar(item, lineNo));
-  }
-  if (value === '{}') {
-    return {};
-  }
-  if (value.startsWith('{')) {
-    throw new YamlError('Flow mappings are not supported, use an indented block', lineNo);
+  if (value.startsWith('[') || value.startsWith('{')) {
+    return parseFlow(value, lineNo);
   }
 
   if (/^-?\d+$/.test(value)) return parseInt(value, 10);
@@ -213,24 +205,73 @@ function parseScalar(value: string, lineNo?: number): unknown {
 }
 
 /**
- * Split flow sequence items on commas outside quotes
+ * Flow collections on one line: `[a, b]`, `{ key: value }`, nested, with quoted strings
  */
-function splitFlow(inner: string): string[] {
-  const items: string[] = [];
-  let quote: string | undefined;
-  let current = '';
-  for (const ch of inner) {
-    if (quote) {
-      if (ch === quote) quote = undefined;
-    } else if (ch === '"' || ch === "'") {
-      quote = ch;
-    } else if (ch === ',') {
-      items.push(current.trim());
-      current = '';
-      continue;
+function parseFlow(text: string, lineNo?: number): unknown {
+  let i = 0;
+  const skip = () => { while (i < text.length && /\s/.test(text.charAt(i))) i++; };
+  const fail = (message: string): never => { throw new YamlError(message, lineNo); };
+
+  const quoted = (): string => {
+    const quote = text.charAt(i);
+    const start = i++;
+    while (i < text.length && text.charAt(i) !== quote) {
+      if (quote === '"' && text.charAt(i) === '\\') i++;
+      else if (quote === "'" && text.charAt(i) === "'" && text.charAt(i + 1) === "'") i++;
+      i++;
     }
-    current += ch;
-  }
-  items.push(current.trim());
-  return items;
+    if (i >= text.length) fail('Unterminated string');
+    i++;
+    return text.slice(start, i);
+  };
+
+  /** A plain token up to the next structural character */
+  const plain = (stops: string): string => {
+    const start = i;
+    while (i < text.length && !stops.includes(text.charAt(i))) i++;
+    return text.slice(start, i).trim();
+  };
+
+  const value = (): unknown => {
+    skip();
+    const ch = text.charAt(i);
+    if (ch === '[') {
+      i++;
+      const list: unknown[] = [];
+      skip();
+      if (text.charAt(i) === ']') { i++; return list; }
+      for (;;) {
+        list.push(value());
+        skip();
+        if (text.charAt(i) === ',') { i++; skip(); if (text.charAt(i) === ']') { i++; return list; } continue; }
+        if (text.charAt(i) === ']') { i++; return list; }
+        fail('Expected "," or "]" in flow sequence');
+      }
+    }
+    if (ch === '{') {
+      i++;
+      const map: Record<string, unknown> = {};
+      skip();
+      if (text.charAt(i) === '}') { i++; return map; }
+      for (;;) {
+        skip();
+        const rawKey = text.charAt(i) === '"' || text.charAt(i) === "'" ? quoted() : plain(':,}');
+        const key = rawKey.startsWith('"') || rawKey.startsWith("'") ? String(parseScalar(rawKey, lineNo)) : rawKey;
+        skip();
+        if (Object.prototype.hasOwnProperty.call(map, key)) fail(`Duplicate key "${key}"`);
+        if (text.charAt(i) === ':') { i++; map[key] = value(); } else map[key] = null;
+        skip();
+        if (text.charAt(i) === ',') { i++; skip(); if (text.charAt(i) === '}') { i++; return map; } continue; }
+        if (text.charAt(i) === '}') { i++; return map; }
+        fail('Expected "," or "}" in flow mapping');
+      }
+    }
+    const token = ch === '"' || ch === "'" ? quoted() : plain(',]}');
+    return parseScalar(token, lineNo);
+  };
+
+  const result = value();
+  skip();
+  if (i < text.length) fail(`Unexpected "${text.slice(i)}" after flow collection`);
+  return result;
 }

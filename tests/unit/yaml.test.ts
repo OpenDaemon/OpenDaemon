@@ -78,6 +78,23 @@ describe('parseYaml', () => {
     });
   });
 
+  it('should parse nested flow collections, as used for channel lists', () => {
+    expect(parseYaml([
+      'channels: [{ type: webhook, url: "http://h:8/hook?a=b,c", events: ["x:y", \'z\'] }, { type: slack, url: http://s }]',
+      'empty: { }',
+      'trailing: [1, 2, ]',
+      'nested: { a: { b: [1, { c: true }] }, d: null, e }',
+    ].join('\n'))).toEqual({
+      channels: [
+        { type: 'webhook', url: 'http://h:8/hook?a=b,c', events: ['x:y', 'z'] },
+        { type: 'slack', url: 'http://s' },
+      ],
+      empty: {},
+      trailing: [1, 2],
+      nested: { a: { b: [1, { c: true }] }, d: null, e: null },
+    });
+  });
+
   it('should return an empty object for an empty document', () => {
     expect(parseYaml('# only comments\n\n---\n')).toEqual({});
   });
@@ -89,7 +106,10 @@ describe('parseYaml', () => {
     ['list item inside a mapping', 'a: 1\n- b', /Unexpected list item.*line 2/],
     ['missing colon', 'just text', /Expected "key: value"/],
     ['unterminated string', 'a: "oops', /Unterminated string/],
-    ['flow mapping', 'a: {b: 1}', /Flow mappings are not supported/],
+    ['unterminated flow mapping', 'a: {b: 1', /Expected "," or "}" in flow mapping/],
+    ['unterminated flow sequence', 'a: [1, 2', /Expected "," or "]" in flow sequence/],
+    ['text after a flow collection', 'a: [1] x', /Unexpected "x" after flow collection/],
+    ['duplicate key in a flow mapping', 'a: {b: 1, b: 2}', /Duplicate key "b"/],
   ])('should reject %s with a line-numbered error', (_name, input, message) => {
     expect(() => parseYaml(input)).toThrow(YamlError);
     expect(() => parseYaml(input)).toThrow(message);

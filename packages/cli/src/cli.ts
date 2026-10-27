@@ -19,6 +19,7 @@ import {
   CronCommand,
   SecretCommand,
   StartupCommand,
+  AuditCommand,
   HealthCommand,
   StatusCommand,
   DaemonCommand,
@@ -233,6 +234,11 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       const cmd = new LogsCommand();
       const logsArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
       await cmd.execute(logsArgs, parsed.options);
+      break;
+    }
+
+    case 'audit': {
+      await new AuditCommand().execute(parsed.args, parsed.options);
       break;
     }
 

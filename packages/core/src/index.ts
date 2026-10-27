@@ -83,6 +83,7 @@ export {
   createErrorResponse,
   serialize,
   IpcServer,
+  type IpcCall,
   IpcClient,
   type IpcServerConfig,
   type IpcClientConfig,

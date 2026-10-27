@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { tmpdir } from 'os';
 import { pathToFileURL } from 'url';
@@ -263,3 +263,60 @@ describe.skipIf(!existsSync(CLI))('od secrets end to end', () => {
     }
   });
 });
+
+describe.skipIf(!existsSync(CLI))('od notifications and audit end to end', () => {
+  it('should notify a webhook when an app crashes and audit operations without leaking secrets', async () => {
+    const { createServer } = await import('http');
+    const hooks: Array<{ event: string; name?: string }> = [];
+    const server = createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c: Buffer) => { raw += c.toString(); });
+      req.on('end', () => { hooks.push(JSON.parse(raw) as (typeof hooks)[number]); res.end(); });
+    });
+    await new Promise<void>((resolveListen) => { server.listen(0, '127.0.0.1', resolveListen); });
+    const port = (server.address() as { port: number }).port;
+
+    const root = tempRoot();
+    const home = join(root, 'home');
+    const project = join(root, 'project');
+    mkdirSync(project);
+    const od = makeOd(home, project);
+    try {
+      writeFileSync(join(project, 'crash.cjs'), 'setTimeout(() => process.exit(7), 300); setInterval(() => {}, 1000);');
+      writeFileSync(join(project, 'opendaemon.config.yaml'), [
+        'apps:',
+        '  - name: flaky',
+        '    script: ./crash.cjs',
+        '    autoRestart: never',
+        '    env:',
+        '      DB_PASSWORD: hunter2-not-for-logs',
+        'plugins:',
+        '  webui:',
+        '    port: 0',
+        '  notification:',
+        `    channels: [{ type: webhook, url: "http://127.0.0.1:${String(port)}/hook", events: ["process:crash", "daemon:started"] }]`,
+      ].join('\n'));
+      expect(od('daemon', 'start').stdout).toContain('Daemon started');
+      await waitFor(() => hooks.some((h) => h.event === 'process:crash'));
+      expect(hooks.find((h) => h.event === 'process:crash')).toMatchObject({ name: 'flaky' });
+      expect(hooks.some((h) => h.event === 'daemon:started')).toBe(true);
+
+      odStartAudited(od, project);
+      const audit = od('audit', '--json').stdout.trim().split('\n').map((l) => JSON.parse(l) as { action: string; result: string; params?: unknown });
+      expect(audit.map((e) => e.action)).toEqual(expect.arrayContaining(['daemon.started', 'process.started', 'process.crash', 'start']));
+      expect(audit.find((e) => e.action === 'start')).toMatchObject({ result: 'success', params: { env: { API_KEY: '[redacted]' } } });
+      expect(od('audit').stdout).toMatch(/start\s+\S+\s+audited/);
+      expect(readFileSync(join(home, 'audit.log'), 'utf-8')).not.toMatch(/hunter2|s3cret-api-key/);
+    } finally {
+      od('daemon', 'stop');
+      rmSync(root, { recursive: true, force: true });
+      await new Promise((resolveClose) => { server.close(resolveClose); });
+    }
+  });
+});
+
+function odStartAudited(od: ReturnType<typeof makeOd>, project: string): void {
+  writeFileSync(join(project, 'quiet.cjs'), 'setInterval(() => {}, 1000);');
+  od('start', join(project, 'quiet.cjs'), '--name', 'audited', '--env', 'API_KEY=s3cret-api-key');
+  od('delete', 'audited');
+}

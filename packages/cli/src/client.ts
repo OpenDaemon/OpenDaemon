@@ -161,6 +161,14 @@ export class CliClient {
   }
 
   /**
+   * Newest audit log entries
+   */
+  async getAudit(lines: number): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('audit', { lines });
+  }
+
+  /**
    * Scheduled jobs with their next run and recent history
    */
   async getCronJobs(): Promise<unknown> {

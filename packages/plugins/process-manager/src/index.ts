@@ -863,6 +863,12 @@ export class ProcessManagerPlugin implements Plugin {
     }
 
     this.logger.info(`Process exited: ${proc.config.name}`, { code, signal });
+    if (code !== 0) {
+      // An unexpected non-zero exit or signal, whether or not it will be restarted
+      this.context.events.emit('process:crash', {
+        name: proc.config.name, code, signal, restartCount: proc.restartCount, pid: proc.pid,
+      });
+    }
 
     // Stop metrics collection
     this.stopMetricsCollection(proc);

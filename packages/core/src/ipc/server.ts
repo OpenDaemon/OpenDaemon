@@ -104,9 +104,23 @@ function tokensMatch(given: string, expected: string): boolean {
 }
 
 /**
+ * A completed RPC call, as seen by observers (see IpcServer.onCall)
+ */
+export interface IpcCall {
+  method: string;
+  params: unknown;
+  ok: boolean;
+  error?: string;
+  /** ms */
+  duration: number;
+  connection: string;
+}
+
+/**
  * IPC Server implementation using Unix Domain Sockets
  */
 export class IpcServer {
+  private readonly callObservers: Array<(call: IpcCall) => void> = [];
   private server?: Server;
   private readonly sockets = new Map<string, IpcSocketImpl>();
   private readonly methods = new Map<string, RpcMethodHandler>();
@@ -190,6 +204,23 @@ export class IpcServer {
   unregisterMethod(name: string): void {
     this.methods.delete(name);
     this.logger.debug(`Unregistered method: ${name}`);
+  }
+
+  /**
+   * Observe every completed RPC call (for audit logging). Observers must not throw.
+   */
+  onCall(observer: (call: IpcCall) => void): void {
+    this.callObservers.push(observer);
+  }
+
+  private notifyCall(call: IpcCall): void {
+    for (const observer of this.callObservers) {
+      try {
+        observer(call);
+      } catch (err) {
+        this.logger.error('RPC call observer failed', undefined, err as Error);
+      }
+    }
   }
 
   /**
@@ -316,8 +347,10 @@ export class IpcServer {
     }
 
     // Execute handler
+    const startedAt = Date.now();
     try {
       const result = await handler(params, socket);
+      this.notifyCall({ method: request.method, params, ok: true, duration: Date.now() - startedAt, connection: socket.id });
       
       // Only send response if it's a request (has id)
       if (request.id !== null) {
@@ -325,8 +358,9 @@ export class IpcServer {
         this.sendResponse(socket, response);
       }
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+ const error = err instanceof Error ? err : new Error(String(err));
       this.logger.error(`Error executing method ${request.method}`, undefined, error);
+      this.notifyCall({ method: request.method, params, ok: false, error: error.message, duration: Date.now() - startedAt, connection: socket.id });
       
       if (request.id !== null) {
         this.sendError(

@@ -559,6 +559,46 @@ export class StartupCommand implements Command {
 }
 
 /**
+ * Audit command - who did what, newest last
+ */
+export class AuditCommand implements Command {
+  name = 'audit';
+  description = 'Show the audit log';
+  options = [];
+
+  async execute(_args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
+    const lines = typeof options['lines'] === 'number' ? options['lines'] : 50;
+    try {
+      const client = new CliClient();
+      await client.connect();
+      const entries = await client.getAudit(lines) as Array<{
+        timestamp: string; action: string; target?: { name?: string }; result: string; error?: string; duration?: number;
+        actor: { type: string; user?: string };
+      }>;
+      await client.disconnect();
+
+      if (options['json'] === true) {
+        for (const entry of entries) console.log(JSON.stringify(entry));
+        return;
+      }
+      if (entries.length === 0) {
+        term.info('No audit entries');
+        return;
+      }
+      for (const e of entries) {
+        const outcome = e.result === 'success' ? term.color('green', 'ok  ') : term.color('red', 'FAIL');
+        const who = e.actor.user ?? e.actor.type;
+        const detail = [e.target?.name, e.error, e.duration === undefined ? undefined : `${String(e.duration)}ms`].filter(Boolean).join('  ');
+        console.log(`${term.dim(e.timestamp)} ${outcome} ${e.action.padEnd(22)} ${who.padEnd(10)} ${detail}`);
+      }
+    } catch (err) {
+      term.error(`Failed to get the audit log: ${(err instanceof Error ? err : new Error(String(err))).message}`);
+      process.exit(1);
+    }
+  }
+}
+
+/**
  * Cron command - scheduled jobs, their next run and last result
  */
 export class CronCommand implements Command {

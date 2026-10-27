@@ -14,6 +14,8 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
 - **Metrics** - Host, process and app metrics (`opendaemon/runtime` counters, gauges, histograms) as Prometheus text at `/metrics` or JSON; `maxMemory` restarts
 - **Persistent Logs** - JSON-lines log files per process with size rotation, gzip, search (`--grep`, `--since`) and live follow (`-f`)
+- **Notifications** - Webhook, Slack and Discord alerts for crashes, unhealthy apps, memory limits and failed jobs
+- **Audit Log** - Redacted JSON-lines trail of operations, lifecycle events and logins (`od audit`)
 - **Start at Boot** - `od startup` generates systemd, launchd or OpenRC services
 - **Secrets** - AES-256-GCM secret store, `{ secret: NAME }` env references, rotation that restarts the apps using a secret
 - **Scheduled Jobs** - `cron` apps with time zones, overlap control, retries and run history (`od cron`)
@@ -146,6 +148,26 @@ apps:
 | `composite` | the `checks` pass together (`and`) or any one passes (`or`) | `checks`, `operator` |
 
 Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their environment. Checks pause while a process is restarting. `notify` and `none` only report the state: it shows in `od health` and is emitted as the `health:status:unhealthy` event. `grpc` checks are not supported yet.
+
+## Notifications
+
+Get alerted when something breaks. Channels are webhooks (generic JSON), Slack and Discord:
+
+```yaml
+plugins:
+  notification:
+    channels:
+      - { type: slack, url: "https://hooks.slack.com/services/...", events: [process:crash, process:unhealthy] }
+      - { type: webhook, url: "https://example.com/hook", headers: { X-Token: abc } }
+    throttle: 60000       # at most one per event and process per minute (default 60000, 0 = off)
+    batchWindow: 5000     # collect events for 5s and send them together (default 0 = immediately)
+```
+
+Events: `process:crash` (non-zero exit, even if it will be restarted), `process:unhealthy`, `process:recovered`, `process:memory-limit`, `cron:failed`, `daemon:started`, `daemon:stopped`. Without `events`, a channel gets all of them. A webhook receives `{ event, title, message, name, severity, timestamp, host, data }` (several in a batch: `{ count, notifications }`). A failing channel is logged by host and never affects the daemon. Email is not supported yet.
+
+## Audit Log
+
+`~/.opendaemon/audit.log` records, as JSON lines (rotated, gzip): every RPC call that changes something (who, what, parameters, result, duration), process lifecycle events, and WebUI logins. Parameters are redacted: values under keys like `password`, `token` or `secret`, and every value in a process `env`, are replaced by `[redacted]`. `od audit` shows the newest entries (`--lines N`, `--json`); set `plugins.audit-logger.includeReads: true` to also record read-only calls such as `list`.
 
 ## Start at Boot
 
@@ -307,6 +329,7 @@ Set `maxMemory: '512M'` on an app (or `od start app.js --max-memory 512M`) to re
 | `od metrics` | Prometheus metrics (`--json` for the JSON report) |
 | `od health [name]` | Health check status (last result, consecutive failures) |
 | `od status` | Daemon & process status overview |
+| `od audit` | Audit log (`--lines N`, `--json`) |
 | `od startup` / `od unstartup` | Install or remove the boot service (`--print`, `--enable`, `--system`) |
 | `od monit` | Live terminal dashboard: processes, CPU/memory sparklines, health, logs; `r` restart, `s` stop |
 | `od daemon start\|stop\|restart\|status` | Manage the daemon |
@@ -353,6 +376,8 @@ opendaemon/
 │       ├── watch-mode/        # Restart on file changes
 │       ├── scheduler/         # Cron-scheduled jobs
 │       ├── secret-manager/    # Encrypted secrets, env injection
+│       ├── notification/      # Webhook, Slack, Discord alerts
+│       ├── audit-logger/      # Audit trail
 │       └── webui/             # HTTP server, REST API, dashboard HTML
 ├── tests/
 │   ├── unit/                  # Unit tests
