@@ -48,6 +48,7 @@ ${term.bold('COMMANDS')}
     list / ls        List all processes
     info <name>      Show detailed process information
     logs <name>      View process logs
+    health [name]    Show health check status
     status           Show daemon and process overview
 
   Daemon:

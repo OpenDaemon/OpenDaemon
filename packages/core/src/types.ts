@@ -77,7 +77,10 @@ export interface HealthCheckConfig {
   args?: string[];
   checks?: HealthCheckConfig[];
   operator?: 'and' | 'or';
-  threshold?: number;
+  /** memory: bytes or a size string such as '512M'; cpu: percent */
+  threshold?: number | string;
+  /** https: set to false to accept self-signed certificates (default: true) */
+  rejectUnauthorized?: boolean;
 }
 
 /**

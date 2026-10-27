@@ -13,6 +13,7 @@ import {
   DeleteCommand,
   InfoCommand,
   LogsCommand,
+  HealthCommand,
   StatusCommand,
   DaemonCommand,
 } from './commands/index.js';
@@ -169,6 +170,13 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       const cmd = new LogsCommand();
       const logsArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
       await cmd.execute(logsArgs, parsed.options);
+      break;
+    }
+
+    case 'health': {
+      const cmd = new HealthCommand();
+      const healthArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await cmd.execute(healthArgs, parsed.options);
       break;
     }
 

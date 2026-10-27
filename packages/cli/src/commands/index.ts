@@ -346,6 +346,58 @@ export class InfoCommand implements Command {
 }
 
 /**
+ * Health command - show health check status
+ */
+export class HealthCommand implements Command {
+  name = 'health';
+  description = 'Show health check status';
+  options = [];
+
+  async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
+    const name = args[0];
+
+    try {
+      const client = new CliClient();
+      await client.connect();
+      const reports = await client.getHealth(name) as Array<{
+        name: string; type: string; status: string; consecutiveFailures: number;
+        lastResult?: { ok: boolean; message: string; at: string };
+      }>;
+      await client.disconnect();
+
+      if (reports.length === 0) {
+        term.info(name === undefined ? 'No health checks configured' : `No health check configured for "${name}"`);
+        return;
+      }
+
+      const rows = reports.map((r) => [
+        r.name,
+        r.type,
+        this.formatStatus(r.status),
+        String(r.consecutiveFailures),
+        r.lastResult ? `${formatDuration(Date.now() - Date.parse(r.lastResult.at))} ago` : '-',
+        r.lastResult?.message ?? '-',
+      ]);
+      console.log(term.table(['Name', 'Type', 'Health', 'Failures', 'Last check', 'Result'], rows));
+    } catch (err) {
+      term.error(`Failed to get health: ${(err instanceof Error ? err : new Error(String(err))).message}`);
+      process.exit(1);
+    }
+  }
+
+  private formatStatus(status: string): string {
+    switch (status) {
+      case 'healthy':
+        return term.color('green', '● healthy');
+      case 'unhealthy':
+        return term.color('red', '✗ unhealthy');
+      default:
+        return term.color('gray', '◌ pending');
+    }
+  }
+}
+
+/**
  * Logs command - view process logs
  */
 export class LogsCommand implements Command {

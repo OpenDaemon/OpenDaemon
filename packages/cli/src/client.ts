@@ -128,6 +128,14 @@ export class CliClient {
   }
 
   /**
+   * Get health check status for all monitored processes, or one by name
+   */
+  async getHealth(name?: string): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('health', name === undefined ? {} : { name });
+  }
+
+  /**
    * Ensure connected to daemon
    */
   private ensureConnected(): void {

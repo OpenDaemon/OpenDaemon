@@ -22,7 +22,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 - 1.1.2: no npm workspaces; packages are wired via tsup bundling and relative imports
 - 5.1.2 / 5.1.3: `ManagedProcessInfo` is a plain record with status strings, not a class driven by the StateMachine
 - 5.2.2: TypeScript configs rely on Node's type stripping (Node >= 22.18); there is no bundled loader for Node 20
-- 5.3.1: health check types exist, but no health check plugin
+- 5.3.x: health-check plugin done for process/http/https/tcp/script/command/memory/cpu/composite; `grpc` is not implemented
 - 8.1.x: coverage is 86% statements with plugins measured; CI gates on a ratchet just below that, not on 100%
 - 9.2.x: WebUI hardened (loopback bind, Host/Origin checks, crypto token); IPC auth token exists but the daemon does not enable it
 
@@ -237,13 +237,13 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 ### 5.3 Health Check Plugin
 | ID | Task | Priority | Complexity | Dependencies | Status |
 |----|------|----------|------------|--------------|--------|
-| 5.3.1 | Define health check interface | High | M | None | 🟡 |
-| 5.3.2 | Implement process health check | High | S | 5.3.1 | ⬜ |
-| 5.3.3 | Implement HTTP health check | High | M | 5.3.1 | ⬜ |
-| 5.3.4 | Implement TCP health check | High | M | 5.3.1 | ⬜ |
-| 5.3.5 | Implement script health check | Medium | M | 5.3.1 | ⬜ |
-| 5.3.6 | Implement composite health check | Medium | L | 5.3.2 | ⬜ |
-| 5.3.7 | Write health check tests | High | L | 5.3.6 | ⬜ |
+| 5.3.1 | Define health check interface | High | M | None | ✅ |
+| 5.3.2 | Implement process health check | High | S | 5.3.1 | ✅ |
+| 5.3.3 | Implement HTTP health check | High | M | 5.3.1 | ✅ |
+| 5.3.4 | Implement TCP health check | High | M | 5.3.1 | ✅ |
+| 5.3.5 | Implement script health check | Medium | M | 5.3.1 | ✅ |
+| 5.3.6 | Implement composite health check | Medium | L | 5.3.2 | ✅ |
+| 5.3.7 | Write health check tests | High | L | 5.3.6 | ✅ |
 
 ### 5.4 Log Manager Plugin
 | ID | Task | Priority | Complexity | Dependencies | Status |
@@ -506,7 +506,7 @@ Phase 9: Final Polish
 
 ### Nice to Have (Can be in v1.1.0)
 - [ ] Cluster mode
-- [ ] Health checks
+- [x] Health checks
 - [ ] Metrics collection
 - [ ] Secret manager
 - [ ] TUI dashboard
@@ -549,12 +549,12 @@ Phase 9: Final Polish
 | 2. Core Infrastructure | 30 | 28 | 93% |
 | 3. IPC System | 18 | 14 | 78% |
 | 4. Plugin System | 20 | 18 | 90% |
-| 5. Core Plugins | 29 | 9 | 31% |
+| 5. Core Plugins | 29 | 16 | 55% |
 | 6. CLI | 25 | 22 | 88% |
 | 7. Advanced Features | 26 | 1 | 4% |
 | 8. Testing & Quality | 17 | 3 | 18% |
 | 9. Final Polish | 14 | 3 | 21% |
-| **Total** | **202** | **120** | **59%** |
+| **Total** | **202** | **127** | **63%** |
 
 **Estimated Duration**: 7 weeks (working full-time)
 **Start Date**: 2025-02-21
