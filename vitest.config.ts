@@ -9,7 +9,8 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      include: ['packages/*/src/**/*.ts'],
+      // plugins live one level deeper (packages/plugins/<name>/src) and were silently unmeasured
+      include: ['packages/*/src/**/*.ts', 'packages/plugins/*/src/**/*.ts'],
       exclude: [
         'node_modules/',
         'tests/',
