@@ -36,7 +36,10 @@ export class WebuiPlugin implements Plugin {
   // The API can start arbitrary scripts, so it is only reachable from this machine unless opted in
   private host = '127.0.0.1';
   private auth?: { username: string; password: string };
-  private sessionToken?: string;
+  // One token per login, so logout and expiry revoke a single session; token -> expiry (epoch ms)
+  private readonly sessions = new Map<string, number>();
+  private sessionTtl = 12 * 60 * 60 * 1000;
+  private static readonly MAX_SESSIONS = 1000;
 
   install(context: PluginContext): void {
     this.context = context;
@@ -49,7 +52,9 @@ export class WebuiPlugin implements Plugin {
     this.logger = context.logger;
 
     // Get config
-    const config = context.pluginConfig as { port?: number; host?: string; username?: string; password?: string } | undefined;
+    const config = context.pluginConfig as {
+      port?: number; host?: string; username?: string; password?: string; sessionTtl?: number;
+    } | undefined;
     if (config?.port) {
       this.port = config.port;
     }
@@ -63,7 +68,9 @@ export class WebuiPlugin implements Plugin {
         username: config.username,
         password: config.password,
       };
-      this.sessionToken = randomBytes(32).toString('hex');
+      if (typeof config.sessionTtl === 'number' && config.sessionTtl > 0) {
+        this.sessionTtl = config.sessionTtl;
+      }
       this.logger.info('WebUI authentication enabled');
     } else if (!LOOPBACK_HOSTS.has(this.host)) {
       this.logger.warn(`WebUI is exposed on ${this.host} without authentication; anyone who can reach it can run scripts`);
@@ -149,8 +156,10 @@ export class WebuiPlugin implements Plugin {
       return;
     }
 
-    // Handle logout
+    // Handle logout: revoke the session that made the request
     if (url === '/api/logout' && method === 'POST') {
+      const token = this.bearerToken(req);
+      if (token !== undefined) this.sessions.delete(token);
       res.writeHead(200);
       res.end(JSON.stringify({ success: true }));
       return;
@@ -188,10 +197,16 @@ export class WebuiPlugin implements Plugin {
     const authHeader = req.headers.authorization;
     if (!authHeader) return false;
 
-    // Check Bearer token
-    if (authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      return this.sessionToken !== undefined && safeEqual(token, this.sessionToken);
+    // Check Bearer token. Tokens are 256-bit random values, so a map lookup reveals nothing useful
+    const token = this.bearerToken(req);
+    if (token !== undefined) {
+      const expiresAt = this.sessions.get(token);
+      if (expiresAt === undefined) return false;
+      if (expiresAt <= Date.now()) {
+        this.sessions.delete(token);
+        return false;
+      }
+      return true;
     }
 
     // Check Basic auth for single requests
@@ -204,6 +219,26 @@ export class WebuiPlugin implements Plugin {
     }
 
     return false;
+  }
+
+  private bearerToken(req: IncomingMessage): string | undefined {
+    const header = req.headers.authorization;
+    return header?.startsWith('Bearer ') ? header.substring(7) : undefined;
+  }
+
+  private createSession(): string {
+    const now = Date.now();
+    for (const [token, expiresAt] of this.sessions) {
+      if (expiresAt <= now) this.sessions.delete(token);
+    }
+    // Bound memory under repeated logins: drop the oldest session (Map keeps insertion order)
+    if (this.sessions.size >= WebuiPlugin.MAX_SESSIONS) {
+      const oldest = this.sessions.keys().next().value;
+      if (oldest !== undefined) this.sessions.delete(oldest);
+    }
+    const token = randomBytes(32).toString('hex');
+    this.sessions.set(token, now + this.sessionTtl);
+    return token;
   }
 
   private checkCredentials(username: string, password: string): boolean {
@@ -223,7 +258,7 @@ export class WebuiPlugin implements Plugin {
         res.writeHead(200);
         res.end(JSON.stringify({ 
           success: true, 
-          token: this.sessionToken,
+          token: this.createSession(),
           message: 'Login successful'
         }));
       } else {

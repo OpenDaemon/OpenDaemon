@@ -114,4 +114,37 @@ describe('WebuiPlugin security', () => {
     const basic = Buffer.from('admin:pa:ss').toString('base64');
     expect((await send(port, 'GET', '/api/processes', { Authorization: `Basic ${basic}` })).status).toBe(200);
   });
+
+  it('should issue one token per login and revoke only the session that logs out', async () => {
+    const port = await start({ username: 'admin', password: 'pw' });
+    const login = async () => (JSON.parse((await send(
+      port, 'POST', '/api/login', { 'Content-Type': 'application/json' },
+      JSON.stringify({ username: 'admin', password: 'pw' })
+    )).body) as { token: string }).token;
+    const status = async (token: string) =>
+      (await send(port, 'GET', '/api/processes', { Authorization: `Bearer ${token}` })).status;
+
+    const laptop = await login();
+    const phone = await login();
+    expect(laptop).not.toBe(phone);
+
+    expect((await send(port, 'POST', '/api/logout', { Authorization: `Bearer ${laptop}` })).status).toBe(200);
+    expect(await status(laptop)).toBe(401);
+    expect(await status(phone)).toBe(200);
+
+    // Logging out requires a valid session
+    expect((await send(port, 'POST', '/api/logout')).status).toBe(401);
+  });
+
+  it('should expire sessions after sessionTtl', async () => {
+    const port = await start({ username: 'admin', password: 'pw', sessionTtl: 100 });
+    const { token } = JSON.parse((await send(
+      port, 'POST', '/api/login', { 'Content-Type': 'application/json' },
+      JSON.stringify({ username: 'admin', password: 'pw' })
+    )).body) as { token: string };
+
+    expect((await send(port, 'GET', '/api/processes', { Authorization: `Bearer ${token}` })).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 150));
+    expect((await send(port, 'GET', '/api/processes', { Authorization: `Bearer ${token}` })).status).toBe(401);
+  });
 });

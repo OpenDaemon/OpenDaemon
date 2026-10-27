@@ -195,7 +195,8 @@ The built-in dashboard runs at `http://localhost:7777` with the WebUI plugin ena
 - Real-time process table with status, CPU, memory, uptime, and restart count
 - Start, stop, restart, and delete processes from the browser
 - Stats overview cards (total, online, errored, stopped)
-- Optional authentication (Basic / Bearer token)
+- Optional authentication (`username`/`password`): each login gets its own Bearer token, which expires after `sessionTtl` ms (default 12 hours) and is revoked by logout; Basic auth also works
+- Listens on `127.0.0.1` only unless `host` is set
 - Auto-refresh every 3 seconds
 - Toast notifications for actions
 
