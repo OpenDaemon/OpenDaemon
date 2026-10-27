@@ -4,6 +4,8 @@ import { ConfigError, ErrorCode } from '../../../core/src/index.js';
 import type { DaemonConfig, ProcessConfig } from '../../../core/src/index.js';
 import { readFileSync, existsSync } from 'fs';
 import { resolve, extname } from 'path';
+import { pathToFileURL } from 'url';
+import { parseYaml } from './yaml.js';
 
 /**
  * Config Manager Plugin
@@ -19,6 +21,7 @@ export class ConfigManagerPlugin implements Plugin {
   private readonly logger: Logger;
   private configPath?: string;
   private loadedConfig: DaemonConfig = {};
+  private loaded = false;
 
   constructor() {
     this.logger = new Logger('config-manager');
@@ -39,9 +42,12 @@ export class ConfigManagerPlugin implements Plugin {
   /**
    * Start the plugin - load config
    */
-  async onStart(context: PluginContext): Promise<void> {
-    this.logger.info('Config manager starting');
-    
+  /**
+   * Discover and load the configuration file from the working directory.
+   * The daemon calls this before starting the kernel, so the result is what
+   * every plugin receives as context.config.
+   */
+  async load(): Promise<DaemonConfig> {
     const configPath = this.findConfigFile();
     if (configPath) {
       this.configPath = configPath;
@@ -50,6 +56,16 @@ export class ConfigManagerPlugin implements Plugin {
     } else {
       this.logger.info('No configuration file found, using defaults');
       this.loadedConfig = this.getDefaultConfig();
+    }
+    this.loaded = true;
+    return this.loadedConfig;
+  }
+
+  async onStart(context: PluginContext): Promise<void> {
+    this.logger.info('Config manager starting');
+
+    if (!this.loaded) {
+      await this.load();
     }
 
     // Emit config loaded event
@@ -166,16 +182,22 @@ export class ConfigManagerPlugin implements Plugin {
    * Load TypeScript config
    */
   private async loadTypeScriptConfig(path: string): Promise<DaemonConfig> {
-    // For now, try to use dynamic import
-    // In production, this would need ts-node or similar
+    // Relies on Node's built-in type stripping (Node >= 22.18, or 22.6 with
+    // --experimental-strip-types); there is no bundled TypeScript loader
     try {
-      const module = await import(path);
+      const module = await import(pathToFileURL(path).href) as { default?: unknown };
       const config = module.default ?? module;
       return this.validateConfig(config);
     } catch (err) {
+      if (err instanceof ConfigError) {
+        throw err;
+      }
+      const hint = (err as NodeJS.ErrnoException).code === 'ERR_UNKNOWN_FILE_EXTENSION'
+        ? ' (this Node.js version cannot load .ts files; use Node >= 22.18 or a .js/.json/.yaml config)'
+        : '';
       throw new ConfigError(
         ErrorCode.CONFIG_PARSE_ERROR,
-        `Failed to load TypeScript config: ${(err as Error).message}`,
+        `Failed to load TypeScript config: ${(err as Error).message}${hint}`,
         path,
         undefined,
         err as Error
@@ -188,10 +210,14 @@ export class ConfigManagerPlugin implements Plugin {
    */
   private async loadJavaScriptConfig(path: string): Promise<DaemonConfig> {
     try {
-      const module = await import(path);
+      // A file URL works on Windows too, where an absolute path is not a valid specifier
+      const module = await import(pathToFileURL(path).href) as { default?: unknown };
       const config = module.default ?? module;
       return this.validateConfig(config);
     } catch (err) {
+      if (err instanceof ConfigError) {
+        throw err;
+      }
       throw new ConfigError(
         ErrorCode.CONFIG_PARSE_ERROR,
         `Failed to load JavaScript config: ${(err as Error).message}`,
@@ -215,9 +241,12 @@ export class ConfigManagerPlugin implements Plugin {
         return this.validateConfig(pkg.opendaemon ?? {});
       }
       
-      const config = JSON.parse(content);
+      const config = JSON.parse(content) as unknown;
       return this.validateConfig(config);
     } catch (err) {
+      if (err instanceof ConfigError) {
+        throw err;
+      }
       throw new ConfigError(
         ErrorCode.CONFIG_PARSE_ERROR,
         `Failed to parse JSON config: ${(err as Error).message}`,
@@ -235,9 +264,12 @@ export class ConfigManagerPlugin implements Plugin {
     // Simple YAML parser for basic cases
     try {
       const content = readFileSync(path, 'utf-8');
-      const config = this.parseYaml(content);
+      const config = parseYaml(content);
       return this.validateConfig(config);
     } catch (err) {
+      if (err instanceof ConfigError) {
+        throw err;
+      }
       throw new ConfigError(
         ErrorCode.CONFIG_PARSE_ERROR,
         `Failed to parse YAML config: ${(err as Error).message}`,
@@ -246,90 +278,6 @@ export class ConfigManagerPlugin implements Plugin {
         err as Error
       );
     }
-  }
-
-  /**
-   * Simple YAML parser
-   */
-  private parseYaml(content: string): unknown {
-    const lines = content.split('\n');
-    const result: Record<string, unknown> = {};
-    let currentKey = '';
-    let currentArray: unknown[] = [];
-    let inArray = false;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      
-      // Skip comments and empty lines
-      if (!trimmed || trimmed.startsWith('#')) {
-        continue;
-      }
-
-      // Check for array items
-      if (trimmed.startsWith('- ')) {
-        if (!inArray) {
-          inArray = true;
-          currentArray = [];
-        }
-        const value = trimmed.slice(2).trim();
-        currentArray.push(this.parseYamlValue(value));
-        continue;
-      }
-
-      // If we were in an array, save it
-      if (inArray && currentKey) {
-        result[currentKey] = currentArray;
-        inArray = false;
-        currentArray = [];
-      }
-
-      // Parse key-value pair
-      const colonIndex = trimmed.indexOf(':');
-      if (colonIndex > -1) {
-        const key = trimmed.slice(0, colonIndex).trim();
-        const value = trimmed.slice(colonIndex + 1).trim();
-        
-        currentKey = key;
-        
-        if (value) {
-          result[key] = this.parseYamlValue(value);
-        }
-      }
-    }
-
-    // Handle last array if any
-    if (inArray && currentKey) {
-      result[currentKey] = currentArray;
-    }
-
-    return result;
-  }
-
-  /**
-   * Parse YAML value
-   */
-  private parseYamlValue(value: string): unknown {
-    // Remove quotes
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-
-    // Try to parse as number
-    if (/^-?\d+$/.test(value)) {
-      return parseInt(value, 10);
-    }
-    if (/^-?\d+\.\d+$/.test(value)) {
-      return parseFloat(value);
-    }
-
-    // Try to parse as boolean
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    if (value === 'null') return null;
-
-    return value;
   }
 
   /**
@@ -354,8 +302,14 @@ export class ConfigManagerPlugin implements Plugin {
         );
       }
 
-      for (const app of cfg.apps) {
-        this.validateProcessConfig(app);
+      for (const app of cfg.apps as unknown[]) {
+        if (typeof app !== 'object' || app === null || Array.isArray(app)) {
+          throw new ConfigError(
+            ErrorCode.CONFIG_VALIDATION_ERROR,
+            'Each entry in apps must be an object with name and script'
+          );
+        }
+        this.validateProcessConfig(app as ProcessConfig);
       }
     }
 

@@ -41,18 +41,11 @@ export async function main(): Promise<void> {
     // Write PID file
     writeFileSync(pidFile, String(process.pid));
 
-    // Load configuration if exists
-    let config: Record<string, unknown> = {};
-    const configPath = resolve('opendaemon.config.json');
-    if (existsSync(configPath)) {
-      try {
-        const configContent = readFileSync(configPath, 'utf-8');
-        config = JSON.parse(configContent);
-        logger.info('Configuration loaded from: ' + configPath);
-      } catch (err) {
-        logger.warn('Failed to load configuration: ' + (err as Error).message);
-      }
-    }
+    // Load configuration through the config manager (TS/JS/JSON/YAML/package.json),
+    // so the file it finds is what every plugin receives as context.config.
+    // An invalid config is fatal: silently starting without the user's apps is worse.
+    const configManager = new ConfigManagerPlugin();
+    const config = await configManager.load();
 
     // Create kernel
     const kernel = new Kernel();
@@ -69,7 +62,7 @@ export async function main(): Promise<void> {
     kernel.setIpcServer(ipcServer);
 
     // Register plugins (they will register their RPC methods now)
-    kernel.registerPlugin(new ConfigManagerPlugin());
+    kernel.registerPlugin(configManager);
     kernel.registerPlugin(new ProcessManagerPlugin());
     kernel.registerPlugin(new WebuiPlugin());
 
@@ -128,6 +121,11 @@ export async function main(): Promise<void> {
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     logger.error('Failed to start daemon', undefined, error);
+    // Remove our PID file so a failed start does not block the next one
+    const pidFile = resolve('opendaemon.pid');
+    if (existsSync(pidFile) && readFileSync(pidFile, 'utf-8').trim() === String(process.pid)) {
+      unlinkSync(pidFile);
+    }
     process.exit(1);
   }
 }

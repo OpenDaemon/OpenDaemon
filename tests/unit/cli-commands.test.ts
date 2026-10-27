@@ -58,6 +58,9 @@ vi.mock('fs', () => ({
   readFileSync: (...args: any[]) => mockReadFileSync(...args),
   unlinkSync: (...args: any[]) => mockUnlinkSync(...args),
   writeFileSync: (...args: any[]) => mockWriteFileSync(...args),
+  openSync: () => 3,
+  closeSync: () => {},
+  statSync: () => ({ size: 0 }),
 }));
 
 // Mock path module

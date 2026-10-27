@@ -2,7 +2,7 @@ import type { OptionValue } from '../parser.js';
 import { term } from '../output.js';
 import { CliClient } from '../client.js';
 import { resolve } from 'path';
-import { existsSync, readFileSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync, openSync, closeSync, statSync } from 'fs';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 
@@ -440,6 +440,21 @@ function formatDuration(ms: number): string {
 
 const PID_FILE = 'opendaemon.pid';
 const SOCKET_FILE = 'opendaemon.sock';
+const LOG_FILE = 'opendaemon.log';
+
+/**
+ * Last lines the daemon wrote to its log since `offset`, for explaining a failed start
+ */
+function readLogTail(logFile: string, offset: number, lines = 10): string {
+  try {
+    const output = readFileSync(logFile).subarray(offset).toString('utf-8').trim();
+    // Stack frames would push the actual error message out of view
+    const meaningful = output.split('\n').filter((line) => !/^\s+at /.test(line));
+    return meaningful.length > 0 ? `\n${meaningful.slice(-lines).join('\n')}` : '';
+  } catch {
+    return '';
+  }
+}
 
 function isProcessRunning(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
@@ -498,7 +513,12 @@ export class DaemonCommand implements Command {
       const daemonScript = getDaemonScriptPath();
       if (!existsSync(daemonScript)) throw new Error(`Daemon script not found: ${daemonScript}`);
 
-      const child = spawn(process.execPath, [daemonScript], { detached: true, stdio: 'ignore' });
+      // Daemon output goes to a log file instead of being discarded, so a failed start can be explained
+      const logFile = resolve(LOG_FILE);
+      const logOffset = existsSync(logFile) ? statSync(logFile).size : 0;
+      const logFd = openSync(logFile, 'a');
+      const child = spawn(process.execPath, [daemonScript], { detached: true, stdio: ['ignore', logFd, logFd] });
+      closeSync(logFd);
 
       await new Promise<void>((resolve, reject) => {
         let attempts = 0;
@@ -509,7 +529,10 @@ export class DaemonCommand implements Command {
             const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
             if (isProcessRunning(pid)) { resolve(); return; }
           }
-          if (child.exitCode !== null && child.exitCode !== 0) { reject(new Error(`Daemon exited with code ${child.exitCode}`)); return; }
+          if (child.exitCode !== null && child.exitCode !== 0) {
+            reject(new Error(`Daemon exited with code ${child.exitCode}${readLogTail(logFile, logOffset)}`));
+            return;
+          }
           if (attempts >= maxAttempts) { reject(new Error('Daemon failed to start within timeout')); return; }
           setTimeout(checkStarted, 100);
         };
