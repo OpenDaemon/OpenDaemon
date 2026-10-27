@@ -35,6 +35,9 @@ jobs:
       - name: Test
         run: npm run test:coverage
 
+      - name: End-to-end (built CLI against a real daemon)
+        run: npm run test:e2e
+
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20.x'

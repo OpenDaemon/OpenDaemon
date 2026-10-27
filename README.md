@@ -258,6 +258,9 @@ npm test
 
 # Run tests with coverage
 npm run test:coverage
+
+# End-to-end: builds, then drives the real `od` CLI and daemon
+npm run test:e2e
 ```
 
 ## Why OpenDaemon?

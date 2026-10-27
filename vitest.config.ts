@@ -5,7 +5,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/**/*.{test,spec}.{js,ts}'],
-    exclude: ['node_modules', 'dist'],
+    // tests/e2e drive the built CLI; they run via `npm run test:e2e` after a build
+    exclude: ['node_modules', 'dist', 'tests/e2e/**'],
     coverage: {
       provider: 'v8',
       // lcov is what the CI codecov upload reads

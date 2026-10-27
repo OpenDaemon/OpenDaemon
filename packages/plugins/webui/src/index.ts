@@ -55,7 +55,8 @@ export class WebuiPlugin implements Plugin {
     const config = context.pluginConfig as {
       port?: number; host?: string; username?: string; password?: string; sessionTtl?: number;
     } | undefined;
-    if (config?.port) {
+    // 0 is valid: let the OS pick a free port
+    if (typeof config?.port === 'number') {
       this.port = config.port;
     }
     if (config?.host) {
@@ -89,7 +90,9 @@ export class WebuiPlugin implements Plugin {
     const server = this.server;
     return new Promise((resolve, reject) => {
       server.listen(this.port, this.host, () => {
-        this.logger.info(`WebUI server listening on http://${this.host.includes(':') ? `[${this.host}]` : this.host}:${String(this.port)}`);
+        const address = server.address();
+        const port = typeof address === 'object' && address !== null ? address.port : this.port;
+        this.logger.info(`WebUI server listening on http://${this.host.includes(':') ? `[${this.host}]` : this.host}:${String(port)}`);
         resolve();
       });
 

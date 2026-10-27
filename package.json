@@ -37,6 +37,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest",
+    "test:e2e": "npm run build && vitest run --config vitest.e2e.config.ts",
     "test:coverage": "vitest --coverage",
     "test:ui": "vitest --ui",
     "lint": "eslint .",

@@ -382,9 +382,9 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 ### 8.3 E2E Tests
 | ID | Task | Priority | Complexity | Dependencies | Status |
 |----|------|----------|------------|--------------|--------|
-| 8.3.1 | Write CLI workflow tests | High | XL | 6.4.5 | ⬜ |
-| 8.3.2 | Write full daemon workflow tests | High | XL | 8.2.4 | ⬜ |
-| 8.3.3 | Write configuration workflow tests | Medium | L | 5.2.7 | ⬜ |
+| 8.3.1 | Write CLI workflow tests | High | XL | 6.4.5 | ✅ |
+| 8.3.2 | Write full daemon workflow tests | High | XL | 8.2.4 | ✅ |
+| 8.3.3 | Write configuration workflow tests | Medium | L | 5.2.7 | ✅ |
 
 ### 8.4 Documentation
 | ID | Task | Priority | Complexity | Dependencies | Status |
@@ -553,9 +553,9 @@ Phase 9: Final Polish
 | 5. Core Plugins | 29 | 21 | 72% |
 | 6. CLI | 25 | 22 | 88% |
 | 7. Advanced Features | 26 | 1 | 4% |
-| 8. Testing & Quality | 17 | 3 | 18% |
+| 8. Testing & Quality | 17 | 6 | 35% |
 | 9. Final Polish | 14 | 3 | 21% |
-| **Total** | **202** | **133** | **66%** |
+| **Total** | **202** | **136** | **67%** |
 
 **Estimated Duration**: 7 weeks (working full-time)
 **Start Date**: 2025-02-21
