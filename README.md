@@ -65,6 +65,8 @@ Create an `opendaemon.config.ts` (or `.js`, `.mjs`, `.json`, `.yaml`, or an `ope
 
 If the daemon fails to start, the reason is printed and its full output is in `opendaemon.log`.
 
+The daemon keeps its runtime files next to the config: `opendaemon.pid`, `opendaemon.sock` (Unix) and `opendaemon.token`. Every CLI request must carry the token. The token file and the socket are readable only by the user who started the daemon (mode `0600`), so other local users cannot control it. That includes Windows, where the daemon listens on TCP `127.0.0.1:9995`.
+
 ```typescript
 import { defineConfig } from 'opendaemon/sdk';
 

@@ -46,6 +46,7 @@ pids/
 .opendaemon/
 *.sock
 opendaemon.pid
+opendaemon.token
 
 # Temporary files
 tmp/

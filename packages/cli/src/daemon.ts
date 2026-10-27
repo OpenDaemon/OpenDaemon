@@ -7,8 +7,23 @@ import { ConfigManagerPlugin } from '../../plugins/config-manager/src/index.js';
 import { WebuiPlugin } from '../../plugins/webui/src/index.js';
 import { HealthCheckPlugin } from '../../plugins/health-check/src/index.js';
 
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, unlinkSync, chmodSync } from 'fs';
 import { resolve } from 'path';
+import { randomBytes } from 'crypto';
+
+/**
+ * Remove the PID file (only if it is ours) and the IPC token file
+ */
+function removeRuntimeFiles(): void {
+  const pidFile = resolve('opendaemon.pid');
+  if (existsSync(pidFile) && readFileSync(pidFile, 'utf-8').trim() === String(process.pid)) {
+    unlinkSync(pidFile);
+  }
+  const tokenFile = resolve('opendaemon.token');
+  if (existsSync(tokenFile)) {
+    unlinkSync(tokenFile);
+  }
+}
 
 /**
  * Check if process is running
@@ -54,9 +69,21 @@ export async function main(): Promise<void> {
     // Create IPC server FIRST (before registering plugins)
     // Use TCP on Windows (Unix sockets have permission issues), Unix socket on Linux/Mac
     const isWindows = process.platform === 'win32';
+    const socketPath = resolve('opendaemon.sock');
+
+    // Every IPC request must carry this token. Only the daemon's user can read the token file,
+    // so other local users cannot drive the daemon (and run code as this user) even when they
+    // can reach the TCP port (Windows) or the socket (a permissive umask or shared group)
+    const authToken = randomBytes(32).toString('hex');
+    const tokenFile = resolve('opendaemon.token');
+    if (existsSync(tokenFile)) {
+      unlinkSync(tokenFile); // the mode below only applies when the file is created
+    }
+    writeFileSync(tokenFile, authToken, { mode: 0o600 });
+
     const ipcConfig = isWindows
-      ? { host: '127.0.0.1', port: 9995 }
-      : { socketPath: resolve('opendaemon.sock') };
+      ? { host: '127.0.0.1', port: 9995, authToken }
+      : { socketPath, authToken };
     const ipcServer = new IpcServer(ipcConfig);
 
     // Connect kernel to IPC server so plugins can register methods
@@ -78,13 +105,11 @@ export async function main(): Promise<void> {
       uptime: process.uptime(),
     }));
 
-    ipcServer.registerMethod('daemon.shutdown', async () => {
-      await kernel.stop();
-      process.exit(0);
-    });
-
     // Start IPC server
     await ipcServer.start();
+    if (!isWindows) {
+      chmodSync(socketPath, 0o600);
+    }
 
     logger.info('Daemon started successfully');
 
@@ -104,14 +129,18 @@ export async function main(): Promise<void> {
         logger.error('Error during shutdown', undefined, err as Error);
         exitCode = 1;
       } finally {
-        // Clean up PID file even when teardown failed, so the next start is not blocked
-        if (existsSync(pidFile)) {
-          unlinkSync(pidFile);
-        }
+        // Clean up even when teardown failed, so the next start is not blocked
+        removeRuntimeFiles();
       }
 
       process.exit(exitCode);
     };
+
+    // Reply first, then run the same teardown as a signal would (PID/token cleanup included)
+    ipcServer.registerMethod('daemon.shutdown', () => {
+      setImmediate(() => { void shutdown('daemon.shutdown'); });
+      return { ok: true };
+    });
 
     process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
     process.on('SIGINT', () => { void shutdown('SIGINT'); });
@@ -123,11 +152,8 @@ export async function main(): Promise<void> {
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     logger.error('Failed to start daemon', undefined, error);
-    // Remove our PID file so a failed start does not block the next one
-    const pidFile = resolve('opendaemon.pid');
-    if (existsSync(pidFile) && readFileSync(pidFile, 'utf-8').trim() === String(process.pid)) {
-      unlinkSync(pidFile);
-    }
+    // Remove our PID and token files so a failed start does not block the next one
+    removeRuntimeFiles();
     process.exit(1);
   }
 }

@@ -24,7 +24,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 - 5.2.2: TypeScript configs rely on Node's type stripping (Node >= 22.18); there is no bundled loader for Node 20
 - 5.3.x: health-check plugin done for process/http/https/tcp/script/command/memory/cpu/composite; `grpc` is not implemented
 - 8.1.x: coverage is 86% statements with plugins measured; CI gates on a ratchet just below that, not on 100%
-- 9.2.x: WebUI hardened (loopback bind, Host/Origin checks, crypto token); IPC auth token exists but the daemon does not enable it
+- 9.2.x: WebUI hardened (loopback bind, Host/Origin checks, crypto token); IPC requires a per-start token from a 0600 token file and the socket is 0600
 
 ---
 
@@ -149,7 +149,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 | 3.2.2 | Implement UDS creation | Critical | M | 3.2.1 | ✅ |
 | 3.2.3 | Implement connection handling | Critical | L | 3.2.2 | ✅ |
 | 3.2.4 | Implement RPC method routing | Critical | L | 3.2.3 | ✅ |
-| 3.2.5 | Add authentication support | High | M | 3.2.4 | 🟡 |
+| 3.2.5 | Add authentication support | High | M | 3.2.4 | ✅ |
 | 3.2.6 | Add rate limiting | Medium | M | 3.2.4 | ⬜ |
 | 3.2.7 | Write IPC server tests | High | L | 3.2.6 | ✅ |
 
@@ -547,14 +547,14 @@ Phase 9: Final Polish
 |-------|-------|-----------|----------|
 | 1. Foundation | 23 | 22 | 96% |
 | 2. Core Infrastructure | 30 | 28 | 93% |
-| 3. IPC System | 18 | 14 | 78% |
+| 3. IPC System | 18 | 15 | 83% |
 | 4. Plugin System | 20 | 18 | 90% |
 | 5. Core Plugins | 29 | 16 | 55% |
 | 6. CLI | 25 | 22 | 88% |
 | 7. Advanced Features | 26 | 1 | 4% |
 | 8. Testing & Quality | 17 | 3 | 18% |
 | 9. Final Polish | 14 | 3 | 21% |
-| **Total** | **202** | **127** | **63%** |
+| **Total** | **202** | **128** | **63%** |
 
 **Estimated Duration**: 7 weeks (working full-time)
 **Start Date**: 2025-02-21
