@@ -14,6 +14,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
 - **Metrics** - Host, process and app metrics (`opendaemon/runtime` counters, gauges, histograms) as Prometheus text at `/metrics` or JSON; `maxMemory` restarts
 - **Persistent Logs** - JSON-lines log files per process with size rotation, gzip, search (`--grep`, `--since`) and live follow (`-f`)
+- **Start at Boot** - `od startup` generates systemd, launchd or OpenRC services
 - **Secrets** - AES-256-GCM secret store, `{ secret: NAME }` env references, rotation that restarts the apps using a secret
 - **Scheduled Jobs** - `cron` apps with time zones, overlap control, retries and run history (`od cron`)
 - **Watch Mode** - `--watch` restarts on file changes (recursive `fs.watch`, ignore patterns, debounce)
@@ -145,6 +146,18 @@ apps:
 | `composite` | the `checks` pass together (`and`) or any one passes (`or`) | `checks`, `operator` |
 
 Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their environment. Checks pause while a process is restarting. `notify` and `none` only report the state: it shows in `od health` and is emitted as the `health:status:unhealthy` event. `grpc` checks are not supported yet.
+
+## Start at Boot
+
+```bash
+od startup                 # write a unit for your init system and show the commands to enable it
+od startup --enable        # ...and run them
+od startup --print         # only print the script
+sudo od startup --system --enable   # machine-wide, runs as the invoking user
+od unstartup               # disable and remove it
+```
+
+Supported: systemd (user or system unit), launchd (LaunchAgent or LaunchDaemon) and OpenRC; pick one with `--init` if detection fails. The generated service runs `daemon.js` in the foreground from the directory where you ran `od startup` (that is where the config file is found), with `OPENDAEMON_HOME` set, restarts it on failure, and allows 90 seconds for the daemon to stop its apps in dependency order. On Windows, use `schtasks /Create /SC ONLOGON /TN OpenDaemon /TR "node <path>\\daemon.js"`.
 
 ## Secrets
 
@@ -294,6 +307,7 @@ Set `maxMemory: '512M'` on an app (or `od start app.js --max-memory 512M`) to re
 | `od metrics` | Prometheus metrics (`--json` for the JSON report) |
 | `od health [name]` | Health check status (last result, consecutive failures) |
 | `od status` | Daemon & process status overview |
+| `od startup` / `od unstartup` | Install or remove the boot service (`--print`, `--enable`, `--system`) |
 | `od monit` | Live terminal dashboard: processes, CPU/memory sparklines, health, logs; `r` restart, `s` stop |
 | `od daemon start\|stop\|restart\|status` | Manage the daemon |
 | `od help` | Show help |

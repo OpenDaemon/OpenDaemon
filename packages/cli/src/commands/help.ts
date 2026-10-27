@@ -56,6 +56,8 @@ ${term.bold('COMMANDS')}
     secret <action>  Encrypted secrets: set, get, list, delete, export, rotate
     status           Show daemon and process overview
     monit            Live terminal dashboard
+    startup          Start the daemon at boot (--print, --enable, --system, --init)
+    unstartup        Remove the startup script
 
   Daemon:
     daemon start     Start the daemon

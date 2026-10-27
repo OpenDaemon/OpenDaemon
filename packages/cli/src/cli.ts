@@ -18,6 +18,7 @@ import {
   MetricsCommand,
   CronCommand,
   SecretCommand,
+  StartupCommand,
   HealthCommand,
   StatusCommand,
   DaemonCommand,
@@ -98,6 +99,11 @@ async function main(): Promise<void> {
     type: 'array',
     description: 'Environment variable for the process (KEY=value), repeatable',
   });
+
+  parser.addOption({ name: 'init', type: 'string', description: 'Init system for od startup: systemd, launchd or openrc' });
+  parser.addOption({ name: 'system', type: 'boolean', description: 'od startup: install for the whole machine (needs root)' });
+  parser.addOption({ name: 'print', type: 'boolean', description: 'od startup: print the script instead of writing it' });
+  parser.addOption({ name: 'enable', type: 'boolean', description: 'od startup: also run the enable commands' });
 
   parser.addOption({
     name: 'watch',
@@ -227,6 +233,12 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       const cmd = new LogsCommand();
       const logsArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
       await cmd.execute(logsArgs, parsed.options);
+      break;
+    }
+
+    case 'startup':
+    case 'unstartup': {
+      await new StartupCommand(command === 'unstartup').execute([], parsed.options);
       break;
     }
 

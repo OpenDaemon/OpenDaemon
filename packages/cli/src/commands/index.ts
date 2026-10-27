@@ -2,10 +2,11 @@ import type { OptionValue } from '../parser.js';
 import { term } from '../output.js';
 import { CliClient } from '../client.js';
 import { resolve } from 'path';
-import { existsSync, readFileSync, unlinkSync, openSync, closeSync, statSync } from 'fs';
-import { spawn } from 'child_process';
+import { existsSync, readFileSync, unlinkSync, openSync, closeSync, statSync, mkdirSync, writeFileSync } from 'fs';
+import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ensureHome, runtimePaths } from '../paths.js';
+import { detectInit, planStartup, type InitSystem } from '../startup.js';
 import { SecretStore, assertSecretName, toDotenv } from '../../../plugins/secret-manager/src/store.js';
 
 /**
@@ -479,6 +480,81 @@ export class SecretCommand implements Command {
     const restarted = await client.secretRotated(name) as string[];
     await client.disconnect();
     term.info(restarted.length === 0 ? 'No running process uses it' : `Restarted: ${restarted.join(', ')}`);
+  }
+}
+
+/**
+ * Startup / unstartup commands - run the daemon at boot (systemd, launchd, OpenRC)
+ */
+export class StartupCommand implements Command {
+  name = 'startup';
+  description = 'Generate a startup script so the daemon starts at boot';
+  options = [];
+
+  constructor(private readonly remove = false) {
+    if (remove) {
+      this.name = 'unstartup';
+      this.description = 'Remove the startup script';
+    }
+  }
+
+  execute(_args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
+    const init = (typeof options['init'] === 'string' ? options['init'] : detectInit(process.platform, existsSync)) as InitSystem | undefined;
+    if (init !== 'systemd' && init !== 'launchd' && init !== 'openrc') {
+      term.error(process.platform === 'win32'
+        ? 'Windows: run the daemon at logon with  schtasks /Create /SC ONLOGON /TN OpenDaemon /TR "node <path-to>\\daemon.js"'
+        : 'No supported init system found; pass --init systemd|launchd|openrc');
+      process.exit(1);
+      return Promise.resolve();
+    }
+
+    const plan = planStartup({
+      init,
+      system: options['system'] === true,
+      node: process.execPath,
+      daemonScript: getDaemonScriptPath(),
+      workingDirectory: process.cwd(),
+      home: ensureHome().home,
+      user: process.env['SUDO_USER'] ?? process.env['USER'],
+    });
+    const run = options['enable'] === true;
+
+    try {
+      if (this.remove) {
+        if (!existsSync(plan.file)) { term.info(`Nothing to remove: ${plan.file} does not exist`); return Promise.resolve(); }
+        this.runOrShow(plan.disable, run);
+        unlinkSync(plan.file);
+        term.success(`Removed ${plan.file}`);
+        return Promise.resolve();
+      }
+
+      if (options['print'] === true) {
+        console.log(`# ${plan.file}\n${plan.content}`);
+        return Promise.resolve();
+      }
+      mkdirSync(resolve(plan.file, '..'), { recursive: true });
+      writeFileSync(plan.file, plan.content, { mode: 0o644 });
+      term.success(`Wrote ${plan.file}`);
+      this.runOrShow(plan.enable, run);
+    } catch (err) {
+      const message = (err instanceof Error ? err : new Error(String(err))).message;
+      term.error(`Failed: ${message}${message.includes('EACCES') ? ' (system-wide setup needs root; try sudo, or omit --system)' : ''}`);
+      process.exit(1);
+    }
+    return Promise.resolve();
+  }
+
+  private runOrShow(commands: string[], run: boolean): void {
+    if (!run) {
+      console.log('Run:');
+      for (const command of commands) console.log(`  ${command}`);
+      console.log('(or pass --enable to run them)');
+      return;
+    }
+    for (const command of commands) {
+      const result = spawnSync(command, { shell: true, stdio: 'inherit' });
+      if (result.status !== 0) throw new Error(`"${command}" exited with ${String(result.status)}`);
+    }
   }
 }
 
