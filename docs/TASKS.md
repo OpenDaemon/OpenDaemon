@@ -313,12 +313,12 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 ### 7.1 Metrics Collector Plugin
 | ID | Task | Priority | Complexity | Dependencies | Status |
 |----|------|----------|------------|--------------|--------|
-| 7.1.1 | Define metric types | High | M | None | 🟡 |
+| 7.1.1 | Define metric types | High | M | None | ✅ |
 | 7.1.2 | Implement process metrics collection | High | L | 5.1.2 | ✅ |
-| 7.1.3 | Implement system metrics collection | High | L | 7.1.2 | ⬜ |
-| 7.1.4 | Implement Prometheus exporter | Medium | M | 7.1.3 | ⬜ |
-| 7.1.5 | Implement JSON exporter | Medium | S | 7.1.3 | ⬜ |
-| 7.1.6 | Write metrics tests | Medium | L | 7.1.5 | ⬜ |
+| 7.1.3 | Implement system metrics collection | High | L | 7.1.2 | ✅ |
+| 7.1.4 | Implement Prometheus exporter | Medium | M | 7.1.3 | ✅ |
+| 7.1.5 | Implement JSON exporter | Medium | S | 7.1.3 | ✅ |
+| 7.1.6 | Write metrics tests | Medium | L | 7.1.5 | ✅ |
 
 ### 7.2 Dependency Resolver Plugin
 | ID | Task | Priority | Complexity | Dependencies | Status |
@@ -508,7 +508,7 @@ Phase 9: Final Polish
 ### Nice to Have (Can be in v1.1.0)
 - [x] Cluster mode
 - [x] Health checks
-- [ ] Metrics collection
+- [x] Metrics collection
 - [ ] Secret manager
 - [ ] TUI dashboard
 - [ ] Watch mode
@@ -552,10 +552,10 @@ Phase 9: Final Polish
 | 4. Plugin System | 20 | 18 | 90% |
 | 5. Core Plugins | 29 | 22 | 76% |
 | 6. CLI | 25 | 23 | 92% |
-| 7. Advanced Features | 26 | 1 | 4% |
+| 7. Advanced Features | 26 | 6 | 23% |
 | 8. Testing & Quality | 17 | 6 | 35% |
 | 9. Final Polish | 14 | 3 | 21% |
-| **Total** | **202** | **138** | **68%** |
+| **Total** | **202** | **143** | **71%** |
 
 **Estimated Duration**: 7 weeks (working full-time)
 **Start Date**: 2025-02-21

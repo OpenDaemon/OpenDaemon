@@ -36,7 +36,9 @@ describe('WebuiPlugin security', () => {
       store: new StateStore(),
       registerMethod: () => {},
       registerHook: () => {},
-      getPlugin: () => ({ getProcesses: () => [], startProcessFromPlugin: startProcess }),
+      getPlugin: (name: string) => (name === 'metrics-collector'
+        ? { prometheus: () => 'od_system_cpu_percent 1\n', collect: () => ({ processes: [] }) }
+        : { getProcesses: () => [], startProcessFromPlugin: startProcess }),
       registerMetric: () => {},
     } as unknown as PluginContext;
 
@@ -113,6 +115,33 @@ describe('WebuiPlugin security', () => {
 
     const basic = Buffer.from('admin:pa:ss').toString('base64');
     expect((await send(port, 'GET', '/api/processes', { Authorization: `Basic ${basic}` })).status).toBe(200);
+  });
+
+  it('should serve Prometheus text at /metrics and JSON at /api/metrics', async () => {
+    const port = await start({});
+    const text = await new Promise<{ type: string | undefined; body: string }>((resolveReply, reject) => {
+      request({ host: '127.0.0.1', port, path: '/metrics' }, (res) => {
+        let body = '';
+        res.on('data', (c: Buffer) => { body += c.toString(); });
+        res.on('end', () => { resolveReply({ type: res.headers['content-type'], body }); });
+      }).on('error', reject).end();
+    });
+    expect(text).toEqual({ type: 'text/plain; version=0.0.4; charset=utf-8', body: 'od_system_cpu_percent 1\n' });
+    expect(JSON.parse((await send(port, 'GET', '/api/metrics')).body)).toEqual({ processes: [] });
+  });
+
+  it('should ask scrapers for Basic auth on /metrics when auth is enabled', async () => {
+    const port = await start({ username: 'prom', password: 'scrape' });
+    const denied = await new Promise<{ status: number; challenge: string | undefined }>((resolveReply, reject) => {
+      request({ host: '127.0.0.1', port, path: '/metrics' }, (res) => {
+        res.resume();
+        resolveReply({ status: res.statusCode ?? 0, challenge: res.headers['www-authenticate'] });
+      }).on('error', reject).end();
+    });
+    expect(denied).toEqual({ status: 401, challenge: 'Basic realm="OpenDaemon"' });
+
+    const basic = Buffer.from('prom:scrape').toString('base64');
+    expect((await send(port, 'GET', '/metrics', { Authorization: `Basic ${basic}` })).body).toContain('od_system_cpu_percent');
   });
 
   it('should issue one token per login and revoke only the session that logs out', async () => {

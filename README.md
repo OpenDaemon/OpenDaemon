@@ -12,7 +12,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Fork & Cluster Modes** - Single process, or N `node:cluster` workers sharing one port (`instances: 4` or `'max'`), with per-worker logs and crash restarts
 - **Auto-Restart** - Configurable strategies: `always`, `on-failure`, `unless-stopped`, `never`
 - **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
-- **CPU & Memory Monitoring** - Real-time metrics collection for all managed processes
+- **Metrics** - Host, process and app metrics (`opendaemon/runtime` counters, gauges, histograms) as Prometheus text at `/metrics` or JSON; `maxMemory` restarts
 - **Persistent Logs** - JSON-lines log files per process with size rotation, gzip, search (`--grep`, `--since`) and live follow (`-f`)
 - **Health Checks** - HTTP(S), TCP, script, command, memory, CPU and composite checks with automatic restart or stop
 - **IPC Communication** - Binary frame protocol + JSON-RPC 2.0 over Unix sockets / TCP
@@ -171,11 +171,31 @@ apps:
 
 Time-based rotation, retention by age and WebSocket streaming are not implemented yet.
 
+## Metrics
+
+The `metrics-collector` plugin reports host metrics (CPU per core, memory, load average, uptime), per-process metrics (up, CPU, memory, restarts, uptime, instances) and the metrics your app defines with the SDK runtime:
+
+```typescript
+import { metrics } from 'opendaemon/runtime';
+
+const requests = metrics.counter('http_requests_total', 'HTTP requests');
+requests.inc({ method: 'GET' });
+const latency = metrics.histogram('http_request_seconds', 'Request latency');
+latency.observe(0.042, { route: '/users' });
+```
+
+When the app runs under OpenDaemon, the runtime sends a snapshot every 5 seconds over the process's IPC channel (`OD_METRICS_INTERVAL` changes the period). Outside OpenDaemon it does nothing. Cluster workers are labelled with `instance`.
+
+- `od metrics` prints Prometheus text; `od metrics --json` prints the JSON report.
+- The WebUI serves `GET /metrics` (Prometheus) and `GET /api/metrics` (JSON). With WebUI auth enabled, configure the scraper with `basic_auth`.
+
+Set `maxMemory: '512M'` on an app (or `od start app.js --max-memory 512M`) to restart it when its resident memory, all instances together, passes the limit. These restarts count in `od list`.
+
 ## CLI Commands
 
 | Command | Description |
 |---------|-------------|
-| `od start <script>` | Start a process (`-n` name, `-i` instances) |
+| `od start <script>` | Start a process (`-n` name, `-i` instances, `--env KEY=value`, `--max-memory 512M`) |
 | `od stop <name>` | Stop a process |
 | `od restart <name>` | Restart a process |
 | `od delete <name>` | Delete a process |
@@ -184,6 +204,7 @@ Time-based rotation, retention by age and WebSocket streaming are not implemente
 | `od info <name>` | Detailed process info (CPU, memory, PID, uptime) |
 | `od logs [name]` | Logs of one or all processes (`--lines N`, `-f`, `--grep RE`, `--since 2h`, `--json`) |
 | `od flush [name]` | Empty log files |
+| `od metrics` | Prometheus metrics (`--json` for the JSON report) |
 | `od health [name]` | Health check status (last result, consecutive failures) |
 | `od status` | Daemon & process status overview |
 | `od daemon start\|stop\|restart\|status` | Manage the daemon |
@@ -226,6 +247,7 @@ opendaemon/
 │       ├── config-manager/    # Config file loading & validation (TS/JS/JSON/YAML)
 │       ├── health-check/      # Scheduled health checks, thresholds, restart/stop actions
 │       ├── log-manager/       # Persistent JSON-lines logs, rotation, search, follow
+│       ├── metrics-collector/ # Host/process/app metrics, Prometheus and JSON
 │       └── webui/             # HTTP server, REST API, dashboard HTML
 ├── tests/
 │   ├── unit/                  # Unit tests

@@ -178,8 +178,24 @@ export class StartCommand implements Command {
     }
 
     const target = args[0] || '';
-    const name = (options['name'] as string) || target.replace(/\.(js|ts|mjs|cjs)$/, '').replace(/[/\\]/g, '-');
+    // Default name: the script's file name without extension (`od start ./src/api.js` -> api)
+    const fileName = target.split(/[/\\]/).pop() ?? target;
+    const name = (options['name'] as string) || fileName.replace(/\.(js|ts|mjs|cjs)$/, '');
     const instances = (options['instances'] as number) || 1;
+
+    const env: Record<string, string> = {};
+    const envOption = options['env'];
+    const envEntries = Array.isArray(envOption) ? envOption : typeof envOption === 'string' ? [envOption] : [];
+    for (const entry of envEntries) {
+      const separator = entry.indexOf('=');
+      if (separator <= 0) {
+        term.error(`Invalid --env "${entry}" (expected KEY=value)`);
+        process.exit(1);
+        return;
+      }
+      env[entry.slice(0, separator)] = entry.slice(separator + 1);
+    }
+    const maxMemory = typeof options['max-memory'] === 'string' ? options['max-memory'] : undefined;
 
     const scriptPath = resolve(target);
     if (!existsSync(scriptPath)) {
@@ -200,6 +216,8 @@ export class StartCommand implements Command {
         instances,
         mode: instances > 1 ? 'cluster' : 'fork',
         cwd: process.cwd(),
+        ...(Object.keys(env).length > 0 ? { env } : {}),
+        ...(maxMemory === undefined ? {} : { maxMemory }),
       };
 
       await client.startProcess(processConfig);
@@ -341,6 +359,29 @@ export class InfoCommand implements Command {
       console.log('');
     } catch (err) {
       term.error(`Failed to get info: ${(err instanceof Error ? err : new Error(String(err))).message}`);
+      process.exit(1);
+    }
+  }
+}
+
+/**
+ * Metrics command - Prometheus text (default) or the JSON report
+ */
+export class MetricsCommand implements Command {
+  name = 'metrics';
+  description = 'Show host, process and app metrics';
+  options = [];
+
+  async execute(_args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
+    const json = options['json'] === true;
+    try {
+      const client = new CliClient();
+      await client.connect();
+      const result = await client.getMetrics(json ? 'json' : 'prometheus');
+      await client.disconnect();
+      process.stdout.write(json ? `${JSON.stringify(result, null, 2)}\n` : String(result));
+    } catch (err) {
+      term.error(`Failed to get metrics: ${(err instanceof Error ? err : new Error(String(err))).message}`);
       process.exit(1);
     }
   }

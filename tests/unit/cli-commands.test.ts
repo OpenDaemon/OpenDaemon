@@ -12,6 +12,7 @@ const mockGetHealth = vi.fn().mockResolvedValue([]);
 const mockQueryLogs = vi.fn().mockResolvedValue([]);
 const mockShutdown = vi.fn().mockResolvedValue({ ok: true });
 const mockScale = vi.fn().mockResolvedValue({ instances: 4 });
+const mockMetrics = vi.fn();
 const mockFlushLogs = vi.fn().mockResolvedValue({ flushed: [] });
 const mockIsDaemonRunning = vi.fn().mockReturnValue(true);
 const mockExistsSync = vi.fn().mockReturnValue(true);
@@ -47,6 +48,7 @@ vi.mock('@opendaemon/core', () => ({
         case 'logs.query': return mockQueryLogs(params);
         case 'daemon.shutdown': return mockShutdown();
         case 'scale': return mockScale(params);
+        case 'metrics': return mockMetrics(params);
         case 'logs.flush': return mockFlushLogs(params);
         default: return Promise.resolve(undefined);
       }
@@ -95,6 +97,7 @@ import {
   LogsCommand,
   FlushCommand,
   ScaleCommand,
+  MetricsCommand,
   parseSince,
   DaemonCommand,
 } from '../../packages/cli/src/commands/index.js';
@@ -290,6 +293,34 @@ describe('CLI Commands', () => {
   describe('StartCommand', () => {
     const cmd = new StartCommand();
 
+    describe('options', () => {
+      beforeEach(() => {
+        mockExistsSync.mockReturnValue(true);
+        mockStartProcess.mockClear();
+        mockStartProcess.mockResolvedValue({});
+      });
+
+      it('should name the process after the script file, not its directory', async () => {
+        await cmd.execute(['/srv/apps/api.js'], {});
+        expect(mockStartProcess).toHaveBeenCalledWith(expect.objectContaining({ name: 'api' }));
+      });
+
+      it('should pass --env entries and --max-memory in the process config', async () => {
+        await cmd.execute(['app.js'], { env: ['PORT=3000', 'URL=http://x/?a=b'], 'max-memory': '512M' });
+        expect(mockStartProcess).toHaveBeenCalledWith(expect.objectContaining({
+          env: { PORT: '3000', URL: 'http://x/?a=b' },
+          maxMemory: '512M',
+        }));
+      });
+
+      it('should reject an --env entry without "="', async () => {
+        await cmd.execute(['app.js'], { env: ['PORT'] });
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid --env "PORT"'));
+        expect(exitSpy).toHaveBeenCalledWith(1);
+        expect(mockStartProcess).not.toHaveBeenCalled();
+      });
+    });
+
     it('should have correct metadata', () => {
       expect(cmd.name).toBe('start');
       expect(cmd.description).toBe('Start a process or processes from config');
@@ -473,6 +504,38 @@ describe('CLI Commands', () => {
       mockQueryLogs.mockRejectedValueOnce(new Error('Invalid --grep pattern'));
       await cmd.execute([], { grep: '(' });
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to get logs: Invalid --grep pattern'));
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('MetricsCommand', () => {
+    const cmd = new MetricsCommand();
+    let writeSpy: MockInstance<typeof process.stdout.write>;
+
+    beforeEach(() => {
+      mockExistsSync.mockReturnValue(true);
+      mockMetrics.mockReset();
+      writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    });
+
+    afterEach(() => { writeSpy.mockRestore(); });
+
+    it('should print Prometheus text by default and the JSON report with --json', async () => {
+      mockMetrics.mockResolvedValueOnce('od_system_cpu_percent 3\n');
+      await cmd.execute([], {});
+      expect(mockMetrics).toHaveBeenCalledWith({ format: 'prometheus' });
+      expect(writeSpy).toHaveBeenCalledWith('od_system_cpu_percent 3\n');
+
+      mockMetrics.mockResolvedValueOnce({ processes: [] });
+      await cmd.execute([], { json: true });
+      expect(mockMetrics).toHaveBeenLastCalledWith({ format: 'json' });
+      expect(writeSpy).toHaveBeenLastCalledWith(`${JSON.stringify({ processes: [] }, null, 2)}\n`);
+    });
+
+    it('should exit 1 when the daemon call fails', async () => {
+      mockMetrics.mockRejectedValueOnce(new Error('down'));
+      await cmd.execute([], {});
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to get metrics: down'));
       expect(exitSpy).toHaveBeenCalledWith(1);
     });
   });

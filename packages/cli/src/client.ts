@@ -145,6 +145,14 @@ export class CliClient {
   }
 
   /**
+   * Metrics snapshot: JSON report, or Prometheus text
+   */
+  async getMetrics(format: 'json' | 'prometheus'): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('metrics', { format });
+  }
+
+  /**
    * Change the number of cluster workers
    */
   async scaleProcess(name: string, instances: number | 'max'): Promise<unknown> {

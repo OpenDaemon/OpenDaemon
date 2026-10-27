@@ -15,6 +15,7 @@ import {
   LogsCommand,
   FlushCommand,
   ScaleCommand,
+  MetricsCommand,
   HealthCommand,
   StatusCommand,
   DaemonCommand,
@@ -87,6 +88,18 @@ async function main(): Promise<void> {
     alias: 'i',
     type: 'number',
     description: 'Number of instances',
+  });
+
+  parser.addOption({
+    name: 'env',
+    type: 'array',
+    description: 'Environment variable for the process (KEY=value), repeatable',
+  });
+
+  parser.addOption({
+    name: 'max-memory',
+    type: 'string',
+    description: 'Restart the process when it exceeds this memory (e.g. 512M)',
   });
 
   // Log options
@@ -204,6 +217,12 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       const cmd = new LogsCommand();
       const logsArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
       await cmd.execute(logsArgs, parsed.options);
+      break;
+    }
+
+    case 'metrics': {
+      const cmd = new MetricsCommand();
+      await cmd.execute(parsed.args, parsed.options);
       break;
     }
 

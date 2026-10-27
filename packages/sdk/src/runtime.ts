@@ -1,4 +1,7 @@
 // Runtime metrics and monitoring
+import type { MetricSnapshot } from '../../core/src/types.js';
+
+export type { MetricSnapshot };
 
 /**
  * Metric types
@@ -12,6 +15,15 @@ export interface MetricValue {
   value: number;
   labels: Record<string, string>;
   timestamp: number;
+}
+
+function snapshotOf(name: string, type: 'counter' | 'gauge', help: string, values: Map<string, number>): MetricSnapshot {
+  return {
+    name,
+    type,
+    help,
+    series: [...values].map(([key, value]) => ({ labels: JSON.parse(key) as Record<string, string>, value })),
+  };
 }
 
 /**
@@ -41,6 +53,13 @@ export class Counter {
    */
   get(labels: Record<string, string> = {}): number {
     return this.values.get(JSON.stringify(labels)) ?? 0;
+  }
+
+  /**
+   * Snapshot for reporting
+   */
+  snapshot(): MetricSnapshot {
+    return snapshotOf(this.name, 'counter', this.help, this.values);
   }
 
   /**
@@ -93,13 +112,22 @@ export class Gauge {
   get(labels: Record<string, string> = {}): number {
     return this.values.get(JSON.stringify(labels)) ?? 0;
   }
+
+  /**
+   * Snapshot for reporting
+   */
+  snapshot(): MetricSnapshot {
+    return snapshotOf(this.name, 'gauge', this.help, this.values);
+  }
 }
 
 /**
- * Histogram metric
+ * Histogram metric. Keeps cumulative bucket counts, sum and count (what Prometheus needs) plus
+ * the most recent observations for quantiles, so memory stays bounded however long it runs.
  */
 export class Histogram {
-  private readonly buckets = new Map<string, number[]>();
+  private static readonly RECENT = 1024;
+  private readonly series = new Map<string, { counts: number[]; sum: number; count: number; recent: number[] }>();
   private readonly bucketBounds: number[];
   readonly name: string;
   readonly help: string;
@@ -111,7 +139,7 @@ export class Histogram {
   ) {
     this.name = name;
     this.help = help;
-    this.bucketBounds = [...buckets, Infinity];
+    this.bucketBounds = [...buckets].sort((x, y) => x - y).concat(Infinity);
   }
 
   /**
@@ -119,49 +147,73 @@ export class Histogram {
    */
   observe(value: number, labels: Record<string, string> = {}): void {
     const key = JSON.stringify(labels);
-    const values = this.buckets.get(key) ?? [];
-    values.push(value);
-    this.buckets.set(key, values);
+    let entry = this.series.get(key);
+    if (!entry) {
+      entry = { counts: this.bucketBounds.map(() => 0), sum: 0, count: 0, recent: [] };
+      this.series.set(key, entry);
+    }
+    this.bucketBounds.forEach((bound, i) => {
+      if (value <= bound) entry.counts[i] = (entry.counts[i] ?? 0) + 1;
+    });
+    entry.sum += value;
+    entry.count++;
+    entry.recent.push(value);
+    if (entry.recent.length > Histogram.RECENT) entry.recent.shift();
   }
 
   /**
-   * Get bucket counts
+   * Get cumulative bucket counts (observations <= bound)
    */
   getBuckets(labels: Record<string, string> = {}): Map<number, number> {
-    const key = JSON.stringify(labels);
-    const values = this.buckets.get(key) ?? [];
-    const counts = new Map<number, number>();
-
-    for (const bound of this.bucketBounds) {
-      counts.set(bound, values.filter(v => v <= bound).length);
-    }
-
-    return counts;
+    const entry = this.series.get(JSON.stringify(labels));
+    return new Map(this.bucketBounds.map((bound, i) => [bound, entry?.counts[i] ?? 0]));
   }
 
   /**
-   * Calculate quantile
+   * Calculate a quantile over the most recent observations
    */
   quantile(q: number, labels: Record<string, string> = {}): number {
-    const key = JSON.stringify(labels);
-    const values = [...(this.buckets.get(key) ?? [])];
-    
+    const values = [...(this.series.get(JSON.stringify(labels))?.recent ?? [])];
     if (values.length === 0) {
       return 0;
     }
 
     values.sort((a, b) => a - b);
     const index = Math.min(values.length - 1, Math.ceil(values.length * q) - 1);
-    const result = values[Math.max(0, index)];
-    return result ?? 0;
+    return values[Math.max(0, index)] ?? 0;
+  }
+
+  /**
+   * Snapshot for reporting
+   */
+  snapshot(): MetricSnapshot {
+    return {
+      name: this.name,
+      type: 'histogram',
+      help: this.help,
+      series: [...this.series].map(([key, entry]) => ({
+        labels: JSON.parse(key) as Record<string, string>,
+        buckets: this.bucketBounds.map((bound, i): [number, number] => [bound, entry.counts[i] ?? 0]),
+        sum: entry.sum,
+        count: entry.count,
+      })),
+    };
   }
 
   /**
    * Reset histogram
    */
   reset(): void {
-    this.buckets.clear();
+    this.series.clear();
   }
+}
+
+/**
+ * Running as an OpenDaemon-managed process with its IPC channel. Other parents (test runners,
+ * other supervisors) can also give a process.send, so the daemon's OD_MANAGED marker decides.
+ */
+function underOpenDaemon(): boolean {
+  return process.env['OD_MANAGED'] === '1' && typeof process.send === 'function';
 }
 
 /**
@@ -176,6 +228,7 @@ class MetricsRegistry {
    * Create or get a counter
    */
   counter(name: string, help: string): Counter {
+    this.startReporting();
     let counter = this.counters.get(name);
     if (!counter) {
       counter = new Counter(name, help);
@@ -188,6 +241,7 @@ class MetricsRegistry {
    * Create or get a gauge
    */
   gauge(name: string, help: string): Gauge {
+    this.startReporting();
     let gauge = this.gauges.get(name);
     if (!gauge) {
       gauge = new Gauge(name, help);
@@ -200,6 +254,7 @@ class MetricsRegistry {
    * Create or get a histogram
    */
   histogram(name: string, help: string, buckets?: number[]): Histogram {
+    this.startReporting();
     let histogram = this.histograms.get(name);
     if (!histogram) {
       histogram = new Histogram(name, help, buckets);
@@ -209,12 +264,48 @@ class MetricsRegistry {
   }
 
   /**
+   * Current state of every metric
+   */
+  snapshot(): MetricSnapshot[] {
+    return [
+      ...[...this.counters.values()].map((m) => m.snapshot()),
+      ...[...this.gauges.values()].map((m) => m.snapshot()),
+      ...[...this.histograms.values()].map((m) => m.snapshot()),
+    ];
+  }
+
+  /**
+   * Send the current snapshot to the OpenDaemon daemon. Only works when the app runs under
+   * OpenDaemon (which gives it an IPC channel); a no-op otherwise. Called automatically every
+   * OD_METRICS_INTERVAL ms (default 5000) once a metric exists.
+   */
+  flush(): boolean {
+    if (!underOpenDaemon() || !process.connected || !process.send) return false;
+    process.send({ type: 'od:metrics', metrics: this.snapshot() });
+    return true;
+  }
+
+  /**
    * Reset all metrics
    */
   reset(): void {
     this.counters.clear();
     this.gauges.clear();
     this.histograms.clear();
+  }
+
+  private reporter: NodeJS.Timeout | undefined;
+
+  /**
+   * Start periodic reporting on first use, only under OpenDaemon; unref'd so it never keeps
+   * the app alive
+   */
+  protected startReporting(): void {
+    if (this.reporter || !underOpenDaemon()) return;
+    const interval = Number(process.env['OD_METRICS_INTERVAL'] ?? 5000);
+    if (!Number.isFinite(interval) || interval <= 0) return;
+    this.reporter = setInterval(() => { this.flush(); }, interval);
+    this.reporter.unref();
   }
 }
 

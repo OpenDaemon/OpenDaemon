@@ -12,6 +12,7 @@ import { pathToFileURL } from 'url';
 
 const CLI = resolve('packages/cli/dist/cli.js');
 const CORE = pathToFileURL(resolve('packages/core/dist/index.js')).href;
+const RUNTIME = pathToFileURL(resolve('packages/sdk/dist/runtime.js')).href;
 
 interface Result {
   status: number | null;
@@ -74,6 +75,11 @@ describe.skipIf(!existsSync(CLI))('od CLI end to end', () => {
       "setInterval(() => console.error('heartbeat warning'), 200);",
     ].join('\n'));
     writeFileSync(join(project, 'worker.cjs'), "setInterval(() => console.log('working'), 200);");
+    writeFileSync(join(project, 'counter.mjs'), [
+      `const { metrics } = await import(${JSON.stringify(RUNTIME)});`,
+      "const jobs = metrics.counter('e2e_jobs_total', 'Jobs done');",
+      "setInterval(() => jobs.inc({ queue: process.env.QUEUE ?? 'none' }), 50);",
+    ].join('\n'));
     writeFileSync(join(project, 'opendaemon.config.yaml'), [
       'apps:',
       '  - name: web',
@@ -114,7 +120,7 @@ describe.skipIf(!existsSync(CLI))('od CLI end to end', () => {
   it('should keep runtime files in OPENDAEMON_HOME, not the project directory', () => {
     const files = readdirSync(home);
     expect(files).toEqual(expect.arrayContaining(['opendaemon.pid', 'auth-token', 'daemon.log']));
-    expect(readdirSync(project).sort()).toEqual(['opendaemon.config.yaml', 'web.cjs', 'worker.cjs']);
+    expect(readdirSync(project).sort()).toEqual(['counter.mjs', 'opendaemon.config.yaml', 'web.cjs', 'worker.cjs']);
   });
 
   it('should start, inspect and restart a process from another directory', async () => {
@@ -146,6 +152,22 @@ describe.skipIf(!existsSync(CLI))('od CLI end to end', () => {
   it('should report health for processes with a health check', async () => {
     await waitFor(() => od('health', 'web').stdout.includes('healthy'));
     expect(od('health', 'worker').stdout).toContain('No health check configured for "worker"');
+  });
+
+  it('should expose host, process and SDK runtime metrics in Prometheus format', async () => {
+    const started = odElsewhere('start', join(project, 'counter.mjs'), '--env', 'QUEUE=emails', '--env', 'OD_METRICS_INTERVAL=200');
+    expect(started.stdout + started.stderr).toContain('Started counter');
+
+    await waitFor(() => /e2e_jobs_total\{queue="emails",process="counter"\} [1-9]/.test(od('metrics').stdout));
+    const text = od('metrics').stdout;
+    expect(text).toContain('# TYPE od_system_cpu_percent gauge');
+    expect(text).toContain('od_process_up{process="web"} 1');
+
+    const report = JSON.parse(od('metrics', '--json').stdout) as { processes: Array<{ name: string }> };
+    expect(report.processes.map((p) => p.name)).toContain('counter');
+
+    odElsewhere('stop', 'counter');
+    odElsewhere('delete', 'counter');
   });
 
   it('should refuse IPC requests that do not carry the auth token', () => {

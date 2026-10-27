@@ -207,6 +207,34 @@ describe('ProcessManagerPlugin', () => {
       }
     });
 
+    it.runIf(process.platform === 'linux')('should restart a process that exceeds maxMemory and count it', async () => {
+      const hogPath = resolve('./test-memory-hog.cjs');
+      writeFileSync(hogPath, "const keep = Buffer.alloc(80 * 1024 * 1024, 1); setInterval(() => keep[0]++, 100);");
+      const limits: unknown[] = [];
+      events.on('process:memory-limit', (data: unknown) => { limits.push(data); });
+
+      try {
+        const first = await methods.get('start')!({ name: 'hog', script: hogPath, maxMemory: '30M', killTimeout: 300 }) as { pid: number };
+        const deadline = Date.now() + 8000;
+        let info = await methods.get('info')!({ name: 'hog' }) as { pid: number; restartCount: number };
+        while ((info.restartCount < 1 || info.pid === first.pid) && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 100));
+          info = await methods.get('info')!({ name: 'hog' }) as { pid: number; restartCount: number };
+        }
+        expect(info.restartCount).toBeGreaterThanOrEqual(1);
+        expect(info.pid).not.toBe(first.pid);
+        expect(limits[0]).toMatchObject({ name: 'hog', limit: 30 * 1024 * 1024 });
+      } finally {
+        await methods.get('stop')!({ name: 'hog' }).catch(() => undefined);
+        unlinkSync(hogPath);
+      }
+    });
+
+    it('should reject an invalid maxMemory', async () => {
+      await expect(methods.get('start')!({ name: 'bad', script: testScriptPath, maxMemory: 'lots' }))
+        .rejects.toThrow(/Invalid maxMemory "lots"/);
+    });
+
     describe('cluster mode', () => {
       const clusterScript = resolve('./test-cluster-app.cjs');
       const logs: Array<{ message: string; instanceId?: number; pid: number }> = [];

@@ -139,6 +139,14 @@ export class WebuiPlugin implements Plugin {
         return;
       }
       
+      // Prometheus scrapers authenticate with basic_auth
+      if (url === '/metrics') {
+        res.setHeader('WWW-Authenticate', 'Basic realm="OpenDaemon"');
+        res.writeHead(401);
+        res.end('Authentication required\n');
+        return;
+      }
+
       // Return 401 for API requests
       if (url.startsWith('/api/')) {
         res.setHeader('WWW-Authenticate', 'Bearer');
@@ -165,6 +173,12 @@ export class WebuiPlugin implements Plugin {
       if (token !== undefined) this.sessions.delete(token);
       res.writeHead(200);
       res.end(JSON.stringify({ success: true }));
+      return;
+    }
+
+    // Metrics: Prometheus text at /metrics, JSON at /api/metrics
+    if ((url === '/metrics' || url === '/api/metrics') && method === 'GET') {
+      this.handleMetrics(res, url === '/metrics' ? 'prometheus' : 'json');
       return;
     }
 
@@ -222,6 +236,25 @@ export class WebuiPlugin implements Plugin {
     }
 
     return false;
+  }
+
+  private handleMetrics(res: ServerResponse, format: 'prometheus' | 'json'): void {
+    const collector = this.context.getPlugin('metrics-collector') as unknown as
+      { prometheus(): string; collect(): unknown } | undefined;
+    if (!collector) {
+      res.writeHead(503);
+      res.end(JSON.stringify({ error: 'Metrics collector not available' }));
+      return;
+    }
+    if (format === 'prometheus') {
+      res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+      res.writeHead(200);
+      res.end(collector.prometheus());
+    } else {
+      res.setHeader('Content-Type', 'application/json');
+      res.writeHead(200);
+      res.end(JSON.stringify(collector.collect()));
+    }
   }
 
   private bearerToken(req: IncomingMessage): string | undefined {

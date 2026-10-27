@@ -278,3 +278,49 @@ describe('MetricsRegistry', () => {
     expect(newHistogram.quantile(0.5)).toBe(0);
   });
 });
+
+describe('metric snapshots and reporting', () => {
+  it('should snapshot counters, gauges and histograms with their label sets', () => {
+    const counter = new Counter('reqs_total', 'Requests');
+    counter.inc({ path: '/a' }, 2);
+    counter.inc();
+    const gauge = new Gauge('queue', 'Queue depth');
+    gauge.set(5, { name: 'jobs' });
+    const histogram = new Histogram('latency', 'Latency', [0.1, 1]);
+    histogram.observe(0.05);
+    histogram.observe(0.5);
+    histogram.observe(5);
+
+    expect(counter.snapshot()).toEqual({
+      name: 'reqs_total', type: 'counter', help: 'Requests',
+      series: [{ labels: { path: '/a' }, value: 2 }, { labels: {}, value: 1 }],
+    });
+    expect(gauge.snapshot().series).toEqual([{ labels: { name: 'jobs' }, value: 5 }]);
+    expect(histogram.snapshot().series).toEqual([
+      { labels: {}, buckets: [[0.1, 1], [1, 2], [Infinity, 3]], sum: 5.55, count: 3 },
+    ]);
+  });
+
+  it('should keep histogram memory bounded while counting every observation', () => {
+    const histogram = new Histogram('h', 'h', [10]);
+    for (let i = 1; i <= 5000; i++) histogram.observe(i);
+
+    expect(histogram.getBuckets().get(Infinity)).toBe(5000);
+    expect(histogram.getBuckets().get(10)).toBe(10);
+    expect(histogram.snapshot().series[0]?.count).toBe(5000);
+    // Quantiles use the most recent 1024 observations (3977..5000)
+    expect(histogram.quantile(0)).toBe(3977);
+    expect(histogram.quantile(1)).toBe(5000);
+  });
+
+  it('should report through the registry snapshot, and flush only when an IPC channel exists', () => {
+    metrics.reset();
+    metrics.counter('jobs_total', 'Jobs').inc();
+    expect(metrics.snapshot().map((m) => m.name)).toEqual(['jobs_total']);
+
+    // Not managed by OpenDaemon (the test runner may still provide process.send)
+    expect(process.env['OD_MANAGED']).toBeUndefined();
+    expect(metrics.flush()).toBe(false);
+    metrics.reset();
+  });
+});

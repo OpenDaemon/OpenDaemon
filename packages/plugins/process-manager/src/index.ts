@@ -1,17 +1,27 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
-import { Logger } from '../../../core/src/index.js';
+import { Logger, parseBytes } from '../../../core/src/index.js';
 import { DaemonError, ErrorCode, ProcessError } from '../../../core/src/index.js';
 import type {
   ProcessConfig,
   ProcessInfo,
   ProcessStatus,
   ProcessLogEntry,
+  MetricSnapshot,
 } from '../../../core/src/index.js';
 import { spawn, execFile, type ChildProcess } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { availableParallelism } from 'os';
 import { fileURLToPath } from 'url';
+
+/**
+ * The `metrics` of an { type: 'od:metrics' } IPC message from the SDK runtime, if it is one
+ */
+function metricsFrom(message: unknown): MetricSnapshot[] | undefined {
+  if (typeof message !== 'object' || message === null) return undefined;
+  const msg = message as { type?: unknown; metrics?: unknown };
+  return msg.type === 'od:metrics' && Array.isArray(msg.metrics) ? (msg.metrics as MetricSnapshot[]) : undefined;
+}
 
 /**
  * cluster-primary: bundled next to the daemon as cluster-primary.js; from source it is the .mjs
@@ -43,11 +53,15 @@ interface ManagedProcessInfo {
   childProcess?: ChildProcess | undefined;
   /** Cluster mode: worker index -> pid, as reported by the cluster primary */
   workerPids: Map<number, number>;
+  /** Latest SDK runtime metrics per instance ('' in fork mode, the worker index in cluster mode) */
+  customMetrics: Map<string, MetricSnapshot[]>;
   stopTimeout?: NodeJS.Timeout | undefined;
   cpu: number;
   memory: number;
   metricsInterval?: NodeJS.Timeout | undefined;
   cpuSamples?: Map<number, { ticks: number; at: number }> | undefined;
+  /** A maxMemory restart is in progress (metrics keep arriving meanwhile) */
+  memoryRestarting?: boolean;
   logs: LogEntry[];
 }
 
@@ -180,6 +194,7 @@ export class ProcessManagerPlugin implements Plugin {
       pids: [],
       restartCount: existing?.restartCount ?? 0,
       workerPids: new Map(),
+      customMetrics: new Map(),
       cpu: 0,
       memory: 0,
       logs: existing?.logs ?? [],
@@ -345,6 +360,7 @@ export class ProcessManagerPlugin implements Plugin {
 
     proc.cpu = Math.max(0, cpu);
     proc.memory = memory;
+    this.enforceMemoryLimit(proc);
   }
 
   /**
@@ -362,6 +378,26 @@ export class ProcessManagerPlugin implements Plugin {
       }
       proc.cpu = cpu;
       proc.memory = memory;
+      this.enforceMemoryLimit(proc);
+    });
+  }
+
+  /**
+   * maxMemory: restart a process whose resident memory (all instances together) exceeds the limit
+   */
+  private enforceMemoryLimit(proc: ManagedProcessInfo): void {
+    const limit = proc.config.maxMemory === undefined ? undefined : parseBytes(proc.config.maxMemory);
+    if (limit === undefined || proc.status !== 'online' || proc.memory <= limit || proc.memoryRestarting) {
+      return;
+    }
+    proc.memoryRestarting = true;
+    const name = proc.config.name;
+    this.logger.warn(`Process "${name}" uses ${String(proc.memory)} bytes, over maxMemory (${String(limit)}); restarting`);
+    this.context.events.emit('process:memory-limit', { name, memory: proc.memory, limit });
+    proc.restartCount++;
+    proc.lastRestart = new Date();
+    this.restartProcess({ name }).catch((err: unknown) => {
+      this.logger.error(`Memory-limit restart failed: ${name}`, undefined, err as Error);
     });
   }
 
@@ -501,8 +537,15 @@ export class ProcessManagerPlugin implements Plugin {
     // Capture stdout/stderr
     this.captureOutput(proc, child);
 
+    child.on('message', (message: unknown) => {
+      if (proc.childProcess !== child) return;
+      const metrics = metricsFrom(message);
+      if (metrics) proc.customMetrics.set('', metrics);
+    });
+
     // Handle process events
     child.on('exit', (code, signal) => {
+      if (proc.childProcess === child) proc.customMetrics.clear();
       this.handleProcessExit(proc, code, signal);
     });
 
@@ -562,7 +605,10 @@ export class ProcessManagerPlugin implements Plugin {
       this.handleClusterMessage(proc, child, message);
     });
     child.on('exit', (code, signal) => {
-      if (proc.childProcess === child) proc.workerPids.clear();
+      if (proc.childProcess === child) {
+        proc.workerPids.clear();
+        proc.customMetrics.clear();
+      }
       this.handleProcessExit(proc, code, signal);
     });
     child.on('error', (err) => {
@@ -585,6 +631,11 @@ export class ProcessManagerPlugin implements Plugin {
     };
     if (typeof msg.index !== 'number') return;
 
+    const metrics = metricsFrom(message);
+    if (metrics) {
+      proc.customMetrics.set(String(msg.index), metrics);
+      return;
+    }
     if (msg.type === 'od:log' && typeof msg.message === 'string') {
       this.appendLog(proc, msg.source === 'stderr' ? 'stderr' : 'stdout', msg.message, msg.pid, msg.index);
       return;
@@ -595,6 +646,7 @@ export class ProcessManagerPlugin implements Plugin {
       proc.workerPids.set(msg.index, msg.pid);
     } else if (msg.event === 'exit') {
       proc.workerPids.delete(msg.index);
+      proc.customMetrics.delete(String(msg.index));
       this.logger.info(`Worker exited: ${proc.config.name}[${String(msg.index)}]`, { code: msg.code, signal: msg.signal });
     } else if (msg.event === 'restart') {
       // Worker crash restarts count like process restarts, so `od list` shows the crash loop
@@ -870,6 +922,13 @@ export class ProcessManagerPlugin implements Plugin {
     if (!config.script) {
       throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, 'Process script is required');
     }
+
+    if (config.maxMemory !== undefined && parseBytes(config.maxMemory) === undefined) {
+      throw new DaemonError(
+        ErrorCode.PROCESS_INVALID_CONFIG,
+        `Invalid maxMemory "${String(config.maxMemory)}" for "${config.name}" (use bytes or a size like 512M)`
+      );
+    }
   }
 
   /**
@@ -906,6 +965,15 @@ export class ProcessManagerPlugin implements Plugin {
    */
   getProcesses(): ProcessInfo[] {
     return Array.from(this.processes.values()).map((proc) => this.toProcessInfo(proc));
+  }
+
+  /**
+   * Latest SDK runtime metrics of a process, per instance (for the metrics-collector plugin)
+   */
+  getCustomMetrics(name: string): Array<{ instanceId?: number; metrics: MetricSnapshot[] }> {
+    const proc = this.processes.get(name);
+    if (!proc) return [];
+    return [...proc.customMetrics].map(([key, metrics]) => (key === '' ? { metrics } : { instanceId: Number(key), metrics }));
   }
 
   /**

@@ -51,6 +51,7 @@ ${term.bold('COMMANDS')}
     logs [name]      View logs (--lines N, -f, --grep RE, --since 2h, --json)
     flush [name]     Empty log files
     health [name]    Show health check status
+    metrics          Prometheus metrics (--json for the JSON report)
     status           Show daemon and process overview
 
   Daemon:

@@ -49,6 +49,7 @@ export type {
   DaemonConfig,
   LogRotationConfig,
   ProcessLogEntry,
+  MetricSnapshot,
   WatchConfig,
   MetricType,
   MetricDefinition,

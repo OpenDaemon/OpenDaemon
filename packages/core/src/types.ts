@@ -196,6 +196,25 @@ export interface ProcessLogEntry {
 }
 
 /**
+ * Point-in-time state of one application metric, as reported by the SDK runtime
+ * (`opendaemon/runtime`) to the daemon over the process's IPC channel
+ */
+export interface MetricSnapshot {
+  name: string;
+  type: 'counter' | 'gauge' | 'histogram';
+  help: string;
+  series: Array<{
+    labels: Record<string, string>;
+    /** counter and gauge */
+    value?: number;
+    /** histogram: [upper bound, cumulative count]; the last bound is Infinity */
+    buckets?: Array<[number, number]>;
+    sum?: number;
+    count?: number;
+  }>;
+}
+
+/**
  * Watch mode configuration
  */
 export interface WatchConfig {

@@ -6,6 +6,7 @@
   },
   "include": [
     "packages/*/src/**/*",
+    "packages/plugins/*/src/**/*",
     "tests/**/*"
   ],
   "exclude": [

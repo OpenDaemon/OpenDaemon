@@ -11,6 +11,7 @@
 // Messages to the daemon:
 //   { type: 'od:worker', event: 'online' | 'exit' | 'restart', index, pid, code?, signal? }
 //   { type: 'od:log', index, pid, source: 'stdout' | 'stderr', message }
+//   { type: 'od:metrics', index, metrics }  a worker's SDK runtime metrics snapshot
 //   'ready'  once every initial worker has sent 'ready' (process.send('ready') in the app)
 import cluster from 'node:cluster';
 
@@ -80,6 +81,10 @@ function fork(index) {
 
   worker.on('online', () => send({ type: 'od:worker', event: 'online', index, pid }));
   worker.on('message', (message) => {
+    if (message && message.type === 'od:metrics') {
+      send({ type: 'od:metrics', index, metrics: message.metrics });
+      return;
+    }
     if (message === 'ready' || (message && message.type === 'ready')) {
       ready.add(index);
       if (!reportedReady && ready.size >= instances) {
