@@ -1,5 +1,6 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
 import { Logger, parseBytes, dependencyLevels } from '../../../core/src/index.js';
+import type { LimitAction } from '../../../core/src/index.js';
 import { DaemonError, ErrorCode, ProcessError } from '../../../core/src/index.js';
 import type {
   ProcessConfig,
@@ -60,10 +61,10 @@ interface ManagedProcessInfo {
   memory: number;
   metricsInterval?: NodeJS.Timeout | undefined;
   cpuSamples?: Map<number, { ticks: number; at: number }> | undefined;
-  /** A maxMemory restart is in progress (metrics keep arriving meanwhile) */
+  /** When each exceeded limit started being exceeded, and whether its action already ran */
+  limitState?: Partial<Record<'memory' | 'cpu', { since: number; acted: boolean } | undefined>>;
   /** Why the process is waiting or errored without having run (shown in od info) */
   statusReason?: string | undefined;
-  memoryRestarting?: boolean;
   logs: LogEntry[];
 }
 
@@ -470,7 +471,7 @@ export class ProcessManagerPlugin implements Plugin {
 
     proc.cpu = Math.max(0, cpu);
     proc.memory = memory;
-    this.enforceMemoryLimit(proc);
+    this.enforceLimits(proc);
   }
 
   /**
@@ -488,27 +489,76 @@ export class ProcessManagerPlugin implements Plugin {
       }
       proc.cpu = cpu;
       proc.memory = memory;
-      this.enforceMemoryLimit(proc);
+      this.enforceLimits(proc);
     });
   }
 
   /**
-   * maxMemory: restart a process whose resident memory (all instances together) exceeds the limit
+   * The limits that apply to a process: `limits`, with maxMemory / maxCpu as shorthands
    */
-  private enforceMemoryLimit(proc: ManagedProcessInfo): void {
-    const limit = proc.config.maxMemory === undefined ? undefined : parseBytes(proc.config.maxMemory);
-    if (limit === undefined || proc.status !== 'online' || proc.memory <= limit || proc.memoryRestarting) {
-      return;
-    }
-    proc.memoryRestarting = true;
+  private effectiveLimits(config: ProcessConfig): {
+    memory?: { max: number; action: LimitAction; grace: number };
+    cpu?: { max: number; action: LimitAction; duration: number };
+  } {
+    const memoryMax = config.limits?.memory?.max ?? config.maxMemory;
+    const memoryBytes = memoryMax === undefined ? undefined : parseBytes(memoryMax);
+    const cpuMax = config.limits?.cpu?.max ?? config.maxCpu;
+    return {
+      ...(memoryBytes === undefined ? {} : {
+        memory: { max: memoryBytes, action: config.limits?.memory?.action ?? 'restart', grace: config.limits?.memory?.grace ?? 0 },
+      }),
+      ...(cpuMax === undefined ? {} : {
+        cpu: { max: cpuMax, action: config.limits?.cpu?.action ?? 'warn', duration: config.limits?.cpu?.duration ?? 60000 },
+      }),
+    };
+  }
+
+  /**
+   * Compare the latest sample with the process's limits; a limit that stays exceeded for its
+   * grace/duration triggers its action once (a restart starts fresh, 'warn' re-arms when the
+   * value drops back under the limit)
+   */
+  private enforceLimits(proc: ManagedProcessInfo): void {
+    if (proc.status !== 'online') return;
+    const limits = this.effectiveLimits(proc.config);
+    const state = (proc.limitState ??= {});
+    const now = Date.now();
+
+    const check = (
+      kind: 'memory' | 'cpu', value: number, max: number, hold: number, action: LimitAction
+    ): void => {
+      if (value <= max) {
+        // Back under the limit: forget the breach so a later one starts a new grace period
+        state[kind] = undefined;
+        return;
+      }
+      const entry = (state[kind] ??= { since: now, acted: false });
+      if (entry.acted || now - entry.since < hold) return;
+      entry.acted = true;
+      this.applyLimitAction(proc, kind, value, max, action);
+    };
+
+    if (limits.memory) check('memory', proc.memory, limits.memory.max, limits.memory.grace, limits.memory.action);
+    if (limits.cpu) check('cpu', proc.cpu, limits.cpu.max, limits.cpu.duration, limits.cpu.action);
+  }
+
+  private applyLimitAction(proc: ManagedProcessInfo, kind: 'memory' | 'cpu', value: number, limit: number, action: LimitAction): void {
     const name = proc.config.name;
-    this.logger.warn(`Process "${name}" uses ${String(proc.memory)} bytes, over maxMemory (${String(limit)}); restarting`);
-    this.context.events.emit('process:memory-limit', { name, memory: proc.memory, limit });
-    proc.restartCount++;
-    proc.lastRestart = new Date();
-    this.restartProcess({ name }).catch((err: unknown) => {
-      this.logger.error(`Memory-limit restart failed: ${name}`, undefined, err as Error);
-    });
+    const unit = kind === 'memory' ? ' bytes' : '%';
+    this.logger.warn(`Process "${name}" ${kind} ${value.toFixed(kind === 'cpu' ? 1 : 0)}${unit} exceeds the limit (${String(limit)}${unit}); action: ${action}`);
+    this.context.events.emit(`process:${kind}-limit`, { name, [kind === 'memory' ? 'memory' : 'cpu']: value, limit, action });
+
+    if (action === 'restart') {
+      proc.restartCount++;
+      proc.lastRestart = new Date();
+      this.restartProcess({ name }).catch((err: unknown) => {
+        this.logger.error(`Limit restart failed: ${name}`, undefined, err as Error);
+      });
+    } else if (action === 'stop') {
+      this.stopProcess({ name }).catch((err: unknown) => {
+        this.logger.error(`Limit stop failed: ${name}`, undefined, err as Error);
+      });
+    }
   }
 
   // Linux USER_HZ; 100 on every mainstream architecture
@@ -1055,11 +1105,21 @@ export class ProcessManagerPlugin implements Plugin {
       throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, 'Process script is required');
     }
 
-    if (config.maxMemory !== undefined && parseBytes(config.maxMemory) === undefined) {
+    const memory = config.limits?.memory?.max ?? config.maxMemory;
+    if (memory !== undefined && parseBytes(memory) === undefined) {
       throw new DaemonError(
         ErrorCode.PROCESS_INVALID_CONFIG,
-        `Invalid maxMemory "${String(config.maxMemory)}" for "${config.name}" (use bytes or a size like 512M)`
+        `Invalid maxMemory "${String(memory)}" for "${config.name}" (use bytes or a size like 512M)`
       );
+    }
+    const cpu = config.limits?.cpu?.max ?? config.maxCpu;
+    if (cpu !== undefined && !(typeof cpu === 'number' && cpu > 0)) {
+      throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid maxCpu "${String(cpu)}" for "${config.name}" (a percentage above 0)`);
+    }
+    for (const action of [config.limits?.memory?.action, config.limits?.cpu?.action]) {
+      if (action !== undefined && !(['warn', 'restart', 'stop'] as string[]).includes(action)) {
+        throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid limit action "${action}" for "${config.name}" (warn, restart or stop)`);
+      }
     }
   }
 

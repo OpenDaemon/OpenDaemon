@@ -309,7 +309,24 @@ When the app runs under OpenDaemon, the runtime sends a snapshot every 5 seconds
 - `od metrics` prints Prometheus text; `od metrics --json` prints the JSON report.
 - The WebUI serves `GET /metrics` (Prometheus) and `GET /api/metrics` (JSON). With WebUI auth enabled, configure the scraper with `basic_auth`.
 
-Set `maxMemory: '512M'` on an app (or `od start app.js --max-memory 512M`) to restart it when its resident memory, all instances together, passes the limit. These restarts count in `od list`.
+## Resource Limits
+
+```yaml
+apps:
+  - name: api
+    script: ./api.js
+    limits:
+      memory:
+        max: 512M          # resident memory of all instances together
+        action: restart    # warn | restart | stop (default restart)
+        grace: 30000       # must stay over the limit this long (ms) first (default 0)
+      cpu:
+        max: 90            # percent of one core, all instances together
+        duration: 60000    # sustained this long (ms) (default 60000)
+        action: warn       # default warn
+```
+
+`maxMemory: 512M` and `maxCpu: 90` are shorthands (`od start app.js --max-memory 512M` too). An action runs once per breach: a `warn` re-arms when the value drops back under the limit, and a restart starts a fresh process. Restarts count in `od list`. Every action logs, emits `process:memory-limit` / `process:cpu-limit` (which the notification plugin and the audit log pick up). CPU throttling, file descriptor, child process and event loop limits are not implemented.
 
 ## CLI Commands
 

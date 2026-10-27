@@ -74,8 +74,15 @@ const SOURCES: Array<{
   {
     source: 'process:memory-limit', event: 'process:memory-limit', severity: 'warning',
     describe: (d) => ({
-      title: `Process "${text(d['name'])}" exceeded maxMemory`,
-      message: `${text(d['memory'])} bytes used, limit ${text(d['limit'])}; restarting`,
+      title: `Process "${text(d['name'])}" exceeded its memory limit`,
+      message: `${text(d['memory'])} bytes used, limit ${text(d['limit'])}; action: ${text(d['action'], 'restart')}`,
+    }),
+  },
+  {
+    source: 'process:cpu-limit', event: 'process:cpu-limit', severity: 'warning',
+    describe: (d) => ({
+      title: `Process "${text(d['name'])}" exceeded its CPU limit`,
+      message: `${Number(d['cpu']).toFixed(1)}% used, limit ${text(d['limit'])}%; action: ${text(d['action'], 'warn')}`,
     }),
   },
   {

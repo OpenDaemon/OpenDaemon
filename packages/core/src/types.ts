@@ -97,6 +97,30 @@ export interface SecretReference {
 export type EnvValue = string | SecretReference;
 
 /**
+ * What to do when a limit is exceeded
+ */
+export type LimitAction = 'warn' | 'restart' | 'stop';
+
+export interface ResourceLimits {
+  memory?: {
+    /** Resident memory of all instances together: bytes or a size such as '512M' */
+    max: string | number;
+    /** Default: restart */
+    action?: LimitAction;
+    /** The limit must stay exceeded this long (ms) before the action runs (default 0) */
+    grace?: number;
+  };
+  cpu?: {
+    /** Percent of one core, all instances together */
+    max: number;
+    /** The limit must stay exceeded this long (ms) before the action runs (default 60000) */
+    duration?: number;
+    /** Default: warn */
+    action?: LimitAction;
+  };
+}
+
+/**
  * Process restart strategy
  */
 export type RestartStrategy = 'always' | 'on-failure' | 'unless-stopped' | 'never';
@@ -128,8 +152,11 @@ export interface ProcessConfig {
   args?: string[];
 
   // Resource limits
+  /** Shorthand for limits.memory { max, action: 'restart' } */
   maxMemory?: string | number;
+  /** Shorthand for limits.cpu { max, action: 'warn', duration: 60000 } */
   maxCpu?: number;
+  limits?: ResourceLimits;
 
   // Lifecycle
   autoRestart?: boolean | RestartStrategy;

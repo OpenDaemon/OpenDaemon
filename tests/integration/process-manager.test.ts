@@ -238,6 +238,79 @@ describe('ProcessManagerPlugin', () => {
       }
     });
 
+    describe.runIf(process.platform === 'linux')('resource limits', () => {
+      const hogPath = resolve('./test-limit-hog.cjs');
+      type Info = { pid: number; status: string; restartCount: number };
+      const hits: Array<{ kind: string; data: { name: string; action: string } }> = [];
+      const info = async () => await methods.get('info')!({ name: 'hog' }) as Info;
+      const until = async (predicate: () => boolean | Promise<boolean>, ms = 8000) => {
+        const deadline = Date.now() + ms;
+        while (!(await predicate())) {
+          if (Date.now() > deadline) throw new Error('condition not met');
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      };
+
+      beforeEach(() => {
+        hits.length = 0;
+        // ~80MB resident and a busy loop (~60% of a core)
+        writeFileSync(hogPath, "const keep = Buffer.alloc(80 * 1024 * 1024, 1); setInterval(() => { const end = Date.now() + 60; while (Date.now() < end) {} keep[0]++; }, 100);");
+        for (const kind of ['memory', 'cpu']) {
+          events.on(`process:${kind}-limit`, (data: unknown) => { hits.push({ kind, data: data as (typeof hits)[number]['data'] }); });
+        }
+      });
+
+      afterEach(async () => {
+        await methods.get('stop')!({ name: 'hog' }).catch(() => undefined);
+        if (existsSync(hogPath)) unlinkSync(hogPath);
+      });
+
+      it('should only warn when the action is warn, and keep warning quiet after the first time', async () => {
+        const first = await methods.get('start')!({ name: 'hog', script: hogPath, killTimeout: 300, limits: { memory: { max: '30M', action: 'warn' } } }) as Info;
+        await until(() => hits.length > 0);
+        await new Promise((r) => setTimeout(r, 4500));
+
+        expect(hits).toHaveLength(1);
+        expect(hits[0]).toMatchObject({ kind: 'memory', data: { name: 'hog', action: 'warn' } });
+        expect(await info()).toMatchObject({ status: 'online', pid: first.pid, restartCount: 0 });
+      }, 20_000);
+
+      it('should stop the process when the action is stop', async () => {
+        await methods.get('start')!({ name: 'hog', script: hogPath, killTimeout: 300, limits: { memory: { max: '30M', action: 'stop' } } });
+        await until(async () => (await info()).status === 'stopped');
+        expect(hits[0]?.data.action).toBe('stop');
+      });
+
+      it('should wait out the grace period before acting', async () => {
+        const started = Date.now();
+        await methods.get('start')!({ name: 'hog', script: hogPath, killTimeout: 300, limits: { memory: { max: '30M', action: 'warn', grace: 3000 } } });
+        await until(() => hits.length > 0);
+        expect(Date.now() - started).toBeGreaterThanOrEqual(2500);
+      }, 20_000);
+
+      it('should act on sustained CPU, and restart counts like any restart', async () => {
+        const first = await methods.get('start')!({ name: 'hog', script: hogPath, killTimeout: 300, limits: { cpu: { max: 1, duration: 2000, action: 'restart' } } }) as Info;
+        await until(async () => (await info()).pid !== first.pid && (await info()).status === 'online');
+
+        expect(hits[0]).toMatchObject({ kind: 'cpu', data: { name: 'hog', action: 'restart' } });
+        expect((await info()).restartCount).toBeGreaterThanOrEqual(1);
+      }, 30_000);
+
+      it('should keep the maxMemory shorthand as a restart', async () => {
+        const first = await methods.get('start')!({ name: 'hog', script: hogPath, killTimeout: 300, maxMemory: '30M' }) as Info;
+        await until(async () => (await info()).pid !== first.pid);
+        expect(hits[0]?.data.action).toBe('restart');
+      });
+
+      it.each([
+        [{ maxCpu: 0 }, /Invalid maxCpu "0"/],
+        [{ limits: { memory: { max: 'lots' } } }, /Invalid maxMemory "lots"/],
+        [{ limits: { cpu: { max: 50, action: 'throttle' } } }, /Invalid limit action "throttle"/],
+      ])('should reject %j', async (extra, message) => {
+        await expect(methods.get('start')!({ name: 'hog', script: hogPath, ...extra })).rejects.toThrow(message);
+      });
+    });
+
     it('should reject an invalid maxMemory', async () => {
       await expect(methods.get('start')!({ name: 'bad', script: testScriptPath, maxMemory: 'lots' }))
         .rejects.toThrow(/Invalid maxMemory "lots"/);

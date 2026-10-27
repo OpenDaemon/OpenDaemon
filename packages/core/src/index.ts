@@ -51,6 +51,8 @@ export type {
   ProcessLogEntry,
   SecretReference,
   EnvValue,
+  LimitAction,
+  ResourceLimits,
   MetricSnapshot,
   WatchConfig,
   MetricType,
