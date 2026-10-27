@@ -27,10 +27,10 @@ describe('WebuiPlugin security', () => {
   const startProcess = vi.fn().mockResolvedValue({ name: 'x' });
 
   async function start(pluginConfig: Record<string, unknown>): Promise<number> {
-    const port = 20000 + Math.floor(Math.random() * 20000);
+    // Port 0: the OS picks a free port, so parallel test files never collide
     const context = {
       config: {},
-      pluginConfig: { port, ...pluginConfig },
+      pluginConfig: { port: 0, ...pluginConfig },
       events: new EventBus(),
       logger: new Logger('webui-test'),
       store: new StateStore(),
@@ -43,7 +43,7 @@ describe('WebuiPlugin security', () => {
     plugin = new WebuiPlugin();
     plugin.install(context);
     await plugin.onStart(context);
-    return port;
+    return (plugin as unknown as { server: { address(): { port: number } } }).server.address().port;
   }
 
   afterEach(async () => {

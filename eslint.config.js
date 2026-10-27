@@ -57,9 +57,9 @@ export default tseslint.config(
       '@typescript-eslint/unbound-method': 'off',
     },
   },
-  // Plain Node.js scripts (examples)
+  // Plain Node.js scripts (examples, the cluster primary)
   {
-    files: ['**/*.js'],
+    files: ['**/*.js', '**/*.mjs'],
     languageOptions: {
       globals: {
         process: 'readonly',

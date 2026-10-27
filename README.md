@@ -9,7 +9,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Zero Runtime Dependencies** - Everything built from scratch, no `node_modules` bloat
 - **Plugin-First Architecture** - Micro-kernel with extensible plugin system and dependency resolution
 - **TypeScript Native** - Written in TypeScript, configured in TypeScript with `defineConfig`
-- **Fork & Cluster Modes** - Single-instance or multi-instance process management
+- **Fork & Cluster Modes** - Single process, or N `node:cluster` workers sharing one port (`instances: 4` or `'max'`), with per-worker logs and crash restarts
 - **Auto-Restart** - Configurable strategies: `always`, `on-failure`, `unless-stopped`, `never`
 - **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
 - **CPU & Memory Monitoring** - Real-time metrics collection for all managed processes

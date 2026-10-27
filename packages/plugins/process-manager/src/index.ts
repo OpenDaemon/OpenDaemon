@@ -10,6 +10,17 @@ import type {
 import { spawn, execFile, type ChildProcess } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
+import { availableParallelism } from 'os';
+import { fileURLToPath } from 'url';
+
+/**
+ * cluster-primary: bundled next to the daemon as cluster-primary.js; from source it is the .mjs
+ */
+function clusterPrimaryPath(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const bundled = resolve(here, 'cluster-primary.js');
+  return existsSync(bundled) ? bundled : resolve(here, 'cluster-primary.mjs');
+}
 
 /**
  * Managed process information
@@ -30,7 +41,8 @@ interface ManagedProcessInfo {
   restartCount: number;
   lastRestart?: Date;
   childProcess?: ChildProcess | undefined;
-  workers: ChildProcess[];
+  /** Cluster mode: worker index -> pid, as reported by the cluster primary */
+  workerPids: Map<number, number>;
   stopTimeout?: NodeJS.Timeout | undefined;
   cpu: number;
   memory: number;
@@ -166,7 +178,7 @@ export class ProcessManagerPlugin implements Plugin {
       status: 'starting',
       pids: [],
       restartCount: existing?.restartCount ?? 0,
-      workers: [],
+      workerPids: new Map(),
       cpu: 0,
       memory: 0,
       logs: existing?.logs ?? [],
@@ -176,7 +188,7 @@ export class ProcessManagerPlugin implements Plugin {
 
     try {
       // Start the process
-      if (config.mode === 'cluster' && typeof config.instances === 'number' && config.instances > 1) {
+      if (config.mode === 'cluster') {
         await this.startCluster(proc);
       } else {
         await this.startFork(proc);
@@ -475,63 +487,97 @@ export class ProcessManagerPlugin implements Plugin {
   }
 
   /**
-   * Start process in cluster mode
+   * Start process in cluster mode: one cluster primary (cluster-primary.mjs) forks the app as
+   * node:cluster workers so they can share listening ports. The primary restarts crashed workers
+   * and reports worker pids, logs and readiness over IPC; the daemon manages the primary like a
+   * forked process.
    */
   private async startCluster(proc: ManagedProcessInfo): Promise<void> {
     const config = proc.config;
-    const instances = typeof config.instances === 'number' ? config.instances : 1;
-
-    proc.pids = [];
-
-    for (let i = 0; i < instances; i++) {
-      this.startWorker(proc, i);
-    }
-
-    proc.pid = proc.pids[0];
-
-    // Same readiness rule as fork mode, waited for all workers together
-    const minUptime = config.minUptime;
-    if (minUptime) {
-      await Promise.all(proc.workers.map((worker) => this.waitForReady(worker, minUptime)));
-    }
-  }
-
-  /**
-   * Start a single worker
-   */
-  private startWorker(proc: ManagedProcessInfo, index: number): void {
-    const config = proc.config;
     const scriptPath = resolve(config.script);
     const cwd = config.cwd ? resolve(config.cwd) : dirname(scriptPath);
+    const instances = this.resolveInstances(config);
 
     const env = {
       ...this.buildEnv(config),
-      OD_WORKER_ID: String(index),
-      OD_WORKER_COUNT: String(config.instances),
+      OD_CLUSTER_SCRIPT: scriptPath,
+      OD_CLUSTER_INSTANCES: String(instances),
+      OD_CLUSTER_ARGS: JSON.stringify(config.args ?? []),
+      OD_CLUSTER_POLICY: JSON.stringify({
+        autoRestart: config.autoRestart,
+        restartDelay: config.restartDelay,
+        maxRestarts: config.maxRestarts,
+        killTimeout: config.killTimeout,
+      }),
     };
 
-    const child = spawn(process.execPath, [scriptPath, ...(config.args ?? [])], {
+    const child = spawn(process.execPath, [clusterPrimaryPath()], {
       cwd,
       env,
       detached: false,
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
     });
 
-    proc.workers[index] = child;
-    if (child.pid) {
-      proc.pids.push(child.pid);
-    }
+    proc.childProcess = child;
+    proc.pid = child.pid;
+    proc.pids = child.pid ? [child.pid] : [];
+    proc.workerPids = new Map();
 
-    // Capture worker stdout/stderr
-    this.captureOutput(proc, child, index);
+    // The primary's own output (startup errors); worker output arrives as od:log messages
+    this.captureOutput(proc, child);
 
+    child.on('message', (message: unknown) => {
+      this.handleClusterMessage(proc, child, message);
+    });
     child.on('exit', (code, signal) => {
-      this.handleWorkerExit(proc, index, code, signal);
+      if (proc.childProcess === child) proc.workerPids.clear();
+      this.handleProcessExit(proc, code, signal);
+    });
+    child.on('error', (err) => {
+      this.logger.error(`Cluster primary error: ${config.name}`, undefined, err);
+      proc.status = 'errored';
+      this.context.events.emit('process:error', { name: config.name, error: err.message });
     });
 
-    child.on('error', (err) => {
-      this.logger.error(`Worker error: ${config.name}[${index}]`, undefined, err);
-    });
+    if (config.minUptime) {
+      await this.waitForReady(child, config.minUptime);
+    }
+  }
+
+  private handleClusterMessage(proc: ManagedProcessInfo, primary: ChildProcess, message: unknown): void {
+    // Ignore a previous primary that is still shutting down
+    if (proc.childProcess !== primary || typeof message !== 'object' || message === null) return;
+    const msg = message as {
+      type?: string; event?: string; index?: number; pid?: number;
+      source?: 'stdout' | 'stderr'; message?: string; code?: number | null; signal?: string | null;
+    };
+    if (typeof msg.index !== 'number') return;
+
+    if (msg.type === 'od:log' && typeof msg.message === 'string') {
+      this.appendLog(proc, msg.source === 'stderr' ? 'stderr' : 'stdout', msg.message, msg.pid, msg.index);
+      return;
+    }
+    if (msg.type !== 'od:worker') return;
+
+    if (msg.event === 'online' && typeof msg.pid === 'number') {
+      proc.workerPids.set(msg.index, msg.pid);
+    } else if (msg.event === 'exit') {
+      proc.workerPids.delete(msg.index);
+      this.logger.info(`Worker exited: ${proc.config.name}[${String(msg.index)}]`, { code: msg.code, signal: msg.signal });
+    } else if (msg.event === 'restart') {
+      // Worker crash restarts count like process restarts, so `od list` shows the crash loop
+      proc.restartCount++;
+      proc.lastRestart = new Date();
+    }
+    proc.pids = [...(primary.pid ? [primary.pid] : []), ...proc.workerPids.values()];
+  }
+
+  /**
+   * Number of cluster workers: a number, or 'max' for one per CPU
+   */
+  private resolveInstances(config: ProcessConfig): number {
+    if (config.instances === 'max') return Math.max(1, availableParallelism());
+    return typeof config.instances === 'number' && config.instances > 0 ? config.instances : 1;
   }
 
   /**
@@ -558,22 +604,13 @@ export class ProcessManagerPlugin implements Plugin {
       proc.stopTimeout = undefined;
     }
 
-    // Clear worker restart timeouts
-    const workerTimeouts = (proc as ManagedProcessInfo & { workerTimeouts?: Map<number, NodeJS.Timeout> }).workerTimeouts;
-    if (workerTimeouts) {
-      for (const timeout of workerTimeouts.values()) {
-        clearTimeout(timeout);
-      }
-      workerTimeouts.clear();
-    }
-
     // `killed` only means a signal was delivered, not that the child exited,
     // so liveness is judged by exitCode/signalCode instead
     const isAlive = (child: ChildProcess | undefined): child is ChildProcess =>
       child !== undefined && child.exitCode === null && child.signalCode === null;
-    const children = [proc.childProcess, ...proc.workers].filter(isAlive);
+    const children = [proc.childProcess].filter(isAlive);
 
-    // Send signal to main process and workers
+    // Send signal to the process (in cluster mode the primary forwards it to its workers)
     for (const child of children) {
       child.kill(signal as NodeJS.Signals);
     }
@@ -595,11 +632,21 @@ export class ProcessManagerPlugin implements Plugin {
       }
     }
 
+    // A force-killed primary (or one on Windows, where kill() cannot be caught) cannot stop its
+    // workers, so kill any reported worker that is still alive
+    for (const pid of proc.workerPids.values()) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // already gone
+      }
+    }
+
     proc.status = 'stopped';
     proc.pid = undefined;
     proc.pids = [];
     proc.childProcess = undefined;
-    proc.workers = [];
+    proc.workerPids = new Map();
     proc.cpu = 0;
     proc.memory = 0;
     proc.cpuSamples = undefined;
@@ -650,7 +697,7 @@ export class ProcessManagerPlugin implements Plugin {
         if (proc.status === 'stopping' || proc.status === 'stopped') {
           return;
         }
-        if (proc.config.mode === 'cluster' && typeof proc.config.instances === 'number' && proc.config.instances > 1) {
+        if (proc.config.mode === 'cluster') {
           this.startCluster(proc).then(() => {
             proc.status = 'online';
             proc.startTime = new Date();
@@ -673,46 +720,6 @@ export class ProcessManagerPlugin implements Plugin {
     } else {
       proc.status = code === 0 ? 'stopped' : 'errored';
       this.context.events.emit('process:exit', { name: proc.config.name, code, signal });
-    }
-  }
-
-  /**
-   * Handle worker exit
-   */
-  private handleWorkerExit(
-    proc: ManagedProcessInfo,
-    index: number,
-    code: number | null,
-    signal: string | null
-  ): void {
-    if (this.stopping || proc.status === 'stopping' || proc.status === 'stopped') {
-      return;
-    }
-
-    this.logger.info(`Worker exited: ${proc.config.name}[${index}]`, { code, signal });
-
-    // Restart worker if needed
-    const shouldRestart = this.shouldRestart(proc, code);
-
-    if (shouldRestart) {
-      const workerTimeouts = (proc as ManagedProcessInfo & { workerTimeouts?: Map<number, NodeJS.Timeout> }).workerTimeouts ??= new Map();
-
-      const existingTimeout = workerTimeouts.get(index);
-      if (existingTimeout) {
-        clearTimeout(existingTimeout);
-      }
-
-      workerTimeouts.set(index, setTimeout(() => {
-        workerTimeouts.delete(index);
-        if (proc.status === 'stopping' || proc.status === 'stopped') {
-          return;
-        }
-        try {
-          this.startWorker(proc, index);
-        } catch (err) {
-          this.logger.error(`Failed to restart worker: ${proc.config.name}[${index}]`, undefined, err as Error);
-        }
-      }, proc.config.restartDelay ?? 1000));
     }
   }
 
@@ -845,8 +852,8 @@ export class ProcessManagerPlugin implements Plugin {
       name: proc.config.name,
       status: proc.status,
       mode: (proc.config.mode ?? 'fork'),
-      instances: typeof proc.config.instances === 'number' ? proc.config.instances : (proc.config.instances === 'max' ? proc.workers.length || 1 : 1),
-      runningInstances: proc.workers.length || (proc.childProcess ? 1 : 0),
+      instances: proc.config.mode === 'cluster' ? this.resolveInstances(proc.config) : 1,
+      runningInstances: proc.config.mode === 'cluster' ? proc.workerPids.size : (proc.childProcess ? 1 : 0),
       pid: proc.pid,
       pids: proc.pids,
       restartCount: proc.restartCount,

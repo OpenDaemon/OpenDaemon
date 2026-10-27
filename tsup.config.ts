@@ -21,6 +21,8 @@ export default defineConfig([
     entry: {
       cli: 'packages/cli/src/cli.ts',
       daemon: 'packages/cli/src/daemon.ts',
+      // Spawned by the process manager in cluster mode; found next to daemon.js at runtime
+      'cluster-primary': 'packages/plugins/process-manager/src/cluster-primary.mjs',
     },
     outDir: 'packages/cli/dist',
     format: ['esm'],

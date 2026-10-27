@@ -4,6 +4,8 @@ import { EventBus, StateStore, Logger } from '../../packages/core/src/index.js';
 import type { PluginContext } from '../../packages/core/src/index.js';
 import { resolve } from 'path';
 import { writeFileSync, unlinkSync, existsSync } from 'fs';
+import { request } from 'http';
+import { availableParallelism } from 'os';
 
 describe('ProcessManagerPlugin', () => {
   let plugin: ProcessManagerPlugin;
@@ -205,6 +207,82 @@ describe('ProcessManagerPlugin', () => {
       }
     });
 
+    describe('cluster mode', () => {
+      const clusterScript = resolve('./test-cluster-app.cjs');
+      const logs: Array<{ message: string; instanceId?: number; pid: number }> = [];
+
+      const waitFor = async (predicate: () => boolean | Promise<boolean>, timeoutMs = 8000) => {
+        const deadline = Date.now() + timeoutMs;
+        while (!(await predicate())) {
+          if (Date.now() > deadline) throw new Error('condition not met');
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      };
+      const get = (port: number) => new Promise<string>((resolveBody, reject) => {
+        request({ host: '127.0.0.1', port, path: '/', agent: false }, (res) => {
+          let body = '';
+          res.on('data', (c: Buffer) => { body += c.toString(); });
+          res.on('end', () => { resolveBody(body); });
+        }).on('error', reject).end();
+      });
+      const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+      beforeEach(() => {
+        logs.length = 0;
+        events.on('process:log', (data: unknown) => { logs.push(data as (typeof logs)[number]); });
+        writeFileSync(clusterScript, [
+          "const http = require('http');",
+          "const server = http.createServer((req, res) => res.end(String(process.pid)));",
+          "server.listen(0, '127.0.0.1', () => console.log('port ' + server.address().port));",
+        ].join('\n'));
+      });
+
+      afterEach(() => {
+        if (existsSync(clusterScript)) unlinkSync(clusterScript);
+      });
+
+      it('should let all workers share one listening port and tag logs by instance', async () => {
+        await methods.get('start')!({ name: 'web', script: clusterScript, mode: 'cluster', instances: 3, killTimeout: 500 });
+        await waitFor(() => logs.filter((l) => l.message.startsWith('port ')).length === 3);
+
+        const ports = new Set(logs.map((l) => l.message.split(' ')[1]));
+        expect(ports.size).toBe(1);
+        expect(logs.map((l) => l.instanceId).sort()).toEqual([0, 1, 2]);
+
+        const port = Number([...ports][0]);
+        const servedBy = new Set<string>();
+        for (let i = 0; i < 12; i++) servedBy.add(await get(port));
+        expect(servedBy.size).toBeGreaterThan(1);
+
+        const info = await methods.get('info')!({ name: 'web' }) as { instances: number; runningInstances: number };
+        expect(info).toMatchObject({ instances: 3, runningInstances: 3 });
+        await methods.get('stop')!({ name: 'web' });
+      });
+
+      it('should restart a crashed worker, count it, and leave no workers after stop', async () => {
+        await methods.get('start')!({ name: 'web', script: clusterScript, mode: 'cluster', instances: 2, restartDelay: 50, killTimeout: 500 });
+        await waitFor(async () => (await methods.get('info')!({ name: 'web' }) as { runningInstances: number }).runningInstances === 2);
+
+        const { pids } = await methods.get('info')!({ name: 'web' }) as { pids: number[] };
+        const victim = pids[1]!;
+        process.kill(victim, 'SIGKILL');
+        await waitFor(async () => {
+          const info = await methods.get('info')!({ name: 'web' }) as { runningInstances: number; restartCount: number; pids: number[] };
+          return info.restartCount === 1 && info.runningInstances === 2 && !info.pids.includes(victim);
+        });
+
+        const before = (await methods.get('info')!({ name: 'web' }) as { pids: number[] }).pids;
+        await methods.get('stop')!({ name: 'web' });
+        await waitFor(() => before.every((pid) => !alive(pid)), 3000);
+      });
+
+      it("should resolve instances 'max' to the CPU count", async () => {
+        const info = await methods.get('start')!({ name: 'web', script: clusterScript, mode: 'cluster', instances: 'max', killTimeout: 500 }) as { instances: number };
+        expect(info.instances).toBe(availableParallelism());
+        await methods.get('stop')!({ name: 'web' });
+      });
+    });
+
     describe('minUptime readiness', () => {
       const scripts: string[] = [];
       const script = (name: string, body: string) => {
@@ -248,9 +326,18 @@ describe('ProcessManagerPlugin', () => {
         const info = await methods.get('start')!({
           name: 'cluster', script: script('cluster', 'setInterval(() => {}, 1000);'),
           mode: 'cluster', instances: 2, minUptime: 200, killTimeout: 300,
-        }) as { status: string; pids: number[] };
+        }) as { status: string };
         expect(info.status).toBe('online');
-        expect(info.pids).toHaveLength(2);
+
+        // Workers report in asynchronously: the cluster primary plus its two workers
+        const deadline = Date.now() + 5000;
+        let now = await methods.get('info')!({ name: 'cluster' }) as { pids: number[]; runningInstances: number };
+        while (now.runningInstances < 2 && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 50));
+          now = await methods.get('info')!({ name: 'cluster' }) as { pids: number[]; runningInstances: number };
+        }
+        expect(now.runningInstances).toBe(2);
+        expect(now.pids).toHaveLength(3);
         await methods.get('stop')!({ name: 'cluster' });
       });
     });
