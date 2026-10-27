@@ -34,6 +34,18 @@ export function compileIgnore(patterns: readonly string[]): (relativePath: strin
   };
 }
 
+/**
+ * Windows also reports a change on a directory whenever a file inside it changes; the file's
+ * own event is what matters (and is filtered by the ignore patterns), so skip directories.
+ */
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false; // deleted: a real change
+  }
+}
+
 interface Watched {
   watchers: FSWatcher[];
   timer?: NodeJS.Timeout;
@@ -107,7 +119,7 @@ export class WatchModePlugin implements Plugin {
         const watcher = watch(root, { recursive: rootIsDir }, (_event, filename) => {
           const file = filename ? resolve(rootIsDir ? root : dirname(root), filename) : root;
           const rel = rootIsDir ? relative(root, file) : filename ?? '';
-          if ((rel && ignored(rel)) || isOwnLog(file)) return;
+          if ((rel && ignored(rel)) || isOwnLog(file) || isDirectory(file)) return;
           this.onChange(name, entry, options.delay ?? 1000, file);
         });
         watcher.on('error', (err) => {
