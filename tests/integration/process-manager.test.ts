@@ -252,7 +252,9 @@ describe('ProcessManagerPlugin', () => {
         const port = Number([...ports][0]);
         const servedBy = new Set<string>();
         for (let i = 0; i < 12; i++) servedBy.add(await get(port));
-        expect(servedBy.size).toBeGreaterThan(1);
+        // node:cluster round-robins everywhere except Windows, where the OS picks the worker
+        // (SCHED_NONE) and sequential requests from one client often land on the same one
+        if (process.platform !== 'win32') expect(servedBy.size).toBeGreaterThan(1);
 
         const info = await methods.get('info')!({ name: 'web' }) as { instances: number; runningInstances: number };
         expect(info).toMatchObject({ instances: 3, runningInstances: 3 });
