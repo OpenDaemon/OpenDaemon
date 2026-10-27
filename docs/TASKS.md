@@ -342,10 +342,10 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 ### 7.4 Scheduler Plugin
 | ID | Task | Priority | Complexity | Dependencies | Status |
 |----|------|----------|------------|--------------|--------|
-| 7.4.1 | Implement cron parser | Medium | L | None | ⬜ |
-| 7.4.2 | Implement job scheduler | Medium | L | 7.4.1 | ⬜ |
-| 7.4.3 | Implement overlap prevention | Low | M | 7.4.2 | ⬜ |
-| 7.4.4 | Write scheduler tests | Low | M | 7.4.3 | ⬜ |
+| 7.4.1 | Implement cron parser | Medium | L | None | ✅ |
+| 7.4.2 | Implement job scheduler | Medium | L | 7.4.1 | ✅ |
+| 7.4.3 | Implement overlap prevention | Low | M | 7.4.2 | ✅ |
+| 7.4.4 | Write scheduler tests | Low | M | 7.4.3 | ✅ |
 
 ### 7.5 TUI Dashboard Plugin
 | ID | Task | Priority | Complexity | Dependencies | Status |
@@ -513,7 +513,7 @@ Phase 9: Final Polish
 - [ ] Secret manager
 - [ ] TUI dashboard
 - [x] Watch mode
-- [ ] Scheduler
+- [x] Scheduler
 - [ ] Deploy strategies
 
 ---
@@ -553,10 +553,10 @@ Phase 9: Final Polish
 | 4. Plugin System | 20 | 18 | 90% |
 | 5. Core Plugins | 29 | 22 | 76% |
 | 6. CLI | 25 | 23 | 92% |
-| 7. Advanced Features | 26 | 10 | 38% |
+| 7. Advanced Features | 26 | 14 | 54% |
 | 8. Testing & Quality | 17 | 6 | 35% |
 | 9. Final Polish | 14 | 3 | 21% |
-| **Total** | **202** | **147** | **73%** |
+| **Total** | **202** | **151** | **75%** |
 
 **Estimated Duration**: 7 weeks (working full-time)
 **Start Date**: 2025-02-21

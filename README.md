@@ -14,6 +14,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
 - **Metrics** - Host, process and app metrics (`opendaemon/runtime` counters, gauges, histograms) as Prometheus text at `/metrics` or JSON; `maxMemory` restarts
 - **Persistent Logs** - JSON-lines log files per process with size rotation, gzip, search (`--grep`, `--since`) and live follow (`-f`)
+- **Scheduled Jobs** - `cron` apps with time zones, overlap control, retries and run history (`od cron`)
 - **Watch Mode** - `--watch` restarts on file changes (recursive `fs.watch`, ignore patterns, debounce)
 - **Dependencies** - Start order from `dependencies` (waits for healthy dependencies), reverse-order shutdown, cycle detection
 - **Health Checks** - HTTP(S), TCP, script, command, memory, CPU and composite checks with automatic restart or stop
@@ -143,6 +144,22 @@ apps:
 
 Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their environment. Checks pause while a process is restarting. `notify` and `none` only report the state: it shows in `od health` and is emitted as the `health:status:unhealthy` event. `grpc` checks are not supported yet.
 
+## Scheduled Jobs
+
+An app with `cron` runs as a job. It does not start with the daemon. It starts at each match of the expression instead, and it is not restarted when it exits:
+
+```yaml
+apps:
+  - name: cleanup
+    script: ./jobs/cleanup.js
+    cron: '0 2 * * *'            # every day at 02:00
+    cronTimezone: Europe/Istanbul # IANA zone (default: the host's)
+    cronOverlap: false           # still running at the next tick: skip it (true: restart it)
+    cronRetry: 3                 # re-run a failed run (non-zero exit) up to 3 times
+```
+
+Expressions take 5 fields (`minute hour day month weekday`) or 6 with seconds first. Each field accepts `*`, ranges, steps (`*/15`, `9-17/2`), lists, month and day names, and macros (`@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`). When both day fields are restricted, a day matches if either one does, as in classic cron. `od cron` shows each job's next run and last result. Invalid expressions and unknown time zones are rejected when the config loads.
+
 ## Watch Mode
 
 Use `od start app.js --watch` or set `watch` on an app, and the process restarts gracefully when its files change:
@@ -242,6 +259,7 @@ Set `maxMemory: '512M'` on an app (or `od start app.js --max-memory 512M`) to re
 | `od info <name>` | Detailed process info (CPU, memory, PID, uptime) |
 | `od logs [name]` | Logs of one or all processes (`--lines N`, `-f`, `--grep RE`, `--since 2h`, `--json`) |
 | `od flush [name]` | Empty log files |
+| `od cron` | Scheduled jobs: next run and last result |
 | `od metrics` | Prometheus metrics (`--json` for the JSON report) |
 | `od health [name]` | Health check status (last result, consecutive failures) |
 | `od status` | Daemon & process status overview |
@@ -287,6 +305,7 @@ opendaemon/
 │       ├── log-manager/       # Persistent JSON-lines logs, rotation, search, follow
 │       ├── metrics-collector/ # Host/process/app metrics, Prometheus and JSON
 │       ├── watch-mode/        # Restart on file changes
+│       ├── scheduler/         # Cron-scheduled jobs
 │       └── webui/             # HTTP server, REST API, dashboard HTML
 ├── tests/
 │   ├── unit/                  # Unit tests

@@ -1,6 +1,6 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
 import { Logger } from '../../../core/src/index.js';
-import { ConfigError, ErrorCode, dependencyLevels } from '../../../core/src/index.js';
+import { ConfigError, ErrorCode, dependencyLevels, parseCron, assertTimeZone } from '../../../core/src/index.js';
 import type { DaemonConfig, ProcessConfig } from '../../../core/src/index.js';
 import { readFileSync, existsSync } from 'fs';
 import { resolve, extname } from 'path';
@@ -340,6 +340,15 @@ export class ConfigManagerPlugin implements Plugin {
         ErrorCode.CONFIG_VALIDATION_ERROR,
         `Process "${config.name}" must have a script`
       );
+    }
+
+    if (config.cron !== undefined) {
+      try {
+        parseCron(config.cron);
+        if (config.cronTimezone !== undefined) assertTimeZone(config.cronTimezone);
+      } catch (err) {
+        throw new ConfigError(ErrorCode.CONFIG_VALIDATION_ERROR, `Process "${config.name}": ${(err as Error).message}`);
+      }
     }
   }
 

@@ -13,6 +13,7 @@ const mockQueryLogs = vi.fn().mockResolvedValue([]);
 const mockShutdown = vi.fn().mockResolvedValue({ ok: true });
 const mockScale = vi.fn().mockResolvedValue({ instances: 4 });
 const mockMetrics = vi.fn();
+const mockCron = vi.fn();
 const mockFlushLogs = vi.fn().mockResolvedValue({ flushed: [] });
 const mockIsDaemonRunning = vi.fn().mockReturnValue(true);
 const mockExistsSync = vi.fn().mockReturnValue(true);
@@ -49,6 +50,7 @@ vi.mock('@opendaemon/core', () => ({
         case 'daemon.shutdown': return mockShutdown();
         case 'scale': return mockScale(params);
         case 'metrics': return mockMetrics(params);
+        case 'cron': return mockCron();
         case 'logs.flush': return mockFlushLogs(params);
         default: return Promise.resolve(undefined);
       }
@@ -98,6 +100,7 @@ import {
   FlushCommand,
   ScaleCommand,
   MetricsCommand,
+  CronCommand,
   parseSince,
   DaemonCommand,
 } from '../../packages/cli/src/commands/index.js';
@@ -510,6 +513,32 @@ describe('CLI Commands', () => {
       await cmd.execute([], { grep: '(' });
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to get logs: Invalid --grep pattern'));
       expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('CronCommand', () => {
+    const cmd = new CronCommand();
+
+    beforeEach(() => {
+      mockExistsSync.mockReturnValue(true);
+      mockCron.mockReset();
+    });
+
+    it('should list jobs with schedule, zone, next run and the last result', async () => {
+      mockCron.mockResolvedValue([{
+        name: 'cleanup', cron: '0 2 * * *', timezone: 'Europe/Istanbul', nextRun: '2026-01-02T23:00:00.000Z',
+        history: [{ startedAt: '2026-01-01T23:00:00.000Z', result: 'failed', exitCode: 3, attempt: 1 }],
+      }]);
+      await cmd.execute([], {});
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringMatching(
+        /cleanup.*0 2 \* \* \* \(Europe\/Istanbul\).*2026-01-02T23:00:00.000Z.*2026-01-01T23:00:00.000Z.*failed \(exit 3\)/
+      ));
+    });
+
+    it('should say when there are no scheduled jobs', async () => {
+      mockCron.mockResolvedValue([]);
+      await cmd.execute([], {});
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No scheduled jobs'));
     });
   });
 

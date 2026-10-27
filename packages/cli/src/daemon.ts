@@ -9,6 +9,7 @@ import { HealthCheckPlugin } from '../../plugins/health-check/src/index.js';
 import { LogManagerPlugin } from '../../plugins/log-manager/src/index.js';
 import { MetricsCollectorPlugin } from '../../plugins/metrics-collector/src/index.js';
 import { WatchModePlugin } from '../../plugins/watch-mode/src/index.js';
+import { SchedulerPlugin } from '../../plugins/scheduler/src/index.js';
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync, chmodSync } from 'fs';
 import { randomBytes } from 'crypto';
@@ -100,6 +101,7 @@ export async function main(): Promise<void> {
     kernel.registerPlugin(new HealthCheckPlugin());
     kernel.registerPlugin(new MetricsCollectorPlugin());
     kernel.registerPlugin(new WatchModePlugin());
+    kernel.registerPlugin(new SchedulerPlugin());
     kernel.registerPlugin(new WebuiPlugin());
 
     // Start kernel with configuration

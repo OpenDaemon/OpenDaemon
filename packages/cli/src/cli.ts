@@ -16,6 +16,7 @@ import {
   FlushCommand,
   ScaleCommand,
   MetricsCommand,
+  CronCommand,
   HealthCommand,
   StatusCommand,
   DaemonCommand,
@@ -224,6 +225,12 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       const cmd = new LogsCommand();
       const logsArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
       await cmd.execute(logsArgs, parsed.options);
+      break;
+    }
+
+    case 'cron': {
+      const cmd = new CronCommand();
+      await cmd.execute(parsed.args, parsed.options);
       break;
     }
 

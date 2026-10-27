@@ -160,7 +160,17 @@ export interface ProcessConfig {
   nice?: number;
   umask?: string | number;
   detached?: boolean;
+  /**
+   * Run as a scheduled job: not started with the daemon, started at each match of this cron
+   * expression instead (the scheduler plugin owns its lifecycle; autoRestart is ignored)
+   */
   cron?: string;
+  /** IANA time zone for `cron` (default: the host's) */
+  cronTimezone?: string;
+  /** If the previous run is still going at the next tick: false skips it (default), true restarts it */
+  cronOverlap?: boolean;
+  /** Re-run a failed (non-zero exit) run up to this many times (default 0) */
+  cronRetry?: number;
   watch?: boolean | WatchConfig;
   /** Apps that must be online (and healthy, if they have a health check) before this one starts */
   dependencies?: string[];

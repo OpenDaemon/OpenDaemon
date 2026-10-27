@@ -393,6 +393,51 @@ export class MetricsCommand implements Command {
 }
 
 /**
+ * Cron command - scheduled jobs, their next run and last result
+ */
+export class CronCommand implements Command {
+  name = 'cron';
+  description = 'Show scheduled jobs';
+  options = [];
+
+  async execute(_args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
+    try {
+      const client = new CliClient();
+      await client.connect();
+      const jobs = await client.getCronJobs() as Array<{
+        name: string; cron: string; timezone?: string; nextRun?: string;
+        history: Array<{ startedAt: string; result: string; exitCode?: number | null; attempt: number }>;
+      }>;
+      await client.disconnect();
+
+      if (options['json'] === true) {
+        console.log(JSON.stringify(jobs, null, 2));
+        return;
+      }
+      if (jobs.length === 0) {
+        term.info('No scheduled jobs (set `cron` on an app)');
+        return;
+      }
+      const rows = jobs.map((job) => {
+        const last = job.history.at(-1);
+        const result = last === undefined ? '-' : `${last.result}${last.exitCode === undefined || last.exitCode === null ? '' : ` (exit ${String(last.exitCode)})`}`;
+        return [
+          job.name,
+          job.timezone === undefined ? job.cron : `${job.cron} (${job.timezone})`,
+          job.nextRun ?? 'never',
+          last?.startedAt ?? '-',
+          result,
+        ];
+      });
+      console.log(term.table(['Name', 'Schedule', 'Next run', 'Last run', 'Result'], rows));
+    } catch (err) {
+      term.error(`Failed to get scheduled jobs: ${(err instanceof Error ? err : new Error(String(err))).message}`);
+      process.exit(1);
+    }
+  }
+}
+
+/**
  * Scale command - change the number of cluster workers
  */
 export class ScaleCommand implements Command {

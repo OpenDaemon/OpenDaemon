@@ -52,6 +52,7 @@ ${term.bold('COMMANDS')}
     flush [name]     Empty log files
     health [name]    Show health check status
     metrics          Prometheus metrics (--json for the JSON report)
+    cron             Scheduled jobs: next run and last result
     status           Show daemon and process overview
 
   Daemon:

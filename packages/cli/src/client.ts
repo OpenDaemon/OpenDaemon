@@ -153,6 +153,14 @@ export class CliClient {
   }
 
   /**
+   * Scheduled jobs with their next run and recent history
+   */
+  async getCronJobs(): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('cron');
+  }
+
+  /**
    * Change the number of cluster workers
    */
   async scaleProcess(name: string, instances: number | 'max'): Promise<unknown> {

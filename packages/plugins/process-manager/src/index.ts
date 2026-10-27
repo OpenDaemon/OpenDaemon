@@ -130,10 +130,17 @@ export class ProcessManagerPlugin implements Plugin {
     const ready = new Map<string, Promise<boolean>>();
     for (const name of levels.flat()) {
       const app = byName.get(name);
-      if (app) ready.set(name, this.startWhenDependenciesReady(app, ready));
+      if (!app) continue;
+      if (app.cron !== undefined) {
+        // Scheduled jobs run when the scheduler plugin starts them, not with the daemon
+        this.processes.set(app.name, this.placeholder(app, 'stopped', `scheduled: cron "${app.cron}"`));
+        ready.set(name, Promise.resolve(false));
+        continue;
+      }
+      ready.set(name, this.startWhenDependenciesReady(app, ready));
     }
     const independent = apps
-      .filter((app) => (app.dependencies ?? []).length === 0)
+      .filter((app) => (app.dependencies ?? []).length === 0 && app.cron === undefined)
       .map((app) => ready.get(app.name))
       .filter((p): p is Promise<boolean> => p !== undefined);
     await Promise.all(independent);
