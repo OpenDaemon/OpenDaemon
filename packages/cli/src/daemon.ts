@@ -9,18 +9,17 @@ import { HealthCheckPlugin } from '../../plugins/health-check/src/index.js';
 import { LogManagerPlugin } from '../../plugins/log-manager/src/index.js';
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync, chmodSync } from 'fs';
-import { resolve } from 'path';
 import { randomBytes } from 'crypto';
+import { ensureHome, runtimePaths } from './paths.js';
 
 /**
  * Remove the PID file (only if it is ours) and the IPC token file
  */
 function removeRuntimeFiles(): void {
-  const pidFile = resolve('opendaemon.pid');
+  const { pidFile, tokenFile } = runtimePaths();
   if (existsSync(pidFile) && readFileSync(pidFile, 'utf-8').trim() === String(process.pid)) {
     unlinkSync(pidFile);
   }
-  const tokenFile = resolve('opendaemon.token');
   if (existsSync(tokenFile)) {
     unlinkSync(tokenFile);
   }
@@ -45,8 +44,10 @@ export async function main(): Promise<void> {
   const logger = new Logger('daemon');
   
   try {
+    // Runtime files live in $OPENDAEMON_HOME (default ~/.opendaemon), not the current directory
+    const { pidFile, socketFile: socketPath, tokenFile, logDir } = ensureHome();
+
     // Check if daemon is already running
-    const pidFile = resolve('opendaemon.pid');
     if (existsSync(pidFile)) {
       const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
       if (isRunning(pid)) {
@@ -63,6 +64,8 @@ export async function main(): Promise<void> {
     // An invalid config is fatal: silently starting without the user's apps is worse.
     const configManager = new ConfigManagerPlugin();
     const config = await configManager.load();
+    // Process logs default to the home directory, like the other runtime files
+    config.daemon = { ...config.daemon, logDir: config.daemon?.logDir ?? logDir };
 
     // Create kernel
     const kernel = new Kernel();
@@ -70,13 +73,11 @@ export async function main(): Promise<void> {
     // Create IPC server FIRST (before registering plugins)
     // Use TCP on Windows (Unix sockets have permission issues), Unix socket on Linux/Mac
     const isWindows = process.platform === 'win32';
-    const socketPath = resolve('opendaemon.sock');
 
     // Every IPC request must carry this token. Only the daemon's user can read the token file,
     // so other local users cannot drive the daemon (and run code as this user) even when they
     // can reach the TCP port (Windows) or the socket (a permissive umask or shared group)
     const authToken = randomBytes(32).toString('hex');
-    const tokenFile = resolve('opendaemon.token');
     if (existsSync(tokenFile)) {
       unlinkSync(tokenFile); // the mode below only applies when the file is created
     }

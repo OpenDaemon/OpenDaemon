@@ -357,10 +357,8 @@ export class ConfigManagerPlugin implements Plugin {
    */
   private getDefaultConfig(): DaemonConfig {
     return {
+      // Runtime file locations (PID, socket, logs) default to $OPENDAEMON_HOME, set by the daemon
       daemon: {
-        pidFile: './opendaemon.pid',
-        logDir: './logs',
-        socketPath: './opendaemon.sock',
         shutdownTimeout: 10000,
       },
       defaults: {

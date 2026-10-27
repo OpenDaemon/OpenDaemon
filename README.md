@@ -64,17 +64,16 @@ od daemon stop
 
 Create an `opendaemon.config.ts` (or `.js`, `.mjs`, `.json`, `.yaml`, or an `opendaemon` field in `package.json`) in the directory where you run `od daemon start`. TypeScript configs are loaded with Node's built-in type stripping and need Node.js >= 22.18; on older versions use `.js`, `.json` or `.yaml`.
 
-If the daemon fails to start, the reason is printed and its full output is in `opendaemon.log`.
+If the daemon fails to start, the reason is printed and its full output is in `~/.opendaemon/daemon.log`.
 
-The daemon keeps its runtime files next to the config: `opendaemon.pid`, `opendaemon.sock` (Unix) and `opendaemon.token`. Every CLI request must carry the token. The token file and the socket are readable only by the user who started the daemon (mode `0600`), so other local users cannot control it. That includes Windows, where the daemon listens on TCP `127.0.0.1:9995`.
+The daemon keeps its runtime files in `$OPENDAEMON_HOME`, which defaults to `~/.opendaemon` (mode `0700`). They are `opendaemon.pid`, `opendaemon.sock` (Unix), `auth-token`, `daemon.log` and `logs/`. This lets `od` reach the daemon from any directory. To run separate daemons, give each one its own `OPENDAEMON_HOME`. Every CLI request must carry the token. The token file and the socket are readable only by the user who started the daemon (mode `0600`), so other local users cannot control it. That includes Windows, where the daemon listens on TCP `127.0.0.1:9995`.
 
 ```typescript
 import { defineConfig } from 'opendaemon/sdk';
 
 export default defineConfig({
   daemon: {
-    pidFile: 'opendaemon.pid',
-    logDir: './logs',
+    logDir: './logs',          // optional; default ~/.opendaemon/logs
     shutdownTimeout: 10000,
   },
   apps: [
@@ -144,7 +143,7 @@ Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their en
 
 ## Logs
 
-The `log-manager` plugin writes each process's stdout and stderr to `<logDir>/<name>-out.log` and `<name>-error.log`, one JSON object per line (`timestamp`, `level`, `pid`, `processName`, `instanceId`, `message`, `source`). `logDir` comes from `daemon.logDir` and defaults to `./logs`. Logs survive daemon restarts.
+The `log-manager` plugin writes each process's stdout and stderr to `<logDir>/<name>-out.log` and `<name>-error.log`, one JSON object per line (`timestamp`, `level`, `pid`, `processName`, `instanceId`, `message`, `source`). `logDir` comes from `daemon.logDir` and defaults to `~/.opendaemon/logs`. Logs survive daemon restarts.
 
 ```bash
 od logs api --lines 50             # last 50 lines of api (stdout and stderr, merged by time)

@@ -5,6 +5,7 @@ import { resolve } from 'path';
 import { existsSync, readFileSync, unlinkSync, openSync, closeSync, statSync } from 'fs';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import { ensureHome, runtimePaths } from '../paths.js';
 
 /**
  * Command handler interface
@@ -575,9 +576,6 @@ function formatDuration(ms: number): string {
   return `${s}s`;
 }
 
-const PID_FILE = 'opendaemon.pid';
-const SOCKET_FILE = 'opendaemon.sock';
-const LOG_FILE = 'opendaemon.log';
 
 /**
  * Last lines the daemon wrote to its log since `offset`, for explaining a failed start
@@ -633,8 +631,7 @@ export class DaemonCommand implements Command {
   }
 
   private async startDaemon(): Promise<void> {
-    const pidFile = resolve(PID_FILE);
-    const socketFile = resolve(SOCKET_FILE);
+    const { pidFile, socketFile, daemonLog: logFile } = ensureHome();
 
     if (existsSync(pidFile)) {
       const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
@@ -651,7 +648,6 @@ export class DaemonCommand implements Command {
       if (!existsSync(daemonScript)) throw new Error(`Daemon script not found: ${daemonScript}`);
 
       // Daemon output goes to a log file instead of being discarded, so a failed start can be explained
-      const logFile = resolve(LOG_FILE);
       const logOffset = existsSync(logFile) ? statSync(logFile).size : 0;
       const logFd = openSync(logFile, 'a');
       const child = spawn(process.execPath, [daemonScript], { detached: true, stdio: ['ignore', logFd, logFd] });
@@ -686,8 +682,7 @@ export class DaemonCommand implements Command {
   }
 
   private async stopDaemon(): Promise<void> {
-    const pidFile = resolve(PID_FILE);
-    const socketFile = resolve(SOCKET_FILE);
+    const { pidFile, socketFile } = runtimePaths();
 
     if (!existsSync(pidFile)) { term.info('Daemon is not running'); return; }
     const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
@@ -731,7 +726,7 @@ export class DaemonCommand implements Command {
   }
 
   private async daemonStatus(): Promise<void> {
-    const pidFile = resolve(PID_FILE);
+    const { pidFile } = runtimePaths();
     if (!existsSync(pidFile)) { term.info('Daemon is not running'); return; }
     const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
     if (!isProcessRunning(pid)) { term.info('Daemon is not running (stale PID file)'); return; }

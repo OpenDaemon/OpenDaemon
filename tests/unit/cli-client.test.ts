@@ -110,8 +110,8 @@ describe('CliClient', () => {
   });
 
   describe('auth token', () => {
-    it('should send the token from opendaemon.token', async () => {
-      mockExistsSync.mockImplementation((path: string) => path.endsWith('opendaemon.token'));
+    it('should send the token from the auth-token file in the OpenDaemon home', async () => {
+      mockExistsSync.mockImplementation((path: string) => path.endsWith('/.opendaemon/auth-token'));
       mockReadFileSync.mockReturnValue('abc123\n');
 
       const { IpcClient } = await import('@opendaemon/core');

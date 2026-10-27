@@ -67,6 +67,7 @@ vi.mock('fs', () => ({
   openSync: () => 3,
   closeSync: () => {},
   statSync: () => ({ size: 0 }),
+  mkdirSync: () => undefined,
 }));
 
 // Mock path module

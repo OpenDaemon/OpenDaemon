@@ -1,5 +1,5 @@
 import { IpcClient } from '@opendaemon/core';
-import { resolve } from 'path';
+import { runtimePaths } from './paths.js';
 import { existsSync, readFileSync } from 'fs';
 
 /**
@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'fs';
  */
 function readAuthToken(): string | undefined {
   try {
-    const file = resolve('opendaemon.token');
+    const file = runtimePaths().tokenFile;
     return existsSync(file) ? readFileSync(file, 'utf-8').trim() : undefined;
   } catch {
     return undefined;
@@ -35,7 +35,7 @@ export class CliClient {
       });
     } else {
       this.client = new IpcClient({
-        socketPath: resolve('opendaemon.sock'),
+        socketPath: runtimePaths().socketFile,
         timeout: 30000,
         ...auth,
       });
@@ -48,7 +48,8 @@ export class CliClient {
   isDaemonRunning(): boolean {
     // Windows talks TCP, so there is no socket file; the daemon writes its PID file on every
     // platform and removes it on shutdown, which gives the same signal
-    return existsSync(resolve(this.isWindows ? 'opendaemon.pid' : 'opendaemon.sock'));
+    const { pidFile, socketFile } = runtimePaths();
+    return existsSync(this.isWindows ? pidFile : socketFile);
   }
 
   /**

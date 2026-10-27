@@ -27,6 +27,7 @@ vi.mock('fs', () => ({
   writeFileSync: (...args: any[]) => mockWriteFileSync(...args),
   unlinkSync: (...args: any[]) => mockUnlinkSync(...args),
   chmodSync: (...args: any[]) => mockChmodSync(...args),
+  mkdirSync: () => undefined,
 }));
 
 vi.mock('path', () => ({
