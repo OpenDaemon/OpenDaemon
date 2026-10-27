@@ -5,10 +5,9 @@ import type {
   ProcessConfig,
   ProcessInfo,
   ProcessStatus,
-  ProcessMode,
 } from '../../../core/src/index.js';
-import { spawn, type ChildProcess } from 'child_process';
-import { existsSync } from 'fs';
+import { spawn, execFile, type ChildProcess } from 'child_process';
+import { existsSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 
 /**
@@ -35,6 +34,7 @@ interface ManagedProcessInfo {
   cpu: number;
   memory: number;
   metricsInterval?: NodeJS.Timeout | undefined;
+  cpuSamples?: Map<number, { ticks: number; at: number }> | undefined;
   logs: LogEntry[];
 }
 
@@ -48,10 +48,10 @@ export class ProcessManagerPlugin implements Plugin {
   description = 'Manages process lifecycle';
   priority = 10;
 
-  private processes = new Map<string, ManagedProcessInfo>();
+  private readonly processes = new Map<string, ManagedProcessInfo>();
   private nextId = 0;
   private context!: PluginContext;
-  private logger: Logger;
+  private readonly logger: Logger;
   private stopping = false;
 
   constructor() {
@@ -104,7 +104,9 @@ export class ProcessManagerPlugin implements Plugin {
     // Stop all processes
     const promises = Array.from(this.processes.values()).map(async (proc) => {
       try {
-        await this.stopProcessInternal(proc, 'SIGTERM', 10000);
+        // Same budget as `od stop`; it must stay below the CLI's 10s wait before it SIGKILLs
+        // the daemon, otherwise children that ignore SIGTERM are orphaned
+        await this.stopProcessInternal(proc, 'SIGTERM', proc.config.killTimeout ?? 5000);
       } catch (err) {
         this.logger.error(`Failed to stop ${proc.config.name}`, undefined, err as Error);
       }
@@ -254,6 +256,8 @@ export class ProcessManagerPlugin implements Plugin {
       clearInterval(proc.metricsInterval);
     }
 
+    // Sample right away so memory shows up immediately and CPU has a baseline
+    this.collectMetrics(proc);
     proc.metricsInterval = setInterval(() => {
       this.collectMetrics(proc);
     }, 2000);
@@ -270,51 +274,88 @@ export class ProcessManagerPlugin implements Plugin {
   }
 
   /**
-   * Collect CPU and memory metrics for a process
+   * Collect CPU and memory metrics for a process.
+   * Values are read from the managed pids themselves, never from the daemon.
    */
   private collectMetrics(proc: ManagedProcessInfo): void {
-    if (!proc.pid && proc.pids.length === 0) {
+    const pids = proc.pids.filter((pid) => pid > 0);
+    if (pids.length === 0) {
       proc.cpu = 0;
       proc.memory = 0;
       return;
     }
 
-    try {
-      // Use child process usage if available
-      if (proc.childProcess && proc.childProcess.pid && !proc.childProcess.killed) {
-        const usage = process.cpuUsage();
-        proc.cpu = (usage.user + usage.system) / 1000000; // Convert to seconds
-      }
-
-      // Get memory usage from /proc on Linux or via process
-      const pidsToCheck = proc.pids.filter(pid => pid > 0);
-      let totalMemory = 0;
-
-      for (const pid of pidsToCheck) {
-        try {
-          // Try to read /proc/[pid]/status for memory info
-          if (process.platform === 'linux') {
-            const { readFileSync } = require('fs');
-            const status = readFileSync(`/proc/${pid}/status`, 'utf-8');
-            const vmRssMatch = status.match(/VmRSS:\s+(\d+)\s+kB/);
-            if (vmRssMatch?.[1]) {
-              totalMemory += parseInt(vmRssMatch[1], 10) * 1024;
-            }
-          } else {
-            // On other platforms, estimate memory from the process
-            const memUsage = process.memoryUsage();
-            totalMemory += memUsage.rss;
-          }
-        } catch {
-          // Process might have exited
-        }
-      }
-
-      proc.memory = totalMemory;
-    } catch {
-      // Ignore metric collection errors
+    if (process.platform === 'linux') {
+      this.collectProcMetrics(proc, pids);
+    } else if (process.platform !== 'win32') {
+      this.collectPsMetrics(proc, pids);
     }
+    // Windows: no dependency-free per-pid source, metrics stay 0
   }
+
+  /**
+   * Linux: CPU % from utime+stime deltas in /proc/<pid>/stat, memory from VmRSS
+   */
+  private collectProcMetrics(proc: ManagedProcessInfo, pids: number[]): void {
+    const now = Date.now();
+    const samples = (proc.cpuSamples ??= new Map());
+    let cpu = 0;
+    let memory = 0;
+
+    for (const pid of pids) {
+      try {
+        // Fields after the ")" that ends comm: utime and stime are the 12th and 13th
+        const stat = readFileSync(`/proc/${pid}/stat`, 'utf-8');
+        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        const ticks = Number(fields[11]) + Number(fields[12]);
+
+        const previous = samples.get(pid);
+        if (previous && now > previous.at) {
+          const cpuSeconds = (ticks - previous.ticks) / ProcessManagerPlugin.CLOCK_TICKS;
+          cpu += (cpuSeconds / ((now - previous.at) / 1000)) * 100;
+        }
+        samples.set(pid, { ticks, at: now });
+
+        const status = readFileSync(`/proc/${pid}/status`, 'utf-8');
+        const rss = status.match(/VmRSS:\s+(\d+)\s+kB/)?.[1];
+        if (rss) {
+          memory += parseInt(rss, 10) * 1024;
+        }
+      } catch {
+        // Process might have exited between listing and reading
+        samples.delete(pid);
+      }
+    }
+
+    // Forget samples of pids that are no longer managed (restarts, scaled workers)
+    for (const pid of samples.keys()) {
+      if (!pids.includes(pid)) samples.delete(pid);
+    }
+
+    proc.cpu = Math.max(0, cpu);
+    proc.memory = memory;
+  }
+
+  /**
+   * macOS / other Unix: ask ps for rss (kB) and %cpu of the managed pids
+   */
+  private collectPsMetrics(proc: ManagedProcessInfo, pids: number[]): void {
+    execFile('ps', ['-o', 'rss=,%cpu=', '-p', pids.join(',')], (err, stdout) => {
+      if (err) return;
+      let cpu = 0;
+      let memory = 0;
+      for (const line of stdout.trim().split('\n')) {
+        const [rss, pcpu] = line.trim().split(/\s+/);
+        memory += (Number(rss) || 0) * 1024;
+        cpu += Number(pcpu) || 0;
+      }
+      proc.cpu = cpu;
+      proc.memory = memory;
+    });
+  }
+
+  // Linux USER_HZ; 100 on every mainstream architecture
+  private static readonly CLOCK_TICKS = 100;
 
   private static readonly MAX_LOG_LINES = 500;
 
@@ -331,10 +372,10 @@ export class ProcessManagerPlugin implements Plugin {
     };
 
     if (child.stdout) {
-      child.stdout.on('data', (data: Buffer) => addLine('stdout', data));
+      child.stdout.on('data', (data: Buffer) => { addLine('stdout', data); });
     }
     if (child.stderr) {
-      child.stderr.on('data', (data: Buffer) => addLine('stderr', data));
+      child.stderr.on('data', (data: Buffer) => { addLine('stderr', data); });
     }
   }
 
@@ -495,25 +536,21 @@ export class ProcessManagerPlugin implements Plugin {
       workerTimeouts.clear();
     }
 
-    // Send signal to main process
-    if (proc.childProcess && !proc.childProcess.killed) {
-      proc.childProcess.kill(signal as NodeJS.Signals);
-    }
+    // `killed` only means a signal was delivered, not that the child exited,
+    // so liveness is judged by exitCode/signalCode instead
+    const isAlive = (child: ChildProcess | undefined): child is ChildProcess =>
+      child !== undefined && child.exitCode === null && child.signalCode === null;
+    const children = [proc.childProcess, ...proc.workers].filter(isAlive);
 
-    // Send signal to workers
-    for (const worker of proc.workers) {
-      if (worker && !worker.killed) {
-        worker.kill(signal as NodeJS.Signals);
-      }
+    // Send signal to main process and workers
+    for (const child of children) {
+      child.kill(signal as NodeJS.Signals);
     }
 
     // Wait for processes to exit
     const startTime = Date.now();
     while (Date.now() - startTime < timeout) {
-      const allStopped = proc.workers.every((w) => !w || w.killed) &&
-        (!proc.childProcess || proc.childProcess.killed);
-
-      if (allStopped) {
+      if (!children.some(isAlive)) {
         break;
       }
 
@@ -521,13 +558,9 @@ export class ProcessManagerPlugin implements Plugin {
     }
 
     // Force kill if still running
-    if (proc.childProcess && !proc.childProcess.killed) {
-      proc.childProcess.kill('SIGKILL');
-    }
-
-    for (const worker of proc.workers) {
-      if (worker && !worker.killed) {
-        worker.kill('SIGKILL');
+    for (const child of children) {
+      if (isAlive(child)) {
+        child.kill('SIGKILL');
       }
     }
 
@@ -538,6 +571,7 @@ export class ProcessManagerPlugin implements Plugin {
     proc.workers = [];
     proc.cpu = 0;
     proc.memory = 0;
+    proc.cpuSamples = undefined;
 
     this.logger.info(`Process stopped: ${proc.config.name}`);
     this.context.events.emit('process:stopped', { name: proc.config.name });
@@ -551,7 +585,8 @@ export class ProcessManagerPlugin implements Plugin {
     code: number | null,
     signal: string | null
   ): void {
-    if (this.stopping) {
+    // Exits caused by a daemon shutdown or an explicit stop must not trigger auto-restart
+    if (this.stopping || proc.status === 'stopping' || proc.status === 'stopped') {
       return;
     }
 
@@ -619,7 +654,7 @@ export class ProcessManagerPlugin implements Plugin {
     code: number | null,
     signal: string | null
   ): void {
-    if (this.stopping) {
+    if (this.stopping || proc.status === 'stopping' || proc.status === 'stopped') {
       return;
     }
 
@@ -762,7 +797,7 @@ export class ProcessManagerPlugin implements Plugin {
       id: proc.id,
       name: proc.config.name,
       status: proc.status,
-      mode: (proc.config.mode ?? 'fork') as ProcessMode,
+      mode: (proc.config.mode ?? 'fork'),
       instances: typeof proc.config.instances === 'number' ? proc.config.instances : (proc.config.instances === 'max' ? proc.workers.length || 1 : 1),
       runningInstances: proc.workers.length || (proc.childProcess ? 1 : 0),
       pid: proc.pid,

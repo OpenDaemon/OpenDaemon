@@ -23,11 +23,11 @@ import { IpcError, ErrorCode } from '../errors/index.js';
  */
 class IpcSocketImpl implements IpcSocket {
   readonly id: string;
-  private socket: Socket;
+  private readonly socket: Socket;
   private buffer: Buffer = Buffer.alloc(0);
-  private dataHandlers: Array<(data: Buffer) => void> = [];
-  private closeHandlers: Array<() => void> = [];
-  private errorHandlers: Array<(err: Error) => void> = [];
+  private readonly dataHandlers: Array<(data: Buffer) => void> = [];
+  private readonly closeHandlers: Array<() => void> = [];
+  private readonly errorHandlers: Array<(err: Error) => void> = [];
 
   constructor(socket: Socket) {
     this.id = randomUUID();
@@ -41,7 +41,7 @@ class IpcSocketImpl implements IpcSocket {
       
       // Try to decode frames
       const { frames, remaining } = decodeFrames(this.buffer);
-      this.buffer = remaining as unknown as Buffer;
+      this.buffer = remaining;
       
       for (const frame of frames) {
         if (frame.type === FrameType.JSON_RPC_REQUEST || 
@@ -98,11 +98,11 @@ class IpcSocketImpl implements IpcSocket {
  */
 export class IpcServer {
   private server?: Server;
-  private sockets = new Map<string, IpcSocketImpl>();
-  private methods = new Map<string, RpcMethodHandler>();
-  private connectionHandlers: ConnectionHandler[] = [];
-  private config: IpcServerConfig;
-  private logger: Logger;
+  private readonly sockets = new Map<string, IpcSocketImpl>();
+  private readonly methods = new Map<string, RpcMethodHandler>();
+  private readonly connectionHandlers: ConnectionHandler[] = [];
+  private readonly config: IpcServerConfig;
+  private readonly logger: Logger;
 
   constructor(config: IpcServerConfig) {
     this.config = {
@@ -233,13 +233,20 @@ export class IpcServer {
     });
 
     // Notify handlers
+    // A throwing handler must not crash the daemon or skip socket setup below
     for (const handler of this.connectionHandlers) {
-      handler(ipcSocket);
+      try {
+        handler(ipcSocket);
+      } catch (err) {
+        this.logger.error(`Connection handler error for ${ipcSocket.id}`, undefined, err as Error);
+      }
     }
 
     // Handle data
-    ipcSocket.on('data', async (data: Buffer) => {
-      await this.handleRequest(data, ipcSocket);
+    ipcSocket.on('data', (data: Buffer) => {
+      this.handleRequest(data, ipcSocket).catch((err: unknown) => {
+        this.logger.error(`Failed to handle request from ${ipcSocket.id}`, undefined, err as Error);
+      });
     });
 
     // Handle disconnect

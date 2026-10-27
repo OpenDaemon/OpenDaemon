@@ -1,5 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { OptionValue } from '../../packages/cli/src/parser.js';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 // Create mock functions at module level with default implementations
 const mockListProcesses = vi.fn().mockResolvedValue([]);
@@ -31,6 +30,17 @@ vi.mock('@opendaemon/core', () => ({
     deleteProcess: (...args: any[]) => mockDeleteProcess(...args),
     getDaemonStatus: () => mockGetDaemonStatus(),
     isDaemonRunning: () => mockIsDaemonRunning(),
+    // CliClient talks to the daemon through call(), so route RPC methods to the mocks
+    call: (method: string, params?: any) => {
+      switch (method) {
+        case 'list': return mockListProcesses();
+        case 'start': return mockStartProcess(params);
+        case 'stop': return mockStopProcess(params);
+        case 'delete': return mockDeleteProcess(params);
+        case 'daemon.status': return mockGetDaemonStatus();
+        default: return Promise.resolve(undefined);
+      }
+    },
   })),
   Kernel: vi.fn(),
   IpcServer: vi.fn(),
@@ -73,7 +83,7 @@ import {
 describe('CLI Commands', () => {
   let consoleSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
-  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let exitSpy: MockInstance<typeof process.exit>;
 
   beforeEach(() => {
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -116,12 +126,12 @@ describe('CLI Commands', () => {
       
       await cmd.execute([], { json: false, quiet: false });
       
-      // When no processes, it should call term.info which logs to stderr
-      expect(errorSpy).toHaveBeenCalled();
+      // When no processes, term.info logs to stdout
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No processes running'));
     });
 
     it('should handle errors when listing processes', async () => {
-      mockConnect.mockRejectedValue(new Error('Connection failed'));
+      mockConnect.mockRejectedValueOnce(new Error('Connection failed'));
       
       await cmd.execute([], { json: false, quiet: false });
       
@@ -358,22 +368,26 @@ describe('CLI Commands', () => {
       expect(cmd.description).toBe('Show daemon status');
     });
 
+    // CliClient detects a running daemon by the socket file, so drive it through existsSync
     it('should show not running when daemon is not running', async () => {
-      mockIsDaemonRunning.mockReturnValue(false);
-      await cmd.execute([], {});
-      expect(errorSpy).toHaveBeenCalled();
+      mockExistsSync.mockReturnValue(false);
+      await cmd.execute();
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Daemon: not running'));
+      expect(exitSpy).not.toHaveBeenCalled();
     });
 
     it('should execute and show status when daemon is running', async () => {
-      mockIsDaemonRunning.mockReturnValue(true);
-      await expect(cmd.execute([], {})).resolves.toBeUndefined();
+      mockExistsSync.mockReturnValue(true);
+      await cmd.execute();
+      expect(mockGetDaemonStatus).toHaveBeenCalled();
+      expect(exitSpy).not.toHaveBeenCalled();
     });
 
     it('should handle errors when getting daemon status', async () => {
-      mockIsDaemonRunning.mockReturnValue(true);
-      mockGetDaemonStatus.mockRejectedValue(new Error('Status failed'));
+      mockExistsSync.mockReturnValue(true);
+      mockGetDaemonStatus.mockRejectedValueOnce(new Error('Status failed'));
 
-      await cmd.execute([], {});
+      await cmd.execute();
 
       expect(exitSpy).toHaveBeenCalledWith(1);
     });

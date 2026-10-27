@@ -26,9 +26,7 @@ export default defineConfig([
     clean: true,
     bundle: true,
     target: 'node20',
-    banner: {
-      js: '#!/usr/bin/env node',
-    },
+    // No banner: cli.ts and daemon.ts carry their own shebang, which esbuild preserves
   },
   // SDK package
   {

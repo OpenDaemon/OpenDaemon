@@ -94,22 +94,33 @@ export async function main(): Promise<void> {
     logger.info('Daemon started successfully');
 
     // Handle shutdown
+    let shuttingDown = false;
     const shutdown = async (signal: string) => {
+      // Repeated signals (e.g. Ctrl+C twice) must not run a second teardown
+      if (shuttingDown) return;
+      shuttingDown = true;
       logger.info(`Received ${signal}, shutting down...`);
-      await ipcServer.stop();
-      await kernel.stop();
-      
-      // Clean up PID file
-      if (existsSync(pidFile)) {
-        unlinkSync(pidFile);
+
+      let exitCode = 0;
+      try {
+        await ipcServer.stop();
+        await kernel.stop();
+      } catch (err) {
+        logger.error('Error during shutdown', undefined, err as Error);
+        exitCode = 1;
+      } finally {
+        // Clean up PID file even when teardown failed, so the next start is not blocked
+        if (existsSync(pidFile)) {
+          unlinkSync(pidFile);
+        }
       }
-      
-      process.exit(0);
+
+      process.exit(exitCode);
     };
 
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
-    process.on('SIGHUP', () => shutdown('SIGHUP'));
+    process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
+    process.on('SIGINT', () => { void shutdown('SIGINT'); });
+    process.on('SIGHUP', () => { void shutdown('SIGHUP'); });
 
     // Keep process alive
     process.stdin.resume();

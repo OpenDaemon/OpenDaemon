@@ -55,11 +55,11 @@ type DaemonEvent =
  */
 export class Kernel {
   private config: DaemonConfig = {};
-  private stateMachine: StateMachine<DaemonState, DaemonEvent>;
-  private registry: PluginRegistry;
-  private events: EventBus;
-  private store: StateStore;
-  private logger: Logger;
+  private readonly stateMachine: StateMachine<DaemonState, DaemonEvent>;
+  private readonly registry: PluginRegistry;
+  private readonly events: EventBus;
+  private readonly store: StateStore;
+  private readonly logger: Logger;
   private watchdog: NodeJS.Timeout | undefined;
   private readonly watchdogInterval = 30000; // 30 seconds
   private ipcServer: unknown; // Reference to IPC server for RPC method registration
@@ -374,7 +374,7 @@ export class Kernel {
       registerMethod: (name: string, handler: unknown): void => {
         // Forward to IPC server if available, otherwise buffer for later
         if (this.ipcServer) {
-          (this.ipcServer as any).registerMethod(name, handler as (...args: unknown[]) => unknown | Promise<unknown>);
+          (this.ipcServer as any).registerMethod(name, handler);
         } else {
           // Buffer the registration for when IPC server is set
           this.pendingMethodRegistrations.push({
@@ -406,7 +406,9 @@ export class Kernel {
    */
   private startWatchdog(): void {
     this.watchdog = setInterval(() => {
-      this.runHealthChecks();
+      this.runHealthChecks().catch((err: unknown) => {
+        this.logger.error('Watchdog health check failed', undefined, err as Error);
+      });
     }, this.watchdogInterval);
   }
 

@@ -4,6 +4,7 @@ import { CliClient } from '../client.js';
 import { resolve } from 'path';
 import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 
 /**
  * Command handler interface
@@ -222,9 +223,9 @@ export class StopCommand implements Command {
   options = [{ name: 'json', type: 'boolean' as const, description: 'Output as JSON' }];
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
-    if (args.length === 0) { term.error('No process name specified'); process.exit(1); }
-
     const name = args[0];
+    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
+
     const spinner = term.spinner(`Stopping ${name}...`);
     spinner.start();
 
@@ -251,9 +252,9 @@ export class RestartCommand implements Command {
   options = [];
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
-    if (args.length === 0) { term.error('No process name specified'); process.exit(1); }
-
     const name = args[0];
+    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
+
     const spinner = term.spinner(`Restarting ${name}...`);
     spinner.start();
 
@@ -280,9 +281,9 @@ export class DeleteCommand implements Command {
   options = [{ name: 'json', type: 'boolean' as const, description: 'Output as JSON' }];
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
-    if (args.length === 0) { term.error('No process name specified'); process.exit(1); }
-
     const name = args[0];
+    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
+
     const spinner = term.spinner(`Deleting ${name}...`);
     spinner.start();
 
@@ -309,19 +310,20 @@ export class InfoCommand implements Command {
   options = [];
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
-    if (args.length === 0) { term.error('No process name specified'); process.exit(1); }
+    const name = args[0];
+    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
 
     try {
       const client = new CliClient();
       await client.connect();
-      const info = await client.getProcessInfo(args[0]) as {
+      const info = await client.getProcessInfo(name) as {
         id: number; name: string; status: string; mode: string; pid: number;
         instances: number; runningInstances: number; cpu: number; memory: number;
         restartCount: number; uptime: number; script: string; cwd: string; startedAt: string;
       } | null;
       await client.disconnect();
 
-      if (!info) { term.error(`Process "${args[0]}" not found`); process.exit(1); }
+      if (!info) { term.error(`Process "${name}" not found`); process.exit(1); }
 
       console.log(`\n${term.bold(info.name)}`);
       console.log(term.keyValue('  Status', info.status));
@@ -352,16 +354,17 @@ export class LogsCommand implements Command {
   options = [];
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
-    if (args.length === 0) { term.error('No process name specified'); process.exit(1); }
+    const name = args[0];
+    if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
 
     try {
       const client = new CliClient();
       await client.connect();
-      const logs = await client.getLogs(args[0]);
+      const logs = await client.getLogs(name);
       await client.disconnect();
 
       if (Array.isArray(logs) && logs.length === 0) {
-        term.info(`No logs available for "${args[0]}"`);
+        term.info(`No logs available for "${name}"`);
         return;
       }
 
@@ -443,9 +446,11 @@ function isProcessRunning(pid: number): boolean {
 }
 
 function getDaemonScriptPath(): string {
-  const currentDir = resolve(process.cwd(), 'packages', 'cli');
-  const distPath = resolve(currentDir, 'dist', 'daemon.js');
-  const srcPath = resolve(currentDir, 'src', 'daemon.ts');
+  // Resolve next to this module, not cwd, so `od` works from any directory.
+  // Bundled: dist/chunk-*.js sits beside dist/daemon.js. Source: src/commands/../daemon.ts
+  const moduleDir = fileURLToPath(new URL('.', import.meta.url));
+  const distPath = resolve(moduleDir, 'daemon.js');
+  const srcPath = resolve(moduleDir, '..', 'daemon.ts');
   if (existsSync(distPath)) return distPath;
   return srcPath;
 }

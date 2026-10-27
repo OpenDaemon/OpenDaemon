@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 // Declare mock variables at module level
 let mockLoggerInfo: ReturnType<typeof vi.fn>;
@@ -69,7 +69,7 @@ vi.mock('../../plugins/webui/src/index.js', () => ({
 import { main, isRunning } from '../../packages/cli/src/daemon.js';
 
 describe('Daemon Entry Point Integration', () => {
-  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let exitSpy: MockInstance<typeof process.exit>;
   const originalPlatform = process.platform;
   
   beforeEach(() => {
@@ -401,7 +401,10 @@ describe('Daemon Entry Point Integration', () => {
         }
       }
 
-      // Verify PID file was checked and unlinked
+      // The signal handler starts teardown without awaiting it, so wait for cleanup
+      await vi.waitFor(() => {
+        expect(mockUnlinkSync).toHaveBeenCalledWith(expect.stringContaining('opendaemon.pid'));
+      });
       expect(mockExistsSync).toHaveBeenCalled();
       expect(mockUnlinkSync).toHaveBeenCalledWith(expect.stringContaining('opendaemon.pid'));
     });
@@ -413,10 +416,10 @@ describe('Daemon Entry Point Integration', () => {
       });
 
       const handlers: Record<string, Function> = {};
-      vi.spyOn(process, 'on').mockImplementation((event: string, handler: (...args: any[]) => void) => {
+      vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return process;
-      });
+      }) as typeof process.on);
       
       // PID file does not exist
       mockExistsSync.mockReturnValue(false);
