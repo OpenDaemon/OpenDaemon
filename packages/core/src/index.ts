@@ -48,6 +48,7 @@ export type {
   ProcessMode,
   DaemonConfig,
   LogRotationConfig,
+  ProcessLogEntry,
   WatchConfig,
   MetricType,
   MetricDefinition,
@@ -58,6 +59,7 @@ export type {
 
 // Utilities
 export { Logger, LogLevel, type LogEntry, type LogHandler } from './utils/logger.js';
+export { parseBytes } from './utils/bytes.js';
 
 // IPC
 export {

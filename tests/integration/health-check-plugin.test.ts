@@ -135,7 +135,7 @@ describe('HealthCheckPlugin with the process manager', () => {
   });
 
   it('should not monitor processes with an invalid or missing health check', async () => {
-    await start({ type: 'tcp' } as HealthCheckConfig);
+    await start({ type: 'tcp' });
     expect(await report()).toBeUndefined();
 
     await methods.get('stop')!({ name: 'app' });

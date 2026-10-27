@@ -177,6 +177,34 @@ describe('ProcessManagerPlugin', () => {
       }
     });
 
+    it('should emit one process:log entry per line even when lines span output chunks', async () => {
+      const chunkedScriptPath = resolve('./test-chunked-process.js');
+      writeFileSync(
+        chunkedScriptPath,
+        "process.stdout.write('hel');\n" +
+        "setTimeout(() => process.stdout.write('lo\\nwor'), 50);\n" +
+        "setTimeout(() => { process.stdout.write('ld\\r\\n'); process.stderr.write('no newline at exit'); }, 100);\n" +
+        "setTimeout(() => process.exit(0), 150);"
+      );
+      const entries: Array<{ message: string; source: string; level: string; processName: string; pid: number }> = [];
+      events.on('process:log', (data: unknown) => { entries.push(data as (typeof entries)[number]); });
+
+      try {
+        const info = await methods.get('start')!({ name: 'chunked', script: chunkedScriptPath, autoRestart: 'never' }) as { pid: number };
+        await new Promise((r) => setTimeout(r, 600));
+
+        expect(entries.map((e) => [e.source, e.message])).toEqual([
+          ['stdout', 'hello'],
+          ['stdout', 'world'],
+          ['stderr', 'no newline at exit'],
+        ]);
+        expect(entries[0]).toMatchObject({ level: 'info', processName: 'chunked', pid: info.pid });
+        expect(entries[2]?.level).toBe('error');
+      } finally {
+        unlinkSync(chunkedScriptPath);
+      }
+    });
+
     describe('minUptime readiness', () => {
       const scripts: string[] = [];
       const script = (name: string, body: string) => {

@@ -5,6 +5,7 @@ import type {
   ProcessConfig,
   ProcessInfo,
   ProcessStatus,
+  ProcessLogEntry,
 } from '../../../core/src/index.js';
 import { spawn, execFile, type ChildProcess } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
@@ -359,32 +360,59 @@ export class ProcessManagerPlugin implements Plugin {
   /**
    * Capture stdout/stderr from a child process into the log buffer
    */
-  private captureOutput(proc: ManagedProcessInfo, child: ChildProcess): void {
-    const addLine = (level: 'stdout' | 'stderr', data: Buffer) => {
-      const lines = data.toString('utf-8').split('\n');
-      for (const line of lines) {
-        if (line.length === 0) continue;
-        this.appendLog(proc, level, line);
-      }
+  private captureOutput(proc: ManagedProcessInfo, child: ChildProcess, instanceId?: number): void {
+    const capture = (source: 'stdout' | 'stderr', stream: NodeJS.ReadableStream | null) => {
+      if (!stream) return;
+      // A chunk can end mid-line, so keep the unterminated tail until the next chunk
+      let pending = '';
+      const emit = (line: string) => {
+        const text = line.endsWith('\r') ? line.slice(0, -1) : line;
+        if (text.length > 0) this.appendLog(proc, source, text, child.pid, instanceId);
+      };
+      stream.setEncoding('utf-8');
+      stream.on('data', (chunk: string) => {
+        const lines = (pending + chunk).split('\n');
+        pending = lines.pop() ?? '';
+        lines.forEach(emit);
+      });
+      stream.on('end', () => {
+        emit(pending);
+        pending = '';
+      });
     };
 
-    if (child.stdout) {
-      child.stdout.on('data', (data: Buffer) => { addLine('stdout', data); });
-    }
-    if (child.stderr) {
-      child.stderr.on('data', (data: Buffer) => { addLine('stderr', data); });
-    }
+    capture('stdout', child.stdout);
+    capture('stderr', child.stderr);
   }
 
   /**
    * Append a log entry, keeping the buffer bounded
    */
-  private appendLog(proc: ManagedProcessInfo, level: 'stdout' | 'stderr', message: string): void {
+  private appendLog(
+    proc: ManagedProcessInfo,
+    level: 'stdout' | 'stderr',
+    message: string,
+    pid?: number,
+    instanceId?: number
+  ): void {
+    const timestamp = new Date().toISOString();
     proc.logs.push({
-      timestamp: new Date().toISOString(),
+      timestamp,
       level,
       message,
     });
+
+    // Persisted and streamed by the log-manager plugin
+    const entry: ProcessLogEntry = {
+      timestamp,
+      level: level === 'stderr' ? 'error' : 'info',
+      pid: pid ?? 0,
+      processName: proc.config.name,
+      ...(instanceId === undefined ? {} : { instanceId }),
+      message,
+      source: level,
+    };
+    this.context.events.emit('process:log', entry);
     // Trim oldest entries when buffer exceeds limit
     if (proc.logs.length > ProcessManagerPlugin.MAX_LOG_LINES) {
       proc.logs.splice(0, proc.logs.length - ProcessManagerPlugin.MAX_LOG_LINES);
@@ -495,7 +523,7 @@ export class ProcessManagerPlugin implements Plugin {
     }
 
     // Capture worker stdout/stderr
-    this.captureOutput(proc, child);
+    this.captureOutput(proc, child, index);
 
     child.on('exit', (code, signal) => {
       this.handleWorkerExit(proc, index, code, signal);
