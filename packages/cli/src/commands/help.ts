@@ -53,6 +53,7 @@ ${term.bold('COMMANDS')}
     health [name]    Show health check status
     metrics          Prometheus metrics (--json for the JSON report)
     cron             Scheduled jobs: next run and last result
+    secret <action>  Encrypted secrets: set, get, list, delete, export, rotate
     status           Show daemon and process overview
 
   Daemon:

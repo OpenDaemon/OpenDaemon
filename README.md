@@ -14,6 +14,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
 - **Metrics** - Host, process and app metrics (`opendaemon/runtime` counters, gauges, histograms) as Prometheus text at `/metrics` or JSON; `maxMemory` restarts
 - **Persistent Logs** - JSON-lines log files per process with size rotation, gzip, search (`--grep`, `--since`) and live follow (`-f`)
+- **Secrets** - AES-256-GCM secret store, `{ secret: NAME }` env references, rotation that restarts the apps using a secret
 - **Scheduled Jobs** - `cron` apps with time zones, overlap control, retries and run history (`od cron`)
 - **Watch Mode** - `--watch` restarts on file changes (recursive `fs.watch`, ignore patterns, debounce)
 - **Dependencies** - Start order from `dependencies` (waits for healthy dependencies), reverse-order shutdown, cycle detection
@@ -144,6 +145,34 @@ apps:
 
 Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their environment. Checks pause while a process is restarting. `notify` and `none` only report the state: it shows in `od health` and is emitted as the `health:status:unhealthy` event. `grpc` checks are not supported yet.
 
+## Secrets
+
+Keep credentials out of config files and repositories. They are encrypted with AES-256-GCM in `~/.opendaemon/secrets.enc` and decrypted only when a process starts:
+
+```bash
+od secret set DATABASE_URL 'postgres://user:pass@host/db'
+echo -n "$TOKEN" | od secret set API_TOKEN     # from stdin: stays out of shell history
+od secret list                                 # names and versions, never values
+od secret get DATABASE_URL
+od secret rotate DATABASE_URL 'postgres://...' # new version, restarts the apps that use it
+od secret export > .env                        # decrypted .env, for local development only
+od secret delete API_TOKEN
+```
+
+```yaml
+apps:
+  - name: api
+    script: ./api.js
+    env:
+      PORT: 3000
+      DATABASE_URL:
+        secret: DATABASE_URL     # latest version; add `version: 2` to pin one
+```
+
+The key is a random 256-bit file, `~/.opendaemon/master.key` (mode `0600`). If `OPENDAEMON_SECRET_PASSWORD` is set when the store is created, the key is derived from that password with PBKDF2 instead. The daemon then needs the same variable. Each secret is bound to its name, so tampering or moving ciphertexts is detected. The last five versions are kept. A missing secret stops the app from starting, with an error that names the secret but never the value.
+
+This protects secrets in config files, repositories and copies of `secrets.enc`. It does not protect them from someone who can act as the daemon's user, since that person can read the key.
+
 ## Scheduled Jobs
 
 An app with `cron` runs as a job. It does not start with the daemon. It starts at each match of the expression instead, and it is not restarted when it exits:
@@ -259,6 +288,7 @@ Set `maxMemory: '512M'` on an app (or `od start app.js --max-memory 512M`) to re
 | `od info <name>` | Detailed process info (CPU, memory, PID, uptime) |
 | `od logs [name]` | Logs of one or all processes (`--lines N`, `-f`, `--grep RE`, `--since 2h`, `--json`) |
 | `od flush [name]` | Empty log files |
+| `od secret <set\|get\|list\|delete\|export\|rotate>` | Encrypted secrets |
 | `od cron` | Scheduled jobs: next run and last result |
 | `od metrics` | Prometheus metrics (`--json` for the JSON report) |
 | `od health [name]` | Health check status (last result, consecutive failures) |
@@ -306,6 +336,7 @@ opendaemon/
 │       ├── metrics-collector/ # Host/process/app metrics, Prometheus and JSON
 │       ├── watch-mode/        # Restart on file changes
 │       ├── scheduler/         # Cron-scheduled jobs
+│       ├── secret-manager/    # Encrypted secrets, env injection
 │       └── webui/             # HTTP server, REST API, dashboard HTML
 ├── tests/
 │   ├── unit/                  # Unit tests

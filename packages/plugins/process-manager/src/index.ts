@@ -1006,11 +1006,27 @@ export class ProcessManagerPlugin implements Plugin {
   private buildEnv(config: ProcessConfig): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...process.env };
 
-    if (config.env) {
-      for (const [key, value] of Object.entries(config.env)) {
-        if (typeof value === 'string') {
-          env[key] = value;
+    // Secret references ({ secret: 'NAME' }) are decrypted here, at start, and only ever live
+    // in the child's environment
+    const secrets = this.context.getPlugin('secret-manager') as unknown as
+      { resolve(ref: { secret: string; version?: number }): string } | undefined;
+    // Values come from config files, so anything can arrive here (YAML `PORT: 3000` is a number)
+    for (const [key, value] of Object.entries(config.env ?? {}) as Array<[string, unknown]>) {
+      if (typeof value === 'string') {
+        env[key] = value;
+      } else if (typeof value === 'object' && typeof (value as { secret?: unknown }).secret === 'string') {
+        if (!secrets) {
+          throw new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, config.name, `env.${key} references a secret, but the secret manager is not available`);
         }
+        try {
+          env[key] = secrets.resolve(value as { secret: string; version?: number });
+        } catch (err) {
+          throw new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, config.name, `env.${key}: ${(err as Error).message}`);
+        }
+      } else if (typeof value === 'number' || typeof value === 'boolean') {
+        env[key] = String(value);
+      } else {
+        throw new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, config.name, `env.${key} must be a string, number, boolean or { secret: NAME }`);
       }
     }
 

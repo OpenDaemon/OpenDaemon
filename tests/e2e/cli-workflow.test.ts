@@ -216,3 +216,50 @@ describe.skipIf(!existsSync(CLI))('od daemon with an invalid config', () => {
     }
   });
 });
+
+describe.skipIf(!existsSync(CLI))('od secrets end to end', () => {
+  it('should store secrets, inject them into apps from YAML references, and rotate them', async () => {
+    const root = tempRoot();
+    const home = join(root, 'home');
+    const project = join(root, 'project');
+    mkdirSync(project);
+    const od = makeOd(home, project);
+    try {
+      // Value on stdin keeps it out of the shell history
+      const piped = spawnSync(process.execPath, [CLI, 'secret', 'set', 'DB_PASS'], {
+        cwd: project, input: 's3cr3t "quoted"\n', encoding: 'utf-8',
+        env: { ...process.env, OPENDAEMON_HOME: home, NO_COLOR: '1' },
+      });
+      expect(strip(piped.stdout)).toContain('Stored DB_PASS (version 1)');
+      expect(od('secret', 'get', 'DB_PASS').stdout).toBe('s3cr3t "quoted"\n');
+      expect(od('secret', 'list').stdout).toMatch(/DB_PASS\s*\|\s*1/);
+      expect(od('secret', 'export').stdout).toBe('DB_PASS="s3cr3t \\"quoted\\""\n');
+
+      writeFileSync(join(project, 'app.cjs'), "console.log('pass=' + process.env.DB_PASS); setInterval(() => {}, 1000);");
+      writeFileSync(join(project, 'opendaemon.config.yaml'), [
+        'apps:',
+        '  - name: app',
+        '    script: ./app.cjs',
+        '    env:',
+        '      DB_PASS:',
+        '        secret: DB_PASS',
+        'plugins:',
+        '  webui:',
+        '    port: 0',
+      ].join('\n'));
+      expect(od('daemon', 'start').stdout).toContain('Daemon started');
+      await waitFor(() => od('logs', 'app').stdout.includes('pass=s3cr3t "quoted"'));
+
+      const rotated = od('secret', 'rotate', 'DB_PASS', 'n3w');
+      expect(rotated.stdout).toContain('Stored DB_PASS (version 2)');
+      expect(rotated.stdout).toContain('Restarted: app');
+      await waitFor(() => od('logs', 'app').stdout.includes('pass=n3w'));
+
+      expect(od('secret', 'delete', 'DB_PASS').stdout).toContain('Deleted DB_PASS');
+      expect(od('secret', 'get', 'DB_PASS').stdout + od('secret', 'get', 'DB_PASS').stderr).toContain('Secret "DB_PASS" is not set');
+    } finally {
+      od('daemon', 'stop');
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

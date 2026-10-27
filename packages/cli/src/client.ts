@@ -153,6 +153,14 @@ export class CliClient {
   }
 
   /**
+   * Tell the daemon a secret changed; it restarts the processes that use it
+   */
+  async secretRotated(name: string): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('secrets.rotated', { name });
+  }
+
+  /**
    * Scheduled jobs with their next run and recent history
    */
   async getCronJobs(): Promise<unknown> {

@@ -6,6 +6,7 @@ import { existsSync, readFileSync, unlinkSync, openSync, closeSync, statSync } f
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ensureHome, runtimePaths } from '../paths.js';
+import { SecretStore, assertSecretName, toDotenv } from '../../../plugins/secret-manager/src/store.js';
 
 /**
  * Command handler interface
@@ -393,6 +394,95 @@ export class MetricsCommand implements Command {
 }
 
 /**
+ * Read a secret value from stdin when it is piped (keeps it out of the shell history)
+ */
+async function readStdin(): Promise<string | undefined> {
+  if (process.stdin.isTTY) return undefined;
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  // A trailing newline from `echo` or a file is not part of the secret
+  return Buffer.concat(chunks).toString('utf-8').replace(/\r?\n$/, '');
+}
+
+/**
+ * Secret command - manage the encrypted secret store (works without a running daemon)
+ */
+export class SecretCommand implements Command {
+  name = 'secret';
+  description = 'Manage encrypted secrets';
+  options = [];
+
+  async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
+    const [action, name, value] = args;
+    const store = new SecretStore(ensureHome().home);
+
+    try {
+      switch (action) {
+        case 'set':
+        case 'rotate': {
+          if (name === undefined) throw new Error(`Usage: od secret ${action} <name> [value]  (or pipe the value on stdin)`);
+          assertSecretName(name);
+          const secret = value ?? await readStdin();
+          if (secret === undefined) throw new Error(`Pass the value or pipe it: echo -n "..." | od secret ${action} ${name}`);
+          const version = store.set(name, secret);
+          term.success(`Stored ${name} (version ${String(version)})`);
+          if (action === 'rotate') await this.notifyDaemon(name);
+          return;
+        }
+        case 'get': {
+          if (name === undefined) throw new Error('Usage: od secret get <name>');
+          const secret = store.get(name);
+          if (secret === undefined) throw new Error(`Secret "${name}" is not set`);
+          process.stdout.write(`${secret}\n`);
+          return;
+        }
+        case 'list': {
+          const secrets = store.list();
+          if (options['json'] === true) {
+            console.log(JSON.stringify(secrets, null, 2));
+          } else if (secrets.length === 0) {
+            term.info('No secrets stored');
+          } else {
+            console.log(term.table(['Name', 'Version', 'Updated'], secrets.map((s) => [s.name, String(s.version), s.updatedAt])));
+          }
+          return;
+        }
+        case 'delete': {
+          if (name === undefined) throw new Error('Usage: od secret delete <name>');
+          if (!store.delete(name)) throw new Error(`Secret "${name}" is not set`);
+          term.success(`Deleted ${name}`);
+          return;
+        }
+        case 'export': {
+          // Decrypted output on purpose: for local development only
+          for (const { name: key } of store.list()) {
+            process.stdout.write(`${toDotenv(key, store.get(key) ?? '')}\n`);
+          }
+          return;
+        }
+        default:
+          throw new Error('Usage: od secret <set|get|list|delete|export|rotate> [name] [value]');
+      }
+    } catch (err) {
+      term.error((err instanceof Error ? err : new Error(String(err))).message);
+      process.exit(1);
+    }
+  }
+
+  private async notifyDaemon(name: string): Promise<void> {
+    const client = new CliClient();
+    if (!client.isDaemonRunning()) {
+      term.info('Daemon is not running; processes pick up the new value when they start');
+      return;
+    }
+    await client.connect();
+    const restarted = await client.secretRotated(name) as string[];
+    await client.disconnect();
+    term.info(restarted.length === 0 ? 'No running process uses it' : `Restarted: ${restarted.join(', ')}`);
+  }
+}
+
+/**
  * Cron command - scheduled jobs, their next run and last result
  */
 export class CronCommand implements Command {
@@ -726,6 +816,18 @@ function getDaemonScriptPath(): string {
   return srcPath;
 }
 
+async function daemonAnswers(): Promise<boolean> {
+  try {
+    const client = new CliClient();
+    await client.connect();
+    await client.getDaemonStatus();
+    await client.disconnect();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Daemon command - manage daemon
  */
@@ -774,24 +876,17 @@ export class DaemonCommand implements Command {
       const child = spawn(process.execPath, [daemonScript], { detached: true, stdio: ['ignore', logFd, logFd] });
       closeSync(logFd);
 
-      await new Promise<void>((resolve, reject) => {
-        let attempts = 0;
-        const maxAttempts = 50;
-        const checkStarted = () => {
-          attempts++;
-          if (existsSync(pidFile)) {
-            const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
-            if (isProcessRunning(pid)) { resolve(); return; }
-          }
-          if (child.exitCode !== null && child.exitCode !== 0) {
-            reject(new Error(`Daemon exited with code ${child.exitCode}${readLogTail(logFile, logOffset)}`));
-            return;
-          }
-          if (attempts >= maxAttempts) { reject(new Error('Daemon failed to start within timeout')); return; }
-          setTimeout(checkStarted, 100);
-        };
-        setTimeout(checkStarted, 100);
-      });
+      // "Started" means it answers over IPC. The PID file is written before the config is loaded,
+      // so a daemon that is about to exit on a bad config would otherwise be reported as started.
+      const deadline = Date.now() + 15000;
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 100));
+        if (child.exitCode !== null) {
+          throw new Error(`Daemon exited with code ${String(child.exitCode)}${readLogTail(logFile, logOffset)}`);
+        }
+        if (await daemonAnswers()) break;
+        if (Date.now() > deadline) throw new Error(`Daemon did not answer within 15s${readLogTail(logFile, logOffset)}`);
+      }
 
       child.unref();
       spinner.stop(true, 'Daemon started');

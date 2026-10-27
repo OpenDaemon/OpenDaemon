@@ -17,6 +17,7 @@ import {
   ScaleCommand,
   MetricsCommand,
   CronCommand,
+  SecretCommand,
   HealthCommand,
   StatusCommand,
   DaemonCommand,
@@ -225,6 +226,13 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       const cmd = new LogsCommand();
       const logsArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
       await cmd.execute(logsArgs, parsed.options);
+      break;
+    }
+
+    case 'secret': {
+      const cmd = new SecretCommand();
+      const secretArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await cmd.execute(secretArgs, parsed.options);
       break;
     }
 

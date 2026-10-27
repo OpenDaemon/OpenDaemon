@@ -10,6 +10,7 @@ import { LogManagerPlugin } from '../../plugins/log-manager/src/index.js';
 import { MetricsCollectorPlugin } from '../../plugins/metrics-collector/src/index.js';
 import { WatchModePlugin } from '../../plugins/watch-mode/src/index.js';
 import { SchedulerPlugin } from '../../plugins/scheduler/src/index.js';
+import { SecretManagerPlugin } from '../../plugins/secret-manager/src/index.js';
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync, chmodSync } from 'fs';
 import { randomBytes } from 'crypto';
@@ -48,7 +49,7 @@ export async function main(): Promise<void> {
   
   try {
     // Runtime files live in $OPENDAEMON_HOME (default ~/.opendaemon), not the current directory
-    const { pidFile, socketFile: socketPath, tokenFile, logDir } = ensureHome();
+    const { home, pidFile, socketFile: socketPath, tokenFile, logDir } = ensureHome();
 
     // Check if daemon is already running
     if (existsSync(pidFile)) {
@@ -96,6 +97,7 @@ export async function main(): Promise<void> {
 
     // Register plugins (they will register their RPC methods now)
     kernel.registerPlugin(configManager);
+    kernel.registerPlugin(new SecretManagerPlugin(home));
     kernel.registerPlugin(new LogManagerPlugin());
     kernel.registerPlugin(new ProcessManagerPlugin());
     kernel.registerPlugin(new HealthCheckPlugin());
