@@ -20,10 +20,10 @@ Tasks are organized by phases. Each phase must be completed before moving to the
 
 Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 - 1.1.2: no npm workspaces; packages are wired via tsup bundling and relative imports
-- 1.1.6: lint runs (typescript-eslint added as a devDependency) but still reports ~170 problems, mostly style rules
 - 5.1.2 / 5.1.3: `ManagedProcessInfo` is a plain record with status strings, not a class driven by the StateMachine
-- 5.1.8 / 8.1.x: coverage includes only `packages/*/src`, so `packages/plugins/*` is not measured
+- 5.2.2: TypeScript configs rely on Node's type stripping (Node >= 22.18); there is no bundled loader for Node 20
 - 5.3.1: health check types exist, but no health check plugin
+- 8.1.x: coverage is 86% statements with plugins measured; CI gates on a ratchet just below that, not on 100%
 - 9.2.x: WebUI hardened (loopback bind, Host/Origin checks, crypto token); IPC auth token exists but the daemon does not enable it
 
 ---
@@ -40,7 +40,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 | 1.1.3 | Create tsconfig.base.json with strict settings | Critical | S | 1.1.1 | ✅ |
 | 1.1.4 | Set up tsup.config.ts for builds | Critical | M | 1.1.1 | ✅ |
 | 1.1.5 | Set up vitest.config.ts for testing | Critical | S | 1.1.1 | ✅ |
-| 1.1.6 | Create eslint.config.js | High | S | 1.1.1 | 🟡 |
+| 1.1.6 | Create eslint.config.js | High | S | 1.1.1 | ✅ |
 | 1.1.7 | Create prettier.config.js | Low | S | 1.1.1 | ✅ |
 | 1.1.8 | Create .gitignore | Critical | S | 1.1.1 | ✅ |
 | 1.1.9 | Create README.md | Medium | S | 1.1.1 | ✅ |
@@ -230,9 +230,9 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 | 5.2.2 | Implement TypeScript loader | Critical | L | 5.2.1 | 🟡 |
 | 5.2.3 | Implement JavaScript loader | High | M | 5.2.1 | ✅ |
 | 5.2.4 | Implement JSON loader | High | S | 5.2.1 | ✅ |
-| 5.2.5 | Implement YAML loader | Medium | L | 5.2.1 | 🟡 |
+| 5.2.5 | Implement YAML loader | Medium | L | 5.2.1 | ✅ |
 | 5.2.6 | Implement JSON Schema validator | Medium | L | None | 🟡 |
-| 5.2.7 | Write config manager tests | High | L | 5.2.6 | ⬜ |
+| 5.2.7 | Write config manager tests | High | L | 5.2.6 | ✅ |
 
 ### 5.3 Health Check Plugin
 | ID | Task | Priority | Complexity | Dependencies | Status |
@@ -376,7 +376,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 | 8.2.1 | Write process lifecycle tests | Critical | XL | 5.1.8 | 🟡 |
 | 8.2.2 | Write IPC protocol tests | Critical | L | 3.2.7 | ✅ |
 | 8.2.3 | Write plugin integration tests | High | L | 4.4.6 | 🟡 |
-| 8.2.4 | Write config loading tests | High | M | 5.2.7 | ⬜ |
+| 8.2.4 | Write config loading tests | High | M | 5.2.7 | ✅ |
 
 ### 8.3 E2E Tests
 | ID | Task | Priority | Complexity | Dependencies | Status |
@@ -421,7 +421,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 |----|------|----------|------------|--------------|--------|
 | 9.3.1 | Create CHANGELOG.md | Medium | S | All | ✅ |
 | 9.3.2 | Create release notes | Medium | S | All | ⬜ |
-| 9.3.3 | Test npm package build | High | S | 1.1.4 | 🟡 |
+| 9.3.3 | Test npm package build | High | S | 1.1.4 | ✅ |
 | 9.3.4 | Test on different platforms | High | M | 9.3.3 | ⬜ |
 | 9.3.5 | Create examples | Medium | M | All | ✅ |
 | 9.3.6 | Tag release | Critical | S | 9.3.5 | ⬜ |
@@ -545,16 +545,16 @@ Phase 9: Final Polish
 
 | Phase | Tasks | Completed | Progress |
 |-------|-------|-----------|----------|
-| 1. Foundation | 23 | 21 | 91% |
+| 1. Foundation | 23 | 22 | 96% |
 | 2. Core Infrastructure | 30 | 28 | 93% |
 | 3. IPC System | 18 | 14 | 78% |
 | 4. Plugin System | 20 | 18 | 90% |
-| 5. Core Plugins | 29 | 7 | 24% |
+| 5. Core Plugins | 29 | 9 | 31% |
 | 6. CLI | 25 | 22 | 88% |
 | 7. Advanced Features | 26 | 1 | 4% |
-| 8. Testing & Quality | 17 | 2 | 12% |
-| 9. Final Polish | 14 | 2 | 14% |
-| **Total** | **202** | **115** | **57%** |
+| 8. Testing & Quality | 17 | 3 | 18% |
+| 9. Final Polish | 14 | 3 | 21% |
+| **Total** | **202** | **120** | **59%** |
 
 **Estimated Duration**: 7 weeks (working full-time)
 **Start Date**: 2025-02-21
