@@ -1,4 +1,5 @@
 import { createServer, type Server, type Socket } from 'net';
+import { timingSafeEqual } from 'crypto';
 import { randomUUID } from 'crypto';
 import { FrameType, encodeFrame, decodeFrames } from './protocol.js';
 import {
@@ -91,6 +92,15 @@ class IpcSocketImpl implements IpcSocket {
         break;
     }
   }
+}
+
+/**
+ * Constant-time token comparison
+ */
+function tokensMatch(given: string, expected: string): boolean {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 /**
@@ -282,13 +292,15 @@ export class IpcServer {
       return;
     }
 
-    // Check auth token if required
+    // Check auth token if required, then strip it so handlers never see the credential
+    let params = request.params;
     if (this.config.authToken) {
-      const authHeader = (request.params as Record<string, unknown> | undefined)?.['__authToken'];
-      if (authHeader !== this.config.authToken) {
+      const { __authToken: token, ...rest } = (typeof params === 'object' && params !== null ? params : {}) as Record<string, unknown>;
+      if (typeof token !== 'string' || !tokensMatch(token, this.config.authToken)) {
         this.sendError(socket, request.id, JsonRpcErrorCode.INVALID_REQUEST, 'Invalid auth token');
         return;
       }
+      params = rest;
     }
 
     // Find handler
@@ -305,7 +317,7 @@ export class IpcServer {
 
     // Execute handler
     try {
-      const result = await handler(request.params, socket);
+      const result = await handler(params, socket);
       
       // Only send response if it's a request (has id)
       if (request.id !== null) {

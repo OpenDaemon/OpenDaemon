@@ -15,6 +15,7 @@ let mockExistsSync: ReturnType<typeof vi.fn>;
 let mockReadFileSync: ReturnType<typeof vi.fn>;
 let mockWriteFileSync: ReturnType<typeof vi.fn>;
 let mockUnlinkSync: ReturnType<typeof vi.fn>;
+let mockChmodSync: ReturnType<typeof vi.fn>;
 
 // Track registered methods
 const registeredMethods: Record<string, (...args: any[]) => unknown> = {};
@@ -25,6 +26,7 @@ vi.mock('fs', () => ({
   readFileSync: (...args: any[]) => mockReadFileSync(...args),
   writeFileSync: (...args: any[]) => mockWriteFileSync(...args),
   unlinkSync: (...args: any[]) => mockUnlinkSync(...args),
+  chmodSync: (...args: any[]) => mockChmodSync(...args),
 }));
 
 vi.mock('path', () => ({
@@ -88,6 +90,7 @@ describe('Daemon Entry Point Integration', () => {
     mockReadFileSync = vi.fn();
     mockWriteFileSync = vi.fn();
     mockUnlinkSync = vi.fn();
+    mockChmodSync = vi.fn();
 
     // Clear registered methods
     Object.keys(registeredMethods).forEach(key => Reflect.deleteProperty(registeredMethods, key));
@@ -278,13 +281,9 @@ describe('Daemon Entry Point Integration', () => {
       const shutdownHandler = registeredMethods['daemon.shutdown'];
       expect(shutdownHandler).toBeDefined();
       
-      try {
-        await shutdownHandler?.();
-      } catch {
-        // Expected - process.exit is called
-      }
-      
-      expect(mockKernelStop).toHaveBeenCalled();
+      // The RPC replies first and tears down on the next tick
+      expect(await shutdownHandler?.()).toEqual({ ok: true });
+      await vi.waitFor(() => { expect(mockKernelStop).toHaveBeenCalled(); });
     });
   });
 
@@ -391,6 +390,8 @@ describe('Daemon Entry Point Integration', () => {
 
       // Now set PID file to exist during shutdown
       mockExistsSync.mockReturnValue(true);
+      // Cleanup only removes a PID file that holds our own pid
+      mockReadFileSync.mockReturnValue(String(process.pid));
 
       // Trigger SIGTERM handler
       if (handlers['SIGTERM']) {

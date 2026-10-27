@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mocks
 const mockExistsSync = vi.fn();
+const mockReadFileSync = vi.fn();
 const mockResolve = vi.fn();
 const mockCall = vi.fn();
 const mockConnect = vi.fn();
@@ -10,6 +11,7 @@ const mockDisconnect = vi.fn();
 // Mock fs
 vi.mock('fs', () => ({
   existsSync: mockExistsSync,
+  readFileSync: mockReadFileSync,
 }));
 
 // Mock path
@@ -104,6 +106,34 @@ describe('CliClient', () => {
           timeout: 30000,
         })
       );
+    });
+  });
+
+  describe('auth token', () => {
+    it('should send the token from opendaemon.token', async () => {
+      mockExistsSync.mockImplementation((path: string) => path.endsWith('opendaemon.token'));
+      mockReadFileSync.mockReturnValue('abc123\n');
+
+      const { IpcClient } = await import('@opendaemon/core');
+      const { CliClient } = await import('../../packages/cli/src/client.js');
+      new CliClient();
+
+      expect(IpcClient).toHaveBeenCalledWith(expect.objectContaining({ authToken: 'abc123' }));
+    });
+
+    it.each([
+      ['missing', () => { mockExistsSync.mockReturnValue(false); }],
+      ['unreadable', () => {
+        mockExistsSync.mockReturnValue(true);
+        mockReadFileSync.mockImplementation(() => { throw Object.assign(new Error('denied'), { code: 'EACCES' }); });
+      }],
+    ])('should connect without a token when the file is %s', async (_state, setup) => {
+      setup();
+      const { IpcClient } = await import('@opendaemon/core');
+      const { CliClient } = await import('../../packages/cli/src/client.js');
+      new CliClient();
+
+      expect(IpcClient).toHaveBeenCalledWith(expect.not.objectContaining({ authToken: expect.anything() }));
     });
   });
 

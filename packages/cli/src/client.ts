@@ -1,6 +1,18 @@
 import { IpcClient } from '@opendaemon/core';
 import { resolve } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+
+/**
+ * Token the daemon wrote for this session; unreadable (another user's daemon) means no access
+ */
+function readAuthToken(): string | undefined {
+  try {
+    const file = resolve('opendaemon.token');
+    return existsSync(file) ? readFileSync(file, 'utf-8').trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * CLI client for communicating with daemon
@@ -11,17 +23,21 @@ export class CliClient {
   private readonly isWindows = process.platform === 'win32';
 
   constructor() {
+    const authToken = readAuthToken();
+    const auth = authToken === undefined ? {} : { authToken };
     // Use TCP on Windows (Unix sockets have permission issues), Unix socket on Linux/Mac
     if (this.isWindows) {
       this.client = new IpcClient({
         host: '127.0.0.1',
         port: 9995,
         timeout: 30000,
+        ...auth,
       });
     } else {
       this.client = new IpcClient({
         socketPath: resolve('opendaemon.sock'),
         timeout: 30000,
+        ...auth,
       });
     }
   }

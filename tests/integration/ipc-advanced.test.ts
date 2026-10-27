@@ -200,6 +200,23 @@ describe('IPC Server Advanced Tests', () => {
       
       await client.disconnect();
     });
+
+    it('should reject requests without a token, with any params shape', async () => {
+      server = new IpcServer({ socketPath, authToken: 'correct-token' });
+      const handler = vi.fn(() => 'ok');
+      server.registerMethod('test', handler);
+      await server.start();
+
+      const client = new IpcClient({ socketPath, timeout: 1000 });
+      await client.connect();
+
+      await expect(client.call('test')).rejects.toThrow(/Invalid auth token/);
+      await expect(client.call('test', 'primitive')).rejects.toThrow(/Invalid auth token/);
+      await expect(client.call('test', { __authToken: 123 })).rejects.toThrow(/Invalid auth token/);
+      expect(handler).not.toHaveBeenCalled();
+
+      await client.disconnect();
+    });
   });
 
   describe('error scenarios', () => {
@@ -491,7 +508,7 @@ describe('IPC Client Advanced Tests', () => {
   });
 
   describe('auth token', () => {
-    it('should include auth token in requests', async () => {
+    it('should authenticate with the token and keep it away from the handler', async () => {
       server = new IpcServer({ 
         socketPath,
         authToken: 'mytoken'
@@ -513,9 +530,9 @@ describe('IPC Client Advanced Tests', () => {
       });
       await client.connect();
       
-      await client.call('check');
+      await expect(client.call('check')).resolves.toBe('ok');
       
-      expect(receivedToken).toBe('mytoken');
+      expect(receivedToken).toBeUndefined();
     });
 
     it('should include auth token with primitive params', async () => {
@@ -540,11 +557,10 @@ describe('IPC Client Advanced Tests', () => {
       });
       await client.connect();
       
-      // Call with primitive param
-      await client.call('check', 'primitive-value');
+      // Call with primitive param: the client wraps it as { data } to attach the token
+      await expect(client.call('check', 'primitive-value')).resolves.toBe('ok');
       
-      // Auth token should still be included
-      expect(receivedParams?.['__authToken']).toBe('mytoken');
+      expect(receivedParams).toEqual({ data: 'primitive-value' });
     });
 
     it('should include auth token with object params', async () => {
@@ -569,12 +585,10 @@ describe('IPC Client Advanced Tests', () => {
       });
       await client.connect();
       
-      // Call with object params - token should be merged
+      // Call with object params: the token travels with them but is stripped before the handler
       await client.call('check', { key: 'value' });
       
-      // Both original param and token should be present
-      expect(receivedParams?.['__authToken']).toBe('mytoken');
-      expect(receivedParams?.['key']).toBe('value');
+      expect(receivedParams).toEqual({ key: 'value' });
     });
   });
 
