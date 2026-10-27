@@ -33,9 +33,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@opendaemon/core': './packages/core/src',
-      '@opendaemon/cli': './packages/cli/src',
-      '@opendaemon/sdk': './packages/sdk/src',
+      // Point at the entry files: an ESM import cannot resolve a bare directory, so unmocked
+      // imports of '@opendaemon/core' failed and only worked where a test mocked the module
+      '@opendaemon/core': './packages/core/src/index.ts',
+      '@opendaemon/cli': './packages/cli/src/index.ts',
+      '@opendaemon/sdk': './packages/sdk/src/index.ts',
     },
   },
 });

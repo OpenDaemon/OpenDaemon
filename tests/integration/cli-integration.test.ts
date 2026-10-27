@@ -34,6 +34,10 @@ vi.mock('../../packages/cli/src/commands/index.js', () => ({
   })),
 }));
 
+vi.mock('../../packages/cli/src/tui/monit.js', () => ({
+  MonitCommand: vi.fn().mockImplementation(() => ({ execute: vi.fn() })),
+}));
+
 vi.mock('../../packages/cli/src/output.js', () => ({
   term: {
     error: (...args: any[]) => mockTermError(...args),
