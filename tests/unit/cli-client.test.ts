@@ -108,18 +108,22 @@ describe('CliClient', () => {
   });
 
   describe('isDaemonRunning', () => {
-    it('should always return true on Windows', async () => {
+    it.each([
+      [true, true],
+      [false, false],
+    ])('should use the PID file on Windows (exists: %s -> running: %s)', async (exists, expected) => {
       Object.defineProperty(process, 'platform', {
         value: 'win32',
       });
+      mockExistsSync.mockReturnValue(exists);
 
       const { CliClient } = await import('../../packages/cli/src/client.js');
 
       const client = new CliClient();
       const result = client.isDaemonRunning();
 
-      expect(mockExistsSync).not.toHaveBeenCalled();
-      expect(result).toBe(true);
+      expect(mockExistsSync).toHaveBeenCalledWith(expect.stringContaining('opendaemon.pid'));
+      expect(result).toBe(expected);
     });
 
     it('should return true when socket file exists on Linux', async () => {

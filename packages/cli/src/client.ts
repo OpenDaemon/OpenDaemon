@@ -30,12 +30,9 @@ export class CliClient {
    * Check if daemon is running
    */
   isDaemonRunning(): boolean {
-    if (this.isWindows) {
-      // On Windows, try to connect to TCP port
-      // We'll just try connecting and see if it works
-      return true; // Assume running, connection will fail if not
-    }
-    return existsSync(resolve('opendaemon.sock'));
+    // Windows talks TCP, so there is no socket file; the daemon writes its PID file on every
+    // platform and removes it on shutdown, which gives the same signal
+    return existsSync(resolve(this.isWindows ? 'opendaemon.pid' : 'opendaemon.sock'));
   }
 
   /**
