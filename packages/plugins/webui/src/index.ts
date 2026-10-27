@@ -1,12 +1,23 @@
-import type { Plugin, PluginContext } from '../../core/src/index.js';
-import { Logger } from '../../core/src/index.js';
+import type { Plugin, PluginContext, Logger } from '../../../core/src/index.js';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import { readFileSync, existsSync } from 'fs';
 import { resolve, extname } from 'path';
-import { fileURLToPath } from 'url';
 
 // Note: In production build, this path needs to be adjusted
 const publicDir = resolve(process.cwd(), 'packages', 'plugins', 'webui', 'src', 'public');
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+const LOOPBACK_HOST_HEADERS = new Set(['127.0.0.1', '[::1]', 'localhost']);
+
+/**
+ * Constant-time string comparison for credentials and tokens
+ */
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
 
 /**
  * WebUI Plugin - HTTP server and web interface
@@ -21,6 +32,8 @@ export class WebuiPlugin implements Plugin {
   private logger?: Logger;
   private server?: Server;
   private port = 7777;
+  // The API can start arbitrary scripts, so it is only reachable from this machine unless opted in
+  private host = '127.0.0.1';
   private auth?: { username: string; password: string };
   private sessionToken?: string;
 
@@ -35,9 +48,12 @@ export class WebuiPlugin implements Plugin {
     this.logger = context.logger;
 
     // Get config
-    const config = context.pluginConfig as { port?: number; username?: string; password?: string } | undefined;
+    const config = context.pluginConfig as { port?: number; host?: string; username?: string; password?: string } | undefined;
     if (config?.port) {
       this.port = config.port;
+    }
+    if (config?.host) {
+      this.host = config.host;
     }
 
     // Set up authentication if configured
@@ -46,20 +62,25 @@ export class WebuiPlugin implements Plugin {
         username: config.username,
         password: config.password,
       };
-      // Generate random session token
-      this.sessionToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      this.sessionToken = randomBytes(32).toString('hex');
       this.logger.info('WebUI authentication enabled');
+    } else if (!LOOPBACK_HOSTS.has(this.host)) {
+      this.logger.warn(`WebUI is exposed on ${this.host} without authentication; anyone who can reach it can run scripts`);
     }
 
     // Create HTTP server
     this.server = createServer((req, res) => {
-      this.handleRequest(req, res);
+      this.handleRequest(req, res).catch((err: unknown) => {
+        this.logger!.error('WebUI request failed', undefined, err as Error);
+        if (!res.headersSent) res.writeHead(500);
+        res.end(JSON.stringify({ error: 'Internal server error' }));
+      });
     });
 
     // Start server
     return new Promise((resolve, reject) => {
-      this.server!.listen(this.port, () => {
-        this.logger!.info(`WebUI server listening on http://localhost:${this.port}`);
+      this.server!.listen(this.port, this.host, () => {
+        this.logger!.info(`WebUI server listening on http://${this.host.includes(':') ? `[${this.host}]` : this.host}:${String(this.port)}`);
         resolve();
       });
 
@@ -85,13 +106,15 @@ export class WebuiPlugin implements Plugin {
     const url = req.url || '/';
     const method = req.method || 'GET';
 
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    // No CORS headers: the dashboard is same-origin, and other sites must not drive the API
+    if (!this.isTrustedRequest(req, method)) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ error: 'Forbidden' }));
+      return;
+    }
 
     if (method === 'OPTIONS') {
-      res.writeHead(200);
+      res.writeHead(204);
       res.end();
       return;
     }
@@ -140,6 +163,24 @@ export class WebuiPlugin implements Plugin {
     await this.handleStaticFile(req, res, url);
   }
 
+  /**
+   * Reject DNS-rebinding (foreign Host on a loopback bind) and cross-site
+   * state-changing requests (CSRF via simple text/plain POSTs need no preflight)
+   */
+  private isTrustedRequest(req: IncomingMessage, method: string): boolean {
+    const hostHeader = req.headers.host ?? '';
+    if (LOOPBACK_HOSTS.has(this.host)) {
+      const hostname = hostHeader.replace(/:\d+$/, '');
+      if (!LOOPBACK_HOST_HEADERS.has(hostname)) return false;
+    }
+
+    const origin = req.headers.origin;
+    if (origin !== undefined && method !== 'GET' && method !== 'HEAD') {
+      return origin === `http://${hostHeader}`;
+    }
+    return true;
+  }
+
   private isAuthenticated(req: IncomingMessage): boolean {
     const authHeader = req.headers.authorization;
     if (!authHeader) return false;
@@ -147,18 +188,26 @@ export class WebuiPlugin implements Plugin {
     // Check Bearer token
     if (authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
-      return token === this.sessionToken;
+      return this.sessionToken !== undefined && safeEqual(token, this.sessionToken);
     }
 
     // Check Basic auth for single requests
     if (authHeader.startsWith('Basic ')) {
       const base64 = authHeader.substring(6);
       const decoded = Buffer.from(base64, 'base64').toString('utf-8');
-      const [username, password] = decoded.split(':');
-      return username === this.auth!.username && password === this.auth!.password;
+      const separator = decoded.indexOf(':');
+      if (separator === -1) return false;
+      return this.checkCredentials(decoded.slice(0, separator), decoded.slice(separator + 1));
     }
 
     return false;
+  }
+
+  private checkCredentials(username: string, password: string): boolean {
+    // Evaluate both comparisons so timing does not reveal which one failed
+    const userOk = safeEqual(username, this.auth!.username);
+    const passOk = safeEqual(password, this.auth!.password);
+    return userOk && passOk;
   }
 
   private async handleLogin(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -166,7 +215,7 @@ export class WebuiPlugin implements Plugin {
       const body = await this.readBody(req);
       const { username, password } = JSON.parse(body);
 
-      if (username === this.auth!.username && password === this.auth!.password) {
+      if (typeof username === 'string' && typeof password === 'string' && this.checkCredentials(username, password)) {
         res.writeHead(200);
         res.end(JSON.stringify({ 
           success: true, 
@@ -416,9 +465,9 @@ export class WebuiPlugin implements Plugin {
     }
   }
 
-  private async handleStaticFile(req: IncomingMessage, res: ServerResponse, url: string): Promise<void> {
+  private async handleStaticFile(_req: IncomingMessage, res: ServerResponse, url: string): Promise<void> {
     // Default to index.html
-    let filePath = url === '/' ? '/index.html' : url;
+    const filePath = url === '/' ? '/index.html' : url;
     
     // Security: prevent directory traversal
     if (filePath.includes('..')) {
@@ -467,7 +516,8 @@ export class WebuiPlugin implements Plugin {
   }
 
   private getProcessManager(): { getProcesses: () => unknown[]; startProcessFromPlugin: (config: unknown) => Promise<unknown>; stopProcessFromPlugin: (name: string) => Promise<void>; restartProcessFromPlugin: (name: string) => Promise<unknown>; deleteProcessFromPlugin: (name: string) => Promise<void> } | null {
-    return this.context!.getPlugin('process-manager') as ReturnType<typeof this.getProcessManager>;
+    const plugin = this.context!.getPlugin('process-manager');
+    return plugin ? (plugin as unknown as NonNullable<ReturnType<typeof this.getProcessManager>>) : null;
   }
 
   private readBody(req: IncomingMessage): Promise<string> {
