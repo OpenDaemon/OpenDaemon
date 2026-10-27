@@ -10,6 +10,7 @@ const mockDisconnect = vi.fn().mockResolvedValue(undefined);
 const mockGetDaemonStatus = vi.fn().mockResolvedValue({ status: 'running', pid: 12345, uptime: 60 });
 const mockGetHealth = vi.fn().mockResolvedValue([]);
 const mockQueryLogs = vi.fn().mockResolvedValue([]);
+const mockShutdown = vi.fn().mockResolvedValue({ ok: true });
 const mockFlushLogs = vi.fn().mockResolvedValue({ flushed: [] });
 const mockIsDaemonRunning = vi.fn().mockReturnValue(true);
 const mockExistsSync = vi.fn().mockReturnValue(true);
@@ -43,6 +44,7 @@ vi.mock('@opendaemon/core', () => ({
         case 'daemon.status': return mockGetDaemonStatus();
         case 'health': return mockGetHealth(params);
         case 'logs.query': return mockQueryLogs(params);
+        case 'daemon.shutdown': return mockShutdown();
         case 'logs.flush': return mockFlushLogs(params);
         default: return Promise.resolve(undefined);
       }
@@ -569,6 +571,48 @@ describe('CLI Commands', () => {
     it('should handle stop subcommand', async () => {
       await cmd.execute(['stop']);
       expect(mockExistsSync).toHaveBeenCalled();
+    });
+
+    describe('stop', () => {
+      // A daemon "alive" for the first check, gone afterwards
+      const fakeDaemon = () => {
+        let checks = 0;
+        return vi.spyOn(process, 'kill').mockImplementation(((_pid: number, signal?: string | number) => {
+          if (signal === 0 || signal === undefined) {
+            checks++;
+            if (checks > 1) throw new Error('ESRCH');
+          }
+          return true;
+        }));
+      };
+
+      beforeEach(() => {
+        mockExistsSync.mockReturnValue(true);
+        mockReadFileSync.mockReturnValue('4242');
+        mockShutdown.mockClear();
+        mockShutdown.mockResolvedValue({ ok: true });
+        mockConnect.mockResolvedValue(undefined);
+      });
+
+      it('should ask the daemon to shut down over IPC instead of signalling it', async () => {
+        const kill = fakeDaemon();
+        await cmd.execute(['stop']);
+
+        expect(mockShutdown).toHaveBeenCalledOnce();
+        expect(kill).not.toHaveBeenCalledWith(4242, 'SIGTERM');
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Daemon stopped'));
+        kill.mockRestore();
+      });
+
+      it('should fall back to SIGTERM when the daemon cannot be reached', async () => {
+        const kill = fakeDaemon();
+        mockConnect.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+        await cmd.execute(['stop']);
+
+        expect(mockShutdown).not.toHaveBeenCalled();
+        expect(kill).toHaveBeenCalledWith(4242, 'SIGTERM');
+        kill.mockRestore();
+      });
     });
 
     it('should handle status subcommand', async () => {

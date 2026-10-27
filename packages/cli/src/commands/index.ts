@@ -682,13 +682,17 @@ export class DaemonCommand implements Command {
   }
 
   private async stopDaemon(): Promise<void> {
-    const { pidFile, socketFile } = runtimePaths();
+    const { pidFile, socketFile, tokenFile } = runtimePaths();
+    const removeStaleFiles = () => {
+      for (const file of [pidFile, socketFile, tokenFile]) {
+        if (existsSync(file)) unlinkSync(file);
+      }
+    };
 
     if (!existsSync(pidFile)) { term.info('Daemon is not running'); return; }
     const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
     if (!isProcessRunning(pid)) {
-      unlinkSync(pidFile);
-      if (existsSync(socketFile)) unlinkSync(socketFile);
+      removeStaleFiles();
       term.info('Daemon is not running (cleaned up stale files)');
       return;
     }
@@ -697,7 +701,20 @@ export class DaemonCommand implements Command {
     spinner.start();
 
     try {
-      process.kill(pid, 'SIGTERM');
+      // Ask over IPC first: on Windows a signal terminates the daemon outright, skipping the
+      // teardown that stops managed processes (which Windows would otherwise leave running)
+      let requested = false;
+      try {
+        const client = new CliClient();
+        await client.connect();
+        await client.shutdownDaemon();
+        await client.disconnect();
+        requested = true;
+      } catch {
+        // Unreachable or older daemon: fall back to a signal
+      }
+      if (!requested) process.kill(pid, 'SIGTERM');
+
       await new Promise<void>((resolve) => {
         let attempts = 0;
         const checkStopped = () => {
@@ -709,8 +726,8 @@ export class DaemonCommand implements Command {
         setTimeout(checkStopped, 100);
       });
 
-      if (existsSync(pidFile)) unlinkSync(pidFile);
-      if (existsSync(socketFile)) unlinkSync(socketFile);
+      // The daemon removes these itself; this only matters when it had to be killed
+      removeStaleFiles();
       spinner.stop(true, 'Daemon stopped');
     } catch (err) {
       spinner.stop(false);
