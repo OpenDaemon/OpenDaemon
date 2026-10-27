@@ -8,6 +8,7 @@ const mockDeleteProcess = vi.fn().mockResolvedValue(undefined);
 const mockConnect = vi.fn().mockResolvedValue(undefined);
 const mockDisconnect = vi.fn().mockResolvedValue(undefined);
 const mockGetDaemonStatus = vi.fn().mockResolvedValue({ status: 'running', pid: 12345, uptime: 60 });
+const mockGetHealth = vi.fn().mockResolvedValue([]);
 const mockIsDaemonRunning = vi.fn().mockReturnValue(true);
 const mockExistsSync = vi.fn().mockReturnValue(true);
 const mockReadFileSync = vi.fn().mockReturnValue('12345');
@@ -38,6 +39,7 @@ vi.mock('@opendaemon/core', () => ({
         case 'stop': return mockStopProcess(params);
         case 'delete': return mockDeleteProcess(params);
         case 'daemon.status': return mockGetDaemonStatus();
+        case 'health': return mockGetHealth(params);
         default: return Promise.resolve(undefined);
       }
     },
@@ -80,6 +82,7 @@ import {
   StopCommand,
   DeleteCommand,
   StatusCommand,
+  HealthCommand,
   DaemonCommand,
 } from '../../packages/cli/src/commands/index.js';
 
@@ -392,6 +395,47 @@ describe('CLI Commands', () => {
 
       await cmd.execute();
 
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('HealthCommand', () => {
+    const cmd = new HealthCommand();
+
+    beforeEach(() => {
+      mockExistsSync.mockReturnValue(true);
+      mockGetHealth.mockReset();
+    });
+
+    it('should say when nothing is monitored, for all or for one process', async () => {
+      mockGetHealth.mockResolvedValue([]);
+      await cmd.execute([], {});
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No health checks configured'));
+      expect(mockGetHealth).toHaveBeenCalledWith({});
+
+      await cmd.execute(['web'], {});
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No health check configured for "web"'));
+      expect(mockGetHealth).toHaveBeenLastCalledWith({ name: 'web' });
+    });
+
+    it('should print a table with status, failures and the last result', async () => {
+      mockGetHealth.mockResolvedValue([
+        { name: 'web', type: 'http', status: 'unhealthy', consecutiveFailures: 3,
+          lastResult: { ok: false, message: 'HTTP 500', at: new Date(Date.now() - 2000).toISOString() } },
+        { name: 'db', type: 'tcp', status: 'unknown', consecutiveFailures: 0 },
+      ]);
+      await cmd.execute([], {});
+
+      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(output).toMatch(/web.*http.*unhealthy.*3.*2s ago.*HTTP 500/);
+      expect(output).toMatch(/db.*tcp.*pending.*0.*-/);
+      expect(exitSpy).not.toHaveBeenCalled();
+    });
+
+    it('should exit 1 when the daemon call fails', async () => {
+      mockGetHealth.mockRejectedValueOnce(new Error('boom'));
+      await cmd.execute([], {});
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to get health: boom'));
       expect(exitSpy).toHaveBeenCalledWith(1);
     });
   });

@@ -13,10 +13,11 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Auto-Restart** - Configurable strategies: `always`, `on-failure`, `unless-stopped`, `never`
 - **Backoff Strategies** - Fixed, linear, or exponential restart delays with jitter
 - **CPU & Memory Monitoring** - Real-time metrics collection for all managed processes
+- **Health Checks** - HTTP(S), TCP, script, command, memory, CPU and composite checks with automatic restart or stop
 - **IPC Communication** - Binary frame protocol + JSON-RPC 2.0 over Unix sockets / TCP
 - **WebUI Dashboard** - Built-in web interface with authentication and live process monitoring
 - **Cross-Platform** - Works on Linux, macOS, and Windows
-- **579 Tests** - Comprehensive test suite across 26 test files
+- **Tested End to End** - Unit and integration tests that spawn real processes, sockets and HTTP servers; CI on Linux, macOS and Windows
 
 ## Quick Start
 
@@ -104,6 +105,40 @@ export default defineConfig({
 });
 ```
 
+## Health Checks
+
+Give an app a `healthCheck` and the `health-check` plugin runs it on a schedule. After `failureThreshold` consecutive failures the process is marked unhealthy and the `action` runs.
+
+```yaml
+apps:
+  - name: api
+    script: ./dist/server.js
+    healthCheck:
+      type: http                 # process | http | https | tcp | script | command | memory | cpu | composite
+      url: http://127.0.0.1:3000/health
+      expectedStatus: 200        # default: any 2xx; also a list, e.g. [200, 204]
+      expectedBody: '"ok"'       # optional substring (a RegExp in JS/TS configs)
+      interval: 30000            # ms between checks (default 30000)
+      timeout: 5000              # ms per check (default 5000)
+      failureThreshold: 3        # failures before unhealthy (default 3)
+      successThreshold: 1        # successes before healthy again (default 1)
+      initialDelay: 0            # ms before the first check (default 0)
+      action: restart            # restart | stop | notify | none (default restart)
+```
+
+| Type | Passes when | Fields |
+|------|-------------|--------|
+| `process` | every pid of the process is alive | none |
+| `http` / `https` | the response status matches (2xx by default) and the body matches | `url`, `method`, `headers`, `expectedStatus`, `expectedBody`, `rejectUnauthorized` (https) |
+| `tcp` | a TCP connection succeeds | `port`, `host` (default `127.0.0.1`) |
+| `script` | an executable exits with 0 (no shell) | `command`, `args` |
+| `command` | a shell command exits with 0 | `command`, `args` |
+| `memory` | resident memory is below the threshold | `threshold` (bytes or `'512M'`) |
+| `cpu` | CPU is below the threshold | `threshold` (percent) |
+| `composite` | the `checks` pass together (`and`) or any one passes (`or`) | `checks`, `operator` |
+
+Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their environment. Checks pause while a process is restarting. `notify` and `none` only report the state: it shows in `od health` and is emitted as the `health:status:unhealthy` event. `grpc` checks are not supported yet.
+
 ## CLI Commands
 
 | Command | Description |
@@ -115,6 +150,7 @@ export default defineConfig({
 | `od list` / `od ls` | List all processes (`--json`, `-q`) |
 | `od info <name>` | Detailed process info (CPU, memory, PID, uptime) |
 | `od logs <name>` | View process logs |
+| `od health [name]` | Health check status (last result, consecutive failures) |
 | `od status` | Daemon & process status overview |
 | `od daemon start\|stop\|restart\|status` | Manage the daemon |
 | `od help` | Show help |
@@ -153,6 +189,7 @@ opendaemon/
 │   └── plugins/
 │       ├── process-manager/   # Process lifecycle, fork/cluster, metrics, restart strategies
 │       ├── config-manager/    # Config file loading & validation (TS/JS/JSON/YAML)
+│       ├── health-check/      # Scheduled health checks, thresholds, restart/stop actions
 │       └── webui/             # HTTP server, REST API, dashboard HTML
 ├── tests/
 │   ├── unit/                  # Unit tests
@@ -181,7 +218,7 @@ npm install
 # Build all packages
 npm run build
 
-# Run tests (579 tests, 26 files)
+# Run tests
 npm test
 
 # Run tests with coverage
