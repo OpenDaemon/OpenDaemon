@@ -158,7 +158,7 @@ export class EventBus {
     if (subscriptions) {
       for (const sub of subscriptions) {
         promises.push(
-          new Promise<void>((resolve) => { resolve(sub.handler(data)); }).catch(err => {
+          new Promise<void>((resolve) => { resolve(sub.handler(data)); }).catch((err: unknown) => {
             console.error(`Error in async event handler for ${event}:`, err);
           })
         );
@@ -170,7 +170,7 @@ export class EventBus {
     if (onceSubs) {
       for (const sub of onceSubs) {
         promises.push(
-          new Promise<void>((resolve) => { resolve(sub.handler(data)); }).catch(err => {
+          new Promise<void>((resolve) => { resolve(sub.handler(data)); }).catch((err: unknown) => {
             console.error(`Error in async once event handler for ${event}:`, err);
           })
         );
@@ -182,7 +182,7 @@ export class EventBus {
     for (const sub of this.wildcardSubscriptions) {
       if (sub.regex?.test(event)) {
         promises.push(
-          new Promise<void>((resolve) => { resolve(sub.handler(data)); }).catch(err => {
+          new Promise<void>((resolve) => { resolve(sub.handler(data)); }).catch((err: unknown) => {
             console.error(`Error in async wildcard handler for ${event}:`, err);
           })
         );

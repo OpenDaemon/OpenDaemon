@@ -26,6 +26,17 @@ export default tseslint.config(
       '@typescript-eslint/prefer-readonly-parameter-types': 'off',
       // Numbers in log/CLI messages are intended; objects and unions still need explicit formatting
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+      // The codebase marks intentionally unused parameters/bindings with a leading underscore
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
+      // Caller-typed getters such as store.get<T>(key) are deliberate API; the rule would force
+      // them to return unknown and push casts to every call site
+      '@typescript-eslint/no-unnecessary-type-parameters': 'off',
+      // `this: void` is how unbound-method asks to mark callbacks such as Logger.consoleHandler
+      '@typescript-eslint/no-invalid-void-type': ['error', { allowAsThisParameter: true }],
       'no-console': 'off',
       'no-debugger': 'error',
       'prefer-const': 'error',

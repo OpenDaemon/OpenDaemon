@@ -571,7 +571,7 @@ export class DaemonCommand implements Command {
         const checkStopped = () => {
           attempts++;
           if (!isProcessRunning(pid)) { resolve(); return; }
-          if (attempts >= 100) { try { process.kill(pid, 'SIGKILL'); } catch {} resolve(); return; }
+          if (attempts >= 100) { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } resolve(); return; }
           setTimeout(checkStopped, 100);
         };
         setTimeout(checkStopped, 100);

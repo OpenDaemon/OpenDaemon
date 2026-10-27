@@ -726,6 +726,7 @@ describe('Kernel', () => {
         version: '1.0.0',
         description: 'Error plugin',
         install: vi.fn().mockImplementation(() => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error -- test deliberately throws a non-Error string
           throw 'String error';
         }),
       };
@@ -741,6 +742,7 @@ describe('Kernel', () => {
         version: '1.0.0',
         description: 'Error plugin',
         install: vi.fn().mockImplementation(() => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error -- test deliberately throws a non-Error object
           throw { message: 'Object error' };
         }),
       };

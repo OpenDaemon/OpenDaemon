@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TerminalOutput, term } from '../../packages/cli/src/output.js';
 
+const ESC = String.fromCharCode(27);
+
 describe('TerminalOutput', () => {
   let output: TerminalOutput;
   let consoleSpy: ReturnType<typeof vi.spyOn>;
@@ -36,7 +38,7 @@ describe('TerminalOutput', () => {
       // Create new instance to pick up TTY setting
       const ttyOutput = new TerminalOutput();
       const result = ttyOutput.color('green', 'hello');
-      expect(result).toMatch(/\x1b\[\d+m/); // ANSI color code
+      expect(result).toMatch(new RegExp(ESC + '\\[\\d+m')); // ANSI color code
       expect(result).toContain('hello');
     });
 
@@ -77,7 +79,7 @@ describe('TerminalOutput', () => {
       // Create new instance to pick up TTY setting
       const ttyOutput = new TerminalOutput();
       const result = ttyOutput.bold('hello');
-      expect(result).toMatch(/\x1b\[1m/); // Bold ANSI code
+      expect(result).toMatch(new RegExp(ESC + '\\[1m')); // Bold ANSI code
       expect(result).toContain('hello');
     });
   });
@@ -101,7 +103,7 @@ describe('TerminalOutput', () => {
       // Create new instance to pick up TTY setting
       const ttyOutput = new TerminalOutput();
       const result = ttyOutput.dim('hello');
-      expect(result).toMatch(/\x1b\[2m/); // Dim ANSI code
+      expect(result).toMatch(new RegExp(ESC + '\\[2m')); // Dim ANSI code
       expect(result).toContain('hello');
     });
   });

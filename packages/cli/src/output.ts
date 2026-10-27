@@ -29,6 +29,8 @@ export class TerminalOutput {
   private readonly noColor: boolean;
 
   constructor() {
+    // @types/node declares isTTY as boolean, but it is undefined when stdout is piped
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     this.isTTY = process.stdout.isTTY ?? false;
     this.noColor = process.env['NO_COLOR'] !== undefined;
   }
@@ -103,13 +105,13 @@ export class TerminalOutput {
 
     // Separator
     const separator =
-      '|' + widths.map(w => '-'.repeat((w ?? 0) + 2)).join('|') + '|';
+      '|' + widths.map(w => '-'.repeat(w + 2)).join('|') + '|';
     lines.push(separator);
 
     // Data rows
     for (const row of rows) {
       const dataRow =
-        '| ' + row.map((cell, i) => (cell ?? '').padEnd(widths[i] ?? 0)).join(' | ') + ' |';
+        '| ' + row.map((cell, i) => cell.padEnd(widths[i] ?? 0)).join(' | ') + ' |';
       lines.push(dataRow);
     }
 

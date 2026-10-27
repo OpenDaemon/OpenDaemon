@@ -28,8 +28,9 @@ export class WebuiPlugin implements Plugin {
   description = 'Web UI for OpenDaemon';
   priority = 20;
 
-  private context?: PluginContext;
-  private logger?: Logger;
+  // Both are set in install(), which the kernel always calls before any other hook
+  private context!: PluginContext;
+  private logger!: Logger;
   private server?: Server;
   private port = 7777;
   // The API can start arbitrary scripts, so it is only reachable from this machine unless opted in
@@ -37,7 +38,7 @@ export class WebuiPlugin implements Plugin {
   private auth?: { username: string; password: string };
   private sessionToken?: string;
 
-  async install(context: PluginContext): Promise<void> {
+  install(context: PluginContext): void {
     this.context = context;
     this.logger = context.logger;
     this.logger.info('WebUI plugin installed');
@@ -57,7 +58,7 @@ export class WebuiPlugin implements Plugin {
     }
 
     // Set up authentication if configured
-    if (config?.username && config?.password) {
+    if (config?.username && config.password) {
       this.auth = {
         username: config.username,
         password: config.password,
@@ -71,31 +72,33 @@ export class WebuiPlugin implements Plugin {
     // Create HTTP server
     this.server = createServer((req, res) => {
       this.handleRequest(req, res).catch((err: unknown) => {
-        this.logger!.error('WebUI request failed', undefined, err as Error);
+        this.logger.error('WebUI request failed', undefined, err as Error);
         if (!res.headersSent) res.writeHead(500);
         res.end(JSON.stringify({ error: 'Internal server error' }));
       });
     });
 
     // Start server
+    const server = this.server;
     return new Promise((resolve, reject) => {
-      this.server!.listen(this.port, this.host, () => {
-        this.logger!.info(`WebUI server listening on http://${this.host.includes(':') ? `[${this.host}]` : this.host}:${String(this.port)}`);
+      server.listen(this.port, this.host, () => {
+        this.logger.info(`WebUI server listening on http://${this.host.includes(':') ? `[${this.host}]` : this.host}:${String(this.port)}`);
         resolve();
       });
 
-      this.server!.on('error', (err) => {
-        this.logger!.error('WebUI server error', undefined, err);
+      server.on('error', (err) => {
+        this.logger.error('WebUI server error', undefined, err);
         reject(err);
       });
     });
   }
 
   async onStop(): Promise<void> {
-    if (this.server) {
+    const server = this.server;
+    if (server) {
       return new Promise((resolve) => {
-        this.server!.close(() => {
-          this.logger!.info('WebUI server stopped');
+        server.close(() => {
+          this.logger.info('WebUI server stopped');
           resolve();
         });
       });
@@ -137,12 +140,12 @@ export class WebuiPlugin implements Plugin {
       // For root path, serve dashboard HTML (SPA will handle auth check)
       // For other HTML requests, serve login page
       if (url === '/' || url === '/index.html') {
-        await this.handleStaticFile(req, res, url);
+        this.handleStaticFile(req, res, url);
         return;
       }
       
       // Serve login page for other HTML requests
-      await this.serveLoginPage(res);
+      this.serveLoginPage(res);
       return;
     }
 
@@ -160,7 +163,7 @@ export class WebuiPlugin implements Plugin {
     }
 
     // Static files
-    await this.handleStaticFile(req, res, url);
+    this.handleStaticFile(req, res, url);
   }
 
   /**
@@ -204,16 +207,17 @@ export class WebuiPlugin implements Plugin {
   }
 
   private checkCredentials(username: string, password: string): boolean {
+    if (!this.auth) return false;
     // Evaluate both comparisons so timing does not reveal which one failed
-    const userOk = safeEqual(username, this.auth!.username);
-    const passOk = safeEqual(password, this.auth!.password);
+    const userOk = safeEqual(username, this.auth.username);
+    const passOk = safeEqual(password, this.auth.password);
     return userOk && passOk;
   }
 
   private async handleLogin(req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
       const body = await this.readBody(req);
-      const { username, password } = JSON.parse(body);
+      const { username, password } = JSON.parse(body) as { username?: unknown; password?: unknown };
 
       if (typeof username === 'string' && typeof password === 'string' && this.checkCredentials(username, password)) {
         res.writeHead(200);
@@ -226,13 +230,13 @@ export class WebuiPlugin implements Plugin {
         res.writeHead(401);
         res.end(JSON.stringify({ error: 'Invalid credentials' }));
       }
-    } catch (err) {
+    } catch {
       res.writeHead(400);
       res.end(JSON.stringify({ error: 'Invalid request' }));
     }
   }
 
-  private async serveLoginPage(res: ServerResponse): Promise<void> {
+  private serveLoginPage(res: ServerResponse): void {
     res.setHeader('Content-Type', 'text/html');
     res.writeHead(200);
     res.end(`<!DOCTYPE html>
@@ -406,7 +410,7 @@ export class WebuiPlugin implements Plugin {
 
       if (url === '/api/start' && method === 'POST') {
         const body = await this.readBody(req);
-        const config = JSON.parse(body);
+        const config = JSON.parse(body) as unknown;
         const pm = this.getProcessManager();
         if (!pm) { res.writeHead(503); res.end(JSON.stringify({ error: 'Process manager not available' })); return; }
         const result = await pm.startProcessFromPlugin(config);
@@ -459,13 +463,13 @@ export class WebuiPlugin implements Plugin {
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Not found' }));
     } catch (err) {
-      this.logger!.error('API error', undefined, err as Error);
+      this.logger.error('API error', undefined, err as Error);
       res.writeHead(500);
       res.end(JSON.stringify({ error: 'Internal server error' }));
     }
   }
 
-  private async handleStaticFile(_req: IncomingMessage, res: ServerResponse, url: string): Promise<void> {
+  private handleStaticFile(_req: IncomingMessage, res: ServerResponse, url: string): void {
     // Default to index.html
     const filePath = url === '/' ? '/index.html' : url;
     
@@ -516,14 +520,14 @@ export class WebuiPlugin implements Plugin {
   }
 
   private getProcessManager(): { getProcesses: () => unknown[]; startProcessFromPlugin: (config: unknown) => Promise<unknown>; stopProcessFromPlugin: (name: string) => Promise<void>; restartProcessFromPlugin: (name: string) => Promise<unknown>; deleteProcessFromPlugin: (name: string) => Promise<void> } | null {
-    const plugin = this.context!.getPlugin('process-manager');
+    const plugin = this.context.getPlugin('process-manager');
     return plugin ? (plugin as unknown as NonNullable<ReturnType<typeof this.getProcessManager>>) : null;
   }
 
   private readBody(req: IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
       let body = '';
-      req.on('data', (chunk) => {
+      req.on('data', (chunk: Buffer) => {
         body += chunk.toString();
       });
       req.on('end', () => {

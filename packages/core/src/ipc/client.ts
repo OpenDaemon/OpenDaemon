@@ -99,12 +99,13 @@ export class IpcClient implements IIpcClient {
   /**
    * Disconnect from IPC server
    */
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     if (this.socket) {
       this.socket.end();
       this.socket = undefined;
       this.connected = false;
     }
+    return Promise.resolve();
   }
 
   /**
@@ -118,7 +119,8 @@ export class IpcClient implements IIpcClient {
    * Call an RPC method
    */
   async call(method: string, params?: unknown): Promise<unknown> {
-    if (!this.connected || !this.socket) {
+    const socket = this.socket;
+    if (!this.connected || !socket) {
       throw new IpcError(ErrorCode.IPC_ERROR, 'Not connected to server');
     }
 
@@ -144,9 +146,9 @@ export class IpcClient implements IIpcClient {
       const payload = serialize(request);
       const frame = encodeFrame(FrameType.JSON_RPC_REQUEST, payload);
       
-      const success = this.socket!.write(frame);
+      const success = socket.write(frame);
       if (!success) {
-        this.socket!.once('drain', () => {
+        socket.once('drain', () => {
           this.logger.debug(`Request ${id} drained`);
         });
       }

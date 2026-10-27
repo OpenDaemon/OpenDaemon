@@ -132,7 +132,7 @@ export async function main(): Promise<void> {
 
 // Only run main if this file is executed directly (not imported)
 if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('daemon.ts') || process.argv[1]?.endsWith('daemon.js')) {
-  main().catch((err) => {
+  main().catch((err: unknown) => {
     console.error('Fatal error:', err);
     process.exit(1);
   });

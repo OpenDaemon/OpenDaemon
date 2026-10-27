@@ -186,7 +186,7 @@ export class CommandParser {
       if (nextArg && !nextArg.startsWith('-')) {
         const value = nextArg;
         if (option.type === 'array') {
-          const current = (options[name] as string[]) ?? [];
+          const current = (options[name] as string[] | undefined) ?? [];
           current.push(value);
           options[name] = current;
         } else {
@@ -197,7 +197,7 @@ export class CommandParser {
 
       // Flag-style option with non-boolean type
       if (option.type === 'array') {
-        const current = (options[name] as string[]) ?? [];
+        const current = (options[name] as string[] | undefined) ?? [];
         current.push('true');
         options[name] = current;
       } else {

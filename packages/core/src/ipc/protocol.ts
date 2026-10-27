@@ -65,6 +65,8 @@ export function decodeFrames(
     }
 
     const payload = buffer.subarray(offset + 5, offset + 5 + size);
+    // The type byte comes off the wire and may be any value; consumers switch on it and ignore unknown types
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment
     frames.push({ type, payload });
 
     offset += 5 + size;

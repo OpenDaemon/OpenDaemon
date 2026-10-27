@@ -41,7 +41,7 @@ describe('WebuiPlugin security', () => {
     } as unknown as PluginContext;
 
     plugin = new WebuiPlugin();
-    await plugin.install(context);
+    plugin.install(context);
     await plugin.onStart(context);
     return port;
   }

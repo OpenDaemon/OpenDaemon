@@ -155,9 +155,10 @@ export class IpcServer {
     this.sockets.clear();
 
     // Close server
-    if (this.server) {
+    const server = this.server;
+    if (server) {
       return new Promise((resolve) => {
-        this.server!.close(() => {
+        server.close(() => {
           this.logger.info('IPC server stopped');
           resolve();
         });

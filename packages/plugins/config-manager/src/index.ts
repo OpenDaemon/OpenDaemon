@@ -125,7 +125,7 @@ export class ConfigManagerPlugin implements Plugin {
     const pkgPath = resolve('package.json');
     if (existsSync(pkgPath)) {
       try {
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { opendaemon?: unknown };
         if (pkg.opendaemon) {
           return pkgPath;
         }
@@ -237,7 +237,7 @@ export class ConfigManagerPlugin implements Plugin {
       
       // Check if it's package.json with opendaemon field
       if (path.endsWith('package.json')) {
-        const pkg = JSON.parse(content);
+        const pkg = JSON.parse(content) as { opendaemon?: unknown };
         return this.validateConfig(pkg.opendaemon ?? {});
       }
       

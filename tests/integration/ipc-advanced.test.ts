@@ -19,11 +19,11 @@ import { unlinkSync, existsSync } from 'fs';
 
 describe('IPC Server Advanced Tests', () => {
   const socketPath = process.platform === 'win32' 
-    ? '\\\\.\\pipe\\test-ipc-adv-' + Date.now()
-    : resolve('./test-ipc-adv-' + Date.now() + '.sock');
+    ? '\\\\.\\pipe\\test-ipc-adv-' + String(Date.now())
+    : resolve('./test-ipc-adv-' + String(Date.now()) + '.sock');
   let server: IpcServer;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     if (process.platform !== 'win32' && existsSync(socketPath)) {
       unlinkSync(socketPath);
     }
@@ -57,7 +57,7 @@ describe('IPC Server Advanced Tests', () => {
       await client.disconnect();
     });
 
-    it('should handle unregister of non-existent method', async () => {
+    it('should handle unregister of non-existent method', () => {
       // Should not throw
       expect(() => { server.unregisterMethod('nonexistent'); }).not.toThrow();
     });
@@ -85,7 +85,7 @@ describe('IPC Server Advanced Tests', () => {
       
       // Register connection handler - should not throw
       expect(() => {
-        server.onConnection((_socket) => {
+        server.onConnection(() => {
           // Handler registered
         });
       }).not.toThrow();
@@ -264,7 +264,7 @@ describe('IPC Server Advanced Tests', () => {
       // Register connection handler to access socket
       server.onConnection((socket: any) => {
         // Register error handler on socket (lines 64-66)
-        socket.on('error', (_err: Error) => {
+        socket.on('error', () => {
         });
         
         // Manually trigger error event to test error handler
@@ -290,7 +290,7 @@ describe('IPC Server Advanced Tests', () => {
       await server.start();
       
       // Register connection handler that throws
-      server.onConnection((_socket) => {
+      server.onConnection(() => {
         throw new Error('Connection handler error');
       });
       
@@ -379,12 +379,12 @@ describe('IPC Server Advanced Tests', () => {
 
 describe('IPC Client Advanced Tests', () => {
   const socketPath = process.platform === 'win32' 
-    ? '\\\\.\\pipe\\test-ipc-client-' + Date.now()
-    : resolve('./test-ipc-client-' + Date.now() + '.sock');
+    ? '\\\\.\\pipe\\test-ipc-client-' + String(Date.now())
+    : resolve('./test-ipc-client-' + String(Date.now()) + '.sock');
   let server: IpcServer;
   let client: IpcClient;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     if (process.platform !== 'win32' && existsSync(socketPath)) {
       unlinkSync(socketPath);
     }
@@ -414,7 +414,7 @@ describe('IPC Client Advanced Tests', () => {
       await client.connect();
       
       // Register notification handler
-      client.onNotification((_method, _params) => {
+      client.onNotification(() => {
         // Notification received
       });
       
@@ -443,7 +443,7 @@ describe('IPC Client Advanced Tests', () => {
       await client.connect();
 
       // Register a handler
-      client.onNotification((_method) => {
+      client.onNotification(() => {
         // Handler registered
       });
 
@@ -499,7 +499,7 @@ describe('IPC Client Advanced Tests', () => {
       
       let receivedToken: string | undefined;
       server.registerMethod('check', (params) => {
-        receivedToken = (params as Record<string, unknown>)?.['__authToken'] as string;
+        receivedToken = (params as Record<string, unknown> | undefined)?.['__authToken'] as string;
         return 'ok';
       });
       
@@ -579,7 +579,7 @@ describe('IPC Client Advanced Tests', () => {
   });
 
   describe('client notify', () => {
-    it('should throw when notifying while disconnected', async () => {
+    it('should throw when notifying while disconnected', () => {
       // Create fresh client that's not connected
       const disconnectedClient = new IpcClient({ socketPath, timeout: 1000 });
 

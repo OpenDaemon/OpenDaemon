@@ -92,7 +92,7 @@ describe('Daemon Entry Point', () => {
       );
     });
 
-    it('should check for existing daemon', async () => {
+    it('should check for existing daemon', () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue('12345');
       mockProcessKill.mockImplementation(() => {
@@ -116,7 +116,7 @@ describe('Daemon Entry Point', () => {
       }
     });
 
-    it('should exit if daemon already running', async () => {
+    it('should exit if daemon already running', () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue('12345');
       
@@ -154,7 +154,7 @@ describe('Daemon Entry Point', () => {
       expect(mockProcessExit).toHaveBeenCalledWith(1);
     });
 
-    it('should overwrite stale PID file', async () => {
+    it('should overwrite stale PID file', () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue('99999');
       mockProcessKill.mockImplementation(() => {
@@ -243,7 +243,7 @@ describe('Daemon Entry Point', () => {
       expect(server.start).toHaveBeenCalled();
     });
 
-    it('should log successful startup', async () => {
+    it('should log successful startup', () => {
       mockLoggerInfo('Daemon started successfully');
       expect(mockLoggerInfo).toHaveBeenCalledWith('Daemon started successfully');
     });
@@ -251,7 +251,7 @@ describe('Daemon Entry Point', () => {
 
   describe('shutdown handling', () => {
     it('should handle SIGTERM', async () => {
-      const handlers: Record<string, Function> = {};
+      const handlers: Record<string, (...args: any[]) => unknown> = {};
       
       vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
@@ -275,7 +275,7 @@ describe('Daemon Entry Point', () => {
         mockProcessExit(0);
       };
       
-      process.on('SIGTERM', () => shutdown('SIGTERM'));
+      process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
       
       expect(process.on).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
       
@@ -301,7 +301,7 @@ describe('Daemon Entry Point', () => {
         mockProcessExit(0);
       };
       
-      const handler = () => shutdown('SIGINT');
+      const handler = () => { void shutdown('SIGINT'); };
       process.on('SIGINT', handler);
       
       expect(process.on).toHaveBeenCalledWith('SIGINT', expect.any(Function));
@@ -321,7 +321,7 @@ describe('Daemon Entry Point', () => {
         mockProcessExit(0);
       };
       
-      const handler = () => shutdown('SIGHUP');
+      const handler = () => { void shutdown('SIGHUP'); };
       process.on('SIGHUP', handler);
       
       expect(process.on).toHaveBeenCalledWith('SIGHUP', expect.any(Function));
@@ -351,7 +351,7 @@ describe('Daemon Entry Point', () => {
       expect(() => new Kernel()).toThrow('Startup failed');
     });
 
-    it('should log fatal errors', async () => {
+    it('should log fatal errors', () => {
       const error = new Error('Fatal error');
       mockLoggerError('Failed to start daemon', undefined, error);
       
@@ -362,7 +362,7 @@ describe('Daemon Entry Point', () => {
       );
     });
 
-    it('should exit on fatal error', async () => {
+    it('should exit on fatal error', () => {
       mockProcessExit.mockImplementation((code?: number) => {
         throw new Error(`Exit ${code}`);
       });
@@ -380,7 +380,7 @@ describe('Daemon Entry Point', () => {
       expect(fatalError).toThrow('Exit 1');
     });
 
-    it('should handle non-Error throws', async () => {
+    it('should handle non-Error throws', () => {
       const error: unknown = 'String error';
       const wrappedError = error instanceof Error ? error : new Error(String(error));
       

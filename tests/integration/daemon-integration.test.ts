@@ -17,7 +17,7 @@ let mockWriteFileSync: ReturnType<typeof vi.fn>;
 let mockUnlinkSync: ReturnType<typeof vi.fn>;
 
 // Track registered methods
-const registeredMethods: Record<string, Function> = {};
+const registeredMethods: Record<string, (...args: any[]) => unknown> = {};
 
 // Mock modules - use factory functions that reference the module-level variables
 vi.mock('fs', () => ({
@@ -40,7 +40,7 @@ vi.mock('@opendaemon/core', () => ({
     getState: () => mockKernelGetState(),
   })),
   IpcServer: vi.fn().mockImplementation(() => ({
-    registerMethod: (name: string, handler: Function) => {
+    registerMethod: (name: string, handler: (...args: any[]) => unknown) => {
       registeredMethods[name] = handler;
       mockIpcServerRegisterMethod(name, handler);
     },
@@ -90,7 +90,7 @@ describe('Daemon Entry Point Integration', () => {
     mockUnlinkSync = vi.fn();
 
     // Clear registered methods
-    Object.keys(registeredMethods).forEach(key => delete registeredMethods[key]);
+    Object.keys(registeredMethods).forEach(key => Reflect.deleteProperty(registeredMethods, key));
     
     // Mock process.exit to prevent test runner termination
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
@@ -295,7 +295,7 @@ describe('Daemon Entry Point Integration', () => {
         configurable: true,
       });
 
-      const handlers: Record<string, Function> = {};
+      const handlers: Record<string, (...args: any[]) => unknown> = {};
       const spy = vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return process;
@@ -313,7 +313,7 @@ describe('Daemon Entry Point Integration', () => {
         configurable: true,
       });
 
-      const handlers: Record<string, Function> = {};
+      const handlers: Record<string, (...args: any[]) => unknown> = {};
       const spy = vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return process;
@@ -331,7 +331,7 @@ describe('Daemon Entry Point Integration', () => {
         configurable: true,
       });
 
-      const handlers: Record<string, Function> = {};
+      const handlers: Record<string, (...args: any[]) => unknown> = {};
       const spy = vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return process;
@@ -349,7 +349,7 @@ describe('Daemon Entry Point Integration', () => {
         configurable: true,
       });
 
-      const handlers: Record<string, Function> = {};
+      const handlers: Record<string, (...args: any[]) => unknown> = {};
       vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return process;
@@ -378,7 +378,7 @@ describe('Daemon Entry Point Integration', () => {
         configurable: true,
       });
 
-      const handlers: Record<string, Function> = {};
+      const handlers: Record<string, (...args: any[]) => unknown> = {};
       vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return process;
@@ -415,7 +415,7 @@ describe('Daemon Entry Point Integration', () => {
         configurable: true,
       });
 
-      const handlers: Record<string, Function> = {};
+      const handlers: Record<string, (...args: any[]) => unknown> = {};
       vi.spyOn(process, 'on').mockImplementation(((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return process;
