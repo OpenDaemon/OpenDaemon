@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TerminalOutput, term } from '../../packages/cli/src/output.js';
-import { EventEmitter } from 'events';
 
 describe('TerminalOutput', () => {
   let output: TerminalOutput;
@@ -21,7 +20,7 @@ describe('TerminalOutput', () => {
   describe('color', () => {
     it('should return colored text when TTY', () => {
       const result = output.color('red', 'test');
-      if (process.stdout.isTTY && !process.env.NO_COLOR) {
+      if (process.stdout.isTTY && !process.env['NO_COLOR']) {
         expect(result).toContain('\x1b[');
         expect(result).toContain('test');
       } else {
@@ -32,7 +31,7 @@ describe('TerminalOutput', () => {
     it('should apply color codes in TTY mode', () => {
       // Mock TTY mode
       (process.stdout as any).isTTY = true;
-      delete process.env.NO_COLOR;
+      delete process.env['NO_COLOR'];
       
       // Create new instance to pick up TTY setting
       const ttyOutput = new TerminalOutput();
@@ -51,18 +50,18 @@ describe('TerminalOutput', () => {
     });
 
     it('should return plain text when NO_COLOR is set', () => {
-      const originalNoColor = process.env.NO_COLOR;
-      process.env.NO_COLOR = '1';
+      const originalNoColor = process.env['NO_COLOR'];
+      process.env['NO_COLOR'] = '1';
       const result = output.color('red', 'test');
       expect(result).toBe('test');
-      process.env.NO_COLOR = originalNoColor;
+      process.env['NO_COLOR'] = originalNoColor;
     });
   });
 
   describe('bold', () => {
     it('should return bold text', () => {
       const result = output.bold('test');
-      if (process.stdout.isTTY && !process.env.NO_COLOR) {
+      if (process.stdout.isTTY && !process.env['NO_COLOR']) {
         expect(result).toContain('\x1b[');
         expect(result).toContain('test');
       } else {
@@ -73,7 +72,7 @@ describe('TerminalOutput', () => {
     it('should apply bold ANSI code in TTY mode', () => {
       // Mock TTY mode
       (process.stdout as any).isTTY = true;
-      delete process.env.NO_COLOR;
+      delete process.env['NO_COLOR'];
       
       // Create new instance to pick up TTY setting
       const ttyOutput = new TerminalOutput();
@@ -86,7 +85,7 @@ describe('TerminalOutput', () => {
   describe('dim', () => {
     it('should return dim text', () => {
       const result = output.dim('test');
-      if (process.stdout.isTTY && !process.env.NO_COLOR) {
+      if (process.stdout.isTTY && !process.env['NO_COLOR']) {
         expect(result).toContain('\x1b[');
         expect(result).toContain('test');
       } else {
@@ -97,7 +96,7 @@ describe('TerminalOutput', () => {
     it('should apply dim ANSI code in TTY mode', () => {
       // Mock TTY mode
       (process.stdout as any).isTTY = true;
-      delete process.env.NO_COLOR;
+      delete process.env['NO_COLOR'];
       
       // Create new instance to pick up TTY setting
       const ttyOutput = new TerminalOutput();
@@ -169,7 +168,7 @@ describe('TerminalOutput', () => {
     it('should print success message', () => {
       output.success('Operation completed');
       expect(consoleSpy).toHaveBeenCalled();
-      expect(consoleSpy.mock.calls[0][0]).toContain('Operation completed');
+      expect(consoleSpy.mock.calls[0]![0]).toContain('Operation completed');
     });
   });
 
@@ -178,7 +177,7 @@ describe('TerminalOutput', () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       output.error('Something went wrong');
       expect(errorSpy).toHaveBeenCalled();
-      expect(errorSpy.mock.calls[0][0]).toContain('Something went wrong');
+      expect(errorSpy.mock.calls[0]![0]).toContain('Something went wrong');
       errorSpy.mockRestore();
     });
   });
@@ -188,7 +187,7 @@ describe('TerminalOutput', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       output.warn('Warning message');
       expect(warnSpy).toHaveBeenCalled();
-      expect(warnSpy.mock.calls[0][0]).toContain('Warning message');
+      expect(warnSpy.mock.calls[0]![0]).toContain('Warning message');
       warnSpy.mockRestore();
     });
   });
@@ -197,7 +196,7 @@ describe('TerminalOutput', () => {
     it('should print info message', () => {
       output.info('Info message');
       expect(consoleSpy).toHaveBeenCalled();
-      expect(consoleSpy.mock.calls[0][0]).toContain('Info message');
+      expect(consoleSpy.mock.calls[0]![0]).toContain('Info message');
     });
   });
 

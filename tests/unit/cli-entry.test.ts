@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fileURLToPath } from 'url';
 
 // Mock console
 const mockConsoleLog = vi.fn();

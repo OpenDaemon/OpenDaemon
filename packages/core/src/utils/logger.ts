@@ -46,7 +46,7 @@ export class Logger {
   private static globalLevel: LogLevel = LogLevel.INFO;
   private static handlers: LogHandler[] = [Logger.consoleHandler];
 
-  private namespace: string;
+  private readonly namespace: string;
 
   /**
    * Create a new logger with namespace

@@ -32,7 +32,7 @@ describe('Logger', () => {
       logger.info('Test message');
       
       expect(consoleInfoSpy).toHaveBeenCalled();
-      expect(consoleInfoSpy.mock.calls[0][0]).toContain('Test message');
+      expect(consoleInfoSpy.mock.calls[0]![0]).toContain('Test message');
     });
 
     it('should log warn message', () => {
@@ -40,7 +40,7 @@ describe('Logger', () => {
       logger.warn('Warning message');
       
       expect(consoleWarnSpy).toHaveBeenCalled();
-      expect(consoleWarnSpy.mock.calls[0][0]).toContain('Warning message');
+      expect(consoleWarnSpy.mock.calls[0]![0]).toContain('Warning message');
     });
 
     it('should log error message', () => {
@@ -48,7 +48,7 @@ describe('Logger', () => {
       logger.error('Error message');
       
       expect(consoleErrorSpy).toHaveBeenCalled();
-      expect(consoleErrorSpy.mock.calls[0][0]).toContain('Error message');
+      expect(consoleErrorSpy.mock.calls[0]![0]).toContain('Error message');
     });
 
     it('should log trace message', () => {
@@ -57,7 +57,7 @@ describe('Logger', () => {
       logger.trace('Trace message');
       
       expect(consoleDebugSpy).toHaveBeenCalled();
-      expect(consoleDebugSpy.mock.calls[0][0]).toContain('Trace message');
+      expect(consoleDebugSpy.mock.calls[0]![0]).toContain('Trace message');
     });
 
     it('should log debug message', () => {
@@ -66,7 +66,7 @@ describe('Logger', () => {
       logger.debug('Debug message');
       
       expect(consoleDebugSpy).toHaveBeenCalled();
-      expect(consoleDebugSpy.mock.calls[0][0]).toContain('Debug message');
+      expect(consoleDebugSpy.mock.calls[0]![0]).toContain('Debug message');
     });
 
     it('should log fatal message', () => {
@@ -74,7 +74,7 @@ describe('Logger', () => {
       logger.fatal('Fatal message');
       
       expect(consoleErrorSpy).toHaveBeenCalled();
-      expect(consoleErrorSpy.mock.calls[0][0]).toContain('Fatal message');
+      expect(consoleErrorSpy.mock.calls[0]![0]).toContain('Fatal message');
     });
   });
 
@@ -115,7 +115,7 @@ describe('Logger', () => {
       logger.info('Message with data', { key: 'value' });
       
       expect(consoleInfoSpy).toHaveBeenCalled();
-      const callArg = consoleInfoSpy.mock.calls[0][0];
+      const callArg = consoleInfoSpy.mock.calls[0]![0];
       expect(callArg).toContain('Message with data');
     });
 
@@ -125,7 +125,7 @@ describe('Logger', () => {
       logger.error('Message with error', undefined, error);
       
       expect(consoleErrorSpy).toHaveBeenCalled();
-      const callArg = consoleErrorSpy.mock.calls[0][0];
+      const callArg = consoleErrorSpy.mock.calls[0]![0];
       expect(callArg).toContain('Message with error');
     });
 
@@ -154,7 +154,7 @@ describe('Logger', () => {
       child.info('Child message');
       
       expect(consoleInfoSpy).toHaveBeenCalled();
-      expect(consoleInfoSpy.mock.calls[0][0]).toContain('parent:child');
+      expect(consoleInfoSpy.mock.calls[0]![0]).toContain('parent:child');
     });
   });
 
@@ -167,7 +167,7 @@ describe('Logger', () => {
       logger.info('Test message');
       
       expect(customHandler).toHaveBeenCalled();
-      expect(customHandler.mock.calls[0][0]).toMatchObject({
+      expect(customHandler.mock.calls[0]![0]).toMatchObject({
         level: LogLevel.INFO,
         namespace: 'test',
         message: 'Test message',
@@ -204,7 +204,7 @@ describe('Logger', () => {
       const logger = new Logger('test');
       
       // Should not throw
-      expect(() => logger.info('Test')).not.toThrow();
+      expect(() => { logger.info('Test'); }).not.toThrow();
     });
   });
 

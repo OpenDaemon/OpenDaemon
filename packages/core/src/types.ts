@@ -232,10 +232,10 @@ export interface ProcessInfo {
   cpu: number;
   memory: number;
   script: string;
-  cwd?: string;
+  cwd?: string | undefined;
   createdAt: string;
-  startedAt?: string;
-  errorMessage?: string;
+  startedAt?: string | undefined;
+  errorMessage?: string | undefined;
   env: Record<string, string>;
 }
 

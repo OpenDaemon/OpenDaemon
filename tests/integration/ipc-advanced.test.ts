@@ -59,7 +59,7 @@ describe('IPC Server Advanced Tests', () => {
 
     it('should handle unregister of non-existent method', async () => {
       // Should not throw
-      expect(() => server.unregisterMethod('nonexistent')).not.toThrow();
+      expect(() => { server.unregisterMethod('nonexistent'); }).not.toThrow();
     });
   });
 
@@ -68,7 +68,7 @@ describe('IPC Server Advanced Tests', () => {
       await server.start();
       
       // Get initial count
-      const initialCount = server.getConnectionCount();
+      server.getConnectionCount();
       
       const client1 = new IpcClient({ socketPath, timeout: 1000 });
       await client1.connect();
@@ -85,7 +85,7 @@ describe('IPC Server Advanced Tests', () => {
       
       // Register connection handler - should not throw
       expect(() => {
-        server.onConnection((socket) => {
+        server.onConnection((_socket) => {
           // Handler registered
         });
       }).not.toThrow();
@@ -221,13 +221,10 @@ describe('IPC Server Advanced Tests', () => {
     it('should handle connection with error handler', async () => {
       await server.start();
       
-      let errorHandled = false;
-      
       // Register connection handler that might encounter errors
       server.onConnection((socket) => {
         // Set up error handler on socket
         socket.on('error', () => {
-          errorHandled = true;
         });
       });
       
@@ -264,13 +261,10 @@ describe('IPC Server Advanced Tests', () => {
     it('should trigger socket error handlers', async () => {
       await server.start();
       
-      let errorHandled = false;
-      
       // Register connection handler to access socket
       server.onConnection((socket: any) => {
         // Register error handler on socket (lines 64-66)
-        socket.on('error', (err: Error) => {
-          errorHandled = true;
+        socket.on('error', (_err: Error) => {
         });
         
         // Manually trigger error event to test error handler
@@ -296,7 +290,7 @@ describe('IPC Server Advanced Tests', () => {
       await server.start();
       
       // Register connection handler that throws
-      server.onConnection((socket) => {
+      server.onConnection((_socket) => {
         throw new Error('Connection handler error');
       });
       
@@ -420,7 +414,7 @@ describe('IPC Client Advanced Tests', () => {
       await client.connect();
       
       // Register notification handler
-      client.onNotification((method, params) => {
+      client.onNotification((_method, _params) => {
         // Notification received
       });
       
@@ -449,7 +443,7 @@ describe('IPC Client Advanced Tests', () => {
       await client.connect();
 
       // Register a handler
-      client.onNotification((method) => {
+      client.onNotification((_method) => {
         // Handler registered
       });
 
@@ -505,7 +499,7 @@ describe('IPC Client Advanced Tests', () => {
       
       let receivedToken: string | undefined;
       server.registerMethod('check', (params) => {
-        receivedToken = (params as Record<string, unknown>)?.__authToken as string;
+        receivedToken = (params as Record<string, unknown>)?.['__authToken'] as string;
         return 'ok';
       });
       
@@ -547,10 +541,10 @@ describe('IPC Client Advanced Tests', () => {
       await client.connect();
       
       // Call with primitive param
-      await client.call('check', 'primitive-value' as any);
+      await client.call('check', 'primitive-value');
       
       // Auth token should still be included
-      expect(receivedParams?.__authToken).toBe('mytoken');
+      expect(receivedParams?.['__authToken']).toBe('mytoken');
     });
 
     it('should include auth token with object params', async () => {
@@ -579,8 +573,8 @@ describe('IPC Client Advanced Tests', () => {
       await client.call('check', { key: 'value' });
       
       // Both original param and token should be present
-      expect(receivedParams?.__authToken).toBe('mytoken');
-      expect(receivedParams?.key).toBe('value');
+      expect(receivedParams?.['__authToken']).toBe('mytoken');
+      expect(receivedParams?.['key']).toBe('value');
     });
   });
 
@@ -590,7 +584,7 @@ describe('IPC Client Advanced Tests', () => {
       const disconnectedClient = new IpcClient({ socketPath, timeout: 1000 });
 
       // notify() should throw when not connected
-      expect(() => disconnectedClient.notify('test', {})).toThrow(/Not connected|not connected/i);
+      expect(() => { disconnectedClient.notify('test', {}); }).toThrow(/Not connected|not connected/i);
     });
   });
 

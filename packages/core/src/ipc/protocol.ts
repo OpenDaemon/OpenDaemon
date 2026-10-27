@@ -56,7 +56,7 @@ export function decodeFrames(
       break;
     }
 
-    const type = buffer.readUInt8(offset) as FrameType;
+    const type = buffer.readUInt8(offset);
     const size = buffer.readUInt32BE(offset + 1);
 
     // Check if we have complete frame

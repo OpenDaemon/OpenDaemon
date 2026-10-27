@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PluginRegistry } from '../../packages/core/src/plugins/registry.js';
-import { PluginError, ErrorCode } from '../../packages/core/src/errors/index.js';
+import { PluginError } from '../../packages/core/src/errors/index.js';
 import type { Plugin } from '../../packages/core/src/plugins/types.js';
 
 describe('PluginRegistry', () => {
@@ -222,8 +222,8 @@ describe('PluginRegistry', () => {
 
       const resolved = registry.resolveLoadOrder();
       
-      expect(resolved[0].name).toBe('high');
-      expect(resolved[1].name).toBe('low');
+      expect(resolved[0]!.name).toBe('high');
+      expect(resolved[1]!.name).toBe('low');
     });
 
     it('should use default priority of 100', () => {

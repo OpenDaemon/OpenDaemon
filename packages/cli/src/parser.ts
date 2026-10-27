@@ -47,8 +47,8 @@ export interface ParsedCommand {
  * ```
  */
 export class CommandParser {
-  private options = new Map<string, CliOption>();
-  private aliases = new Map<string, string>();
+  private readonly options = new Map<string, CliOption>();
+  private readonly aliases = new Map<string, string>();
 
   /**
    * Add a global option

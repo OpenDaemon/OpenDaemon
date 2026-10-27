@@ -16,7 +16,7 @@ export class ConfigManagerPlugin implements Plugin {
   priority = 5;
 
   private context!: PluginContext;
-  private logger: Logger;
+  private readonly logger: Logger;
   private configPath?: string;
   private loadedConfig: DaemonConfig = {};
 

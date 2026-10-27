@@ -6,9 +6,9 @@ import { existsSync } from 'fs';
  * CLI client for communicating with daemon
  */
 export class CliClient {
-  private client: IpcClient;
+  private readonly client: IpcClient;
   private connected = false;
-  private isWindows = process.platform === 'win32';
+  private readonly isWindows = process.platform === 'win32';
 
   constructor() {
     // Use TCP on Windows (Unix sockets have permission issues), Unix socket on Linux/Mac

@@ -44,9 +44,9 @@ export type TransitionHook<S extends string, E extends string> = (
  */
 export class StateMachine<S extends string, E extends string> {
   private currentState: S;
-  private transitions: Map<S, Map<E, S>>;
-  private beforeHooks: Array<TransitionHook<S, E>> = [];
-  private afterHooks: Array<TransitionHook<S, E>> = [];
+  private readonly transitions: Map<S, Map<E, S>>;
+  private readonly beforeHooks: Array<TransitionHook<S, E>> = [];
+  private readonly afterHooks: Array<TransitionHook<S, E>> = [];
 
   /**
    * Create a new state machine

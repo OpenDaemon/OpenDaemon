@@ -38,7 +38,7 @@ describe('CommandParser', () => {
 
       const result = parser.parse(['--verbose']);
 
-      expect(result.options.verbose).toBe(true);
+      expect(result.options['verbose']).toBe(true);
     });
 
     it('should parse string option', () => {
@@ -50,7 +50,7 @@ describe('CommandParser', () => {
 
       const result = parser.parse(['--name', 'my-app']);
 
-      expect(result.options.name).toBe('my-app');
+      expect(result.options['name']).toBe('my-app');
     });
 
     it('should parse option with equals', () => {
@@ -62,7 +62,7 @@ describe('CommandParser', () => {
 
       const result = parser.parse(['--name=my-app']);
 
-      expect(result.options.name).toBe('my-app');
+      expect(result.options['name']).toBe('my-app');
     });
 
     it('should parse number option', () => {
@@ -74,7 +74,7 @@ describe('CommandParser', () => {
 
       const result = parser.parse(['--instances', '4']);
 
-      expect(result.options.instances).toBe(4);
+      expect(result.options['instances']).toBe(4);
     });
 
     it('should use default value', () => {
@@ -87,7 +87,7 @@ describe('CommandParser', () => {
 
       const result = parser.parse([]);
 
-      expect(result.options.instances).toBe(1);
+      expect(result.options['instances']).toBe(1);
     });
   });
 
@@ -102,7 +102,7 @@ describe('CommandParser', () => {
 
       const result = parser.parse(['-v']);
 
-      expect(result.options.verbose).toBe(true);
+      expect(result.options['verbose']).toBe(true);
     });
 
     it('should parse combined flags', () => {
@@ -120,8 +120,8 @@ describe('CommandParser', () => {
 
       const result = parser.parse(['-vq']);
 
-      expect(result.options.verbose).toBe(true);
-      expect(result.options.quiet).toBe(true);
+      expect(result.options['verbose']).toBe(true);
+      expect(result.options['quiet']).toBe(true);
     });
 
     it('should parse option with value', () => {
@@ -134,7 +134,7 @@ describe('CommandParser', () => {
 
       const result = parser.parse(['-n', 'my-app']);
 
-      expect(result.options.name).toBe('my-app');
+      expect(result.options['name']).toBe('my-app');
     });
   });
 
@@ -162,8 +162,8 @@ describe('CommandParser', () => {
 
       expect(result.command).toBe('start');
       expect(result.args).toEqual(['app.js']);
-      expect(result.options.name).toBe('my-app');
-      expect(result.options.verbose).toBe(true);
+      expect(result.options['name']).toBe('my-app');
+      expect(result.options['verbose']).toBe(true);
     });
 
     it('should handle options before and after command', () => {
@@ -177,7 +177,7 @@ describe('CommandParser', () => {
       const result = parser.parse(['-v', 'start', 'app.js']);
 
       expect(result.command).toBe('start');
-      expect(result.options.verbose).toBe(true);
+      expect(result.options['verbose']).toBe(true);
     });
   });
 
@@ -191,7 +191,7 @@ describe('CommandParser', () => {
 
       const result = parser.parse(['--env', 'KEY1=val1', '--env', 'KEY2=val2']);
 
-      expect(result.options.env).toEqual(['KEY1=val1', 'KEY2=val2']);
+      expect(result.options['env']).toEqual(['KEY1=val1', 'KEY2=val2']);
     });
   });
 
@@ -215,7 +215,7 @@ describe('CommandParser', () => {
 
       const result = parser.parse(['--tags']);
 
-      expect(result.options.tags).toEqual(['true']);
+      expect(result.options['tags']).toEqual(['true']);
     });
 
     it('should parse boolean values', () => {
@@ -225,9 +225,9 @@ describe('CommandParser', () => {
         type: 'boolean',
       });
 
-      expect(parser.parse(['--flag=true']).options.flag).toBe(true);
-      expect(parser.parse(['--flag=1']).options.flag).toBe(true);
-      expect(parser.parse(['--flag=']).options.flag).toBe(true);
+      expect(parser.parse(['--flag=true']).options['flag']).toBe(true);
+      expect(parser.parse(['--flag=1']).options['flag']).toBe(true);
+      expect(parser.parse(['--flag=']).options['flag']).toBe(true);
       // Note: --flag=false behavior depends on implementation
     });
 
@@ -298,7 +298,7 @@ describe('CommandParser', () => {
 
       const result = parser.parse(['--arr=value']);
 
-      expect(result.options.arr).toEqual(['value']);
+      expect(result.options['arr']).toEqual(['value']);
     });
 
     it('should handle unknown short flag', () => {
@@ -331,7 +331,7 @@ describe('CommandParser', () => {
 
       // This tests line 266: value === '1'
       const result = parser.parse(['--flag=1']);
-      expect(result.options.flag).toBe(true);
+      expect(result.options['flag']).toBe(true);
     });
 
     it('should handle arguments without dash prefix', () => {
@@ -374,8 +374,8 @@ describe('CommandParser', () => {
       });
 
       // Test line 264: Number(value)
-      expect(parser.parse(['--count=42']).options.count).toBe(42);
-      expect(parser.parse(['--count=0']).options.count).toBe(0);
+      expect(parser.parse(['--count=42']).options['count']).toBe(42);
+      expect(parser.parse(['--count=0']).options['count']).toBe(0);
     });
 
     it('should directly test parseValue method', () => {

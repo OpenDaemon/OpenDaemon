@@ -37,8 +37,8 @@ interface DependencyNode {
  * ```
  */
 export class PluginRegistry {
-  private plugins = new Map<string, RegisteredPlugin>();
-  private graph = new Map<string, DependencyNode>();
+  private readonly plugins = new Map<string, RegisteredPlugin>();
+  private readonly graph = new Map<string, DependencyNode>();
 
   /**
    * Register a plugin

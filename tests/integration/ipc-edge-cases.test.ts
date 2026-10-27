@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { IpcServer } from '../../packages/core/src/ipc/server.js';
 import { IpcClient } from '../../packages/core/src/ipc/client.js';
-import { createServer, type Server, type Socket } from 'net';
 
 describe('IPC Server Edge Cases', () => {
   let server: IpcServer;
