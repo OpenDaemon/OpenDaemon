@@ -2,12 +2,22 @@ import { hostname } from 'os';
 import { request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
+import { sendMail, type SmtpConfig } from './smtp.js';
 
-export type ChannelType = 'webhook' | 'slack' | 'discord';
+export type { SmtpConfig } from './smtp.js';
+
+export type ChannelType = 'webhook' | 'slack' | 'discord' | 'email';
 
 export interface ChannelConfig {
   type: ChannelType;
-  url: string;
+  /** Endpoint of a webhook, Slack or Discord channel */
+  url?: string;
+  /** Mail server (email channels) */
+  smtp?: SmtpConfig;
+  /** Sender address (email channels) */
+  from?: string;
+  /** Recipient addresses (email channels) */
+  to?: string[];
   /** Notification event names this channel receives (default: all) */
   events?: string[];
   /** Extra request headers (webhook) */
@@ -142,7 +152,7 @@ interface Pending {
 /**
  * Notification Plugin
  * Sends alerts about crashes, unhealthy processes, memory limits, failed jobs and daemon
- * start/stop to webhooks, Slack and Discord.
+ * start/stop to webhooks, Slack, Discord and email (SMTP).
  */
 export class NotificationPlugin implements Plugin {
   name = 'notification';
@@ -221,8 +231,14 @@ export class NotificationPlugin implements Plugin {
 
   private validChannel(channel: ChannelConfig): boolean {
     try {
-      if (!(['webhook', 'slack', 'discord'] as string[]).includes(channel.type)) throw new Error(`unknown channel type "${channel.type as string}"`);
-      const protocol = new URL(channel.url).protocol;
+      if (!(['webhook', 'slack', 'discord', 'email'] as string[]).includes(channel.type)) throw new Error(`unknown channel type "${channel.type as string}"`);
+      if (channel.type === 'email') {
+        if (!channel.smtp?.host) throw new Error('email channels need smtp.host');
+        if (!channel.from) throw new Error('email channels need from');
+        if (!Array.isArray(channel.to) || channel.to.length === 0) throw new Error('email channels need at least one recipient in to');
+        return true;
+      }
+      const protocol = new URL(channel.url as string).protocol;
       if (protocol !== 'http:' && protocol !== 'https:') throw new Error('url must be http or https');
       return true;
     } catch (err) {
@@ -247,10 +263,19 @@ export class NotificationPlugin implements Plugin {
   }
 
   private deliver(channel: ChannelConfig, notes: Notification[]): void {
-    const task = postJson(channel.url, formatPayload(channel.type, notes), channel.headers, channel.timeout)
+    const send = channel.type === 'email'
+      ? sendMail(channel.smtp as SmtpConfig, {
+        from: channel.from as string,
+        to: channel.to as string[],
+        subject: notes.length === 1 ? `[${(notes[0] as Notification).severity.toUpperCase()}] ${(notes[0] as Notification).title}` : `${String(notes.length)} OpenDaemon notifications`,
+        text: notes.map((n) => `[${n.severity.toUpperCase()}] ${n.title}\n${n.message}\nhost: ${n.host}  time: ${n.timestamp}`).join('\n\n'),
+      }, channel.timeout)
+      : postJson(channel.url as string, formatPayload(channel.type, notes), channel.headers, channel.timeout);
+    const task = send
       .catch((err: unknown) => {
-        // Never let a broken channel affect the daemon; the host of the URL is enough to identify it
-        this.context.logger.warn(`Notification to ${new URL(channel.url).host} failed: ${(err as Error).message}`);
+        // Never let a broken channel affect the daemon; the host is enough to identify it
+        const where = channel.type === 'email' ? (channel.smtp?.host ?? 'smtp') : new URL(channel.url as string).host;
+        this.context.logger.warn(`Notification to ${where} failed: ${(err as Error).message}`);
       })
       .finally(() => { this.inflight.delete(task); });
     this.inflight.add(task);

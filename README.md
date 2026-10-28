@@ -151,7 +151,7 @@ Script and command checks get `OD_PROCESS_NAME` and `OD_PROCESS_PID` in their en
 
 ## Notifications
 
-Get alerted when something breaks. Channels are webhooks (generic JSON), Slack and Discord:
+Get alerted when something breaks. Channels are webhooks (generic JSON), Slack, Discord and email:
 
 ```yaml
 plugins:
@@ -159,11 +159,15 @@ plugins:
     channels:
       - { type: slack, url: "https://hooks.slack.com/services/...", events: [process:crash, process:unhealthy] }
       - { type: webhook, url: "https://example.com/hook", headers: { X-Token: abc } }
+      - type: email
+        smtp: { host: smtp.example.com, port: 587, user: alerts, password: "..." }
+        from: "OpenDaemon <od@example.com>"
+        to: [ops@example.com]
     throttle: 60000       # at most one per event and process per minute (default 60000, 0 = off)
     batchWindow: 5000     # collect events for 5s and send them together (default 0 = immediately)
 ```
 
-Events: `process:crash` (non-zero exit, even if it will be restarted), `process:unhealthy`, `process:recovered`, `process:memory-limit`, `cron:failed`, `daemon:started`, `daemon:stopped`. Without `events`, a channel gets all of them. A webhook receives `{ event, title, message, name, severity, timestamp, host, data }` (several in a batch: `{ count, notifications }`). A failing channel is logged by host and never affects the daemon. Email is not supported yet.
+Events: `process:crash` (non-zero exit, even if it will be restarted), `process:unhealthy`, `process:recovered`, `process:memory-limit`, `cron:failed`, `daemon:started`, `daemon:stopped`. Without `events`, a channel gets all of them. A webhook receives `{ event, title, message, name, severity, timestamp, host, data }` (several in a batch: `{ count, notifications }`). A failing channel is logged by host and never affects the daemon. Email goes through the built-in SMTP client (no dependencies): `secure: true` for implicit TLS (port 465), otherwise STARTTLS is used when offered (port 587). Credentials are never sent over an unencrypted connection to a non-local server. A batch becomes one message. Only plain `AUTH PLAIN`/`AUTH LOGIN` are supported; keep the SMTP password in a secret-managed config rather than in the repository.
 
 ## Audit Log
 
