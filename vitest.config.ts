@@ -1,4 +1,7 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+
+const entry = (path: string): string => fileURLToPath(new URL(path, import.meta.url));
 
 export default defineConfig({
   test: {
@@ -24,10 +27,10 @@ export default defineConfig({
       // Ratchet: set just below the measured level (2026-10-27: 84/88/90/84) so
       // regressions fail CI; raise as coverage grows toward the 100% goal
       thresholds: {
-        lines: 82,
-        functions: 87,
-        branches: 86,
-        statements: 82,
+        lines: 86,
+        functions: 92,
+        branches: 87,
+        statements: 86,
       },
     },
   },
@@ -35,9 +38,9 @@ export default defineConfig({
     alias: {
       // Point at the entry files: an ESM import cannot resolve a bare directory, so unmocked
       // imports of '@opendaemon/core' failed and only worked where a test mocked the module
-      '@opendaemon/core': './packages/core/src/index.ts',
-      '@opendaemon/cli': './packages/cli/src/index.ts',
-      '@opendaemon/sdk': './packages/sdk/src/index.ts',
+      '@opendaemon/core': entry('./packages/core/src/index.ts'),
+      '@opendaemon/cli': entry('./packages/cli/src/index.ts'),
+      '@opendaemon/sdk': entry('./packages/sdk/src/index.ts'),
     },
   },
 });
