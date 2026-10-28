@@ -24,7 +24,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 - 5.2.2: TypeScript configs rely on Node's type stripping (Node >= 22.18); there is no bundled loader for Node 20
 - 7.5.x: `od monit` has the process list, CPU/memory sparklines, health and logs; no sorting/filtering, mouse or themes, and no event-loop metrics (not collected)
 - 7.2.4: cascade order applies to daemon shutdown; `od stop <name>` does not cascade, and there is no cascade restart
-- 5.4.3 / 5.4.5: log rotation is size-based only (no time/age rotation); follow streams over IPC, not WebSocket
+- 5.4.3 / 5.4.5: log rotation is size-based only (no time/age rotation); `logs -f` streams over IPC (the api-server plugin streams `log:<name>` over WebSocket)
 - 5.3.x: health-check plugin done for process/http/https/tcp/script/command/memory/cpu/composite; `grpc` is not implemented
 - 8.1.x: coverage is 86% statements with plugins measured; CI gates on a ratchet just below that, not on 100%
 - 9.2.x: WebUI hardened (loopback bind, Host/Origin checks, crypto token); IPC requires a per-start token from a 0600 token file and the socket is 0600

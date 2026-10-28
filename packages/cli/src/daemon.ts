@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Kernel, Logger } from '@opendaemon/core';
-import { IpcServer } from '@opendaemon/core';
+import { IpcServer, IpcClient } from '@opendaemon/core';
 import { ProcessManagerPlugin } from '../../plugins/process-manager/src/index.js';
 import { ConfigManagerPlugin } from '../../plugins/config-manager/src/index.js';
 import { WebuiPlugin } from '../../plugins/webui/src/index.js';
@@ -12,6 +12,7 @@ import { WatchModePlugin } from '../../plugins/watch-mode/src/index.js';
 import { SchedulerPlugin } from '../../plugins/scheduler/src/index.js';
 import { SecretManagerPlugin } from '../../plugins/secret-manager/src/index.js';
 import { NotificationPlugin } from '../../plugins/notification/src/index.js';
+import { ApiServerPlugin } from '../../plugins/api-server/src/index.js';
 import { AuditLoggerPlugin } from '../../plugins/audit-logger/src/index.js';
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync, chmodSync } from 'fs';
@@ -112,6 +113,22 @@ export async function main(): Promise<void> {
     kernel.registerPlugin(new SchedulerPlugin());
     kernel.registerPlugin(new NotificationPlugin());
     kernel.registerPlugin(new WebuiPlugin());
+
+    // The API server forwards to this daemon's own RPC methods over IPC, so they are validated
+    // and audited exactly like CLI calls. It connects on first use and again after a failure.
+    let apiClient: IpcClient | undefined;
+    kernel.registerPlugin(new ApiServerPlugin(home, async (method, params) => {
+      try {
+        if (!apiClient?.isConnected()) {
+          apiClient = new IpcClient({ ...ipcConfig, timeout: 30000 });
+          await apiClient.connect();
+        }
+        return await apiClient.call(method, params);
+      } catch (err) {
+        if (!(err instanceof Error) || /Not connected|ECONN|ENOENT/.test(err.message)) apiClient = undefined;
+        throw err;
+      }
+    }));
 
     // Start kernel with configuration
     await kernel.start(config);

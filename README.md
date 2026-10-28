@@ -380,6 +380,55 @@ The built-in dashboard runs at `http://localhost:7777` with the WebUI plugin ena
 | `GET` | `/api/daemon` | Daemon status & uptime |
 | `POST` | `/api/login` | Authenticate (returns Bearer token) |
 
+## REST API & WebSocket
+
+The optional `api-server` plugin is off until you configure it. It serves a REST API under `/api/v1` and an event stream at `/ws`, using only `node:http`. Every route calls the daemon's own RPC methods, so validation and the audit log are the same as for the CLI.
+
+```yaml
+plugins:
+  api-server:
+    port: 9615             # default 9615
+    host: 127.0.0.1        # default; widen only together with a token and tls
+    token: "at-least-16-characters"   # omitted: generated each start into ~/.opendaemon/api-token (0600)
+    cors: ["https://dash.example.com"] # browser origins allowed (default none)
+    rateLimit: 600         # requests per minute and address (0 = off)
+    tls: { cert: ./cert.pem, key: ./key.pem }   # serve HTTPS / WSS
+```
+
+Send `Authorization: Bearer <token>` with every request except `GET /api/v1/health`.
+
+| Method | Endpoint | |
+|--------|----------|--|
+| `GET` | `/api/v1/processes` | List |
+| `POST` | `/api/v1/processes` | Start (JSON process config) |
+| `GET` | `/api/v1/processes/:name` | Info |
+| `PUT` | `/api/v1/processes/:name/stop` `restart` `reload` | `reload` restarts the process with its current configuration |
+| `PUT` | `/api/v1/processes/:name/scale` | `{ "instances": 4 }` or `"max"` (cluster mode) |
+| `DELETE` | `/api/v1/processes/:name` | Delete |
+| `GET` | `/api/v1/processes/:name/logs` | `?lines=&grep=&since=&source=` |
+| `GET` | `/api/v1/processes/:name/metrics` | CPU, memory, app metrics |
+| `GET` | `/api/v1/metrics` | Prometheus text |
+| `GET` | `/api/v1/daemon/status` | Daemon status |
+| `POST` | `/api/v1/daemon/reload` | Reload the config |
+| `GET` | `/api/v1/health` | Liveness, no token needed |
+
+Errors are `{ "error": "..." }` with 400 (bad request), 401, 403 (foreign `Host`/`Origin`), 404, 413 (body over 1 MiB), 429 or 502.
+
+**WebSocket.** Connect to `ws://127.0.0.1:9615/ws` with the same bearer token (browsers cannot set headers: `?token=` works too, but ends up in logs, so prefer the header outside the browser). Then subscribe with wildcard patterns:
+
+```js
+→ { "subscribe": ["process:*", "log:my-app", "metric:*"] }
+← { "event": "subscribed", "data": { "patterns": [...] } }
+← { "event": "process:started", "data": { ... } }
+← { "event": "log:my-app", "data": { "message": "...", ... } }
+← { "event": "metric:snapshot", "data": { ... } }      // every 5 s while someone subscribes
+→ { "unsubscribe": ["log:my-app"] }
+```
+
+Events: `process:started|stopped|exit|crash|error|memory-limit|cpu-limit`, `health:status:*`, `health:action:*`, `watch:change`, `cron:run|finish`, `config:reloaded`, `daemon:ready|stopped`, `log:<process>` and `metric:snapshot`. Payloads are redacted like the audit log (secrets and every `env` value). A client that stops reading is disconnected rather than buffered.
+
+Security: loopback only by default, `Host` check against DNS rebinding, `Origin` must be in `cors` (or absent), constant-time token comparison, per-address rate limit, body size limit, and a cap on WebSocket connections (`maxConnections`, 100).
+
 ## Guides
 
 - [Plugin development](docs/guides/plugin-development.md)
@@ -404,6 +453,7 @@ opendaemon/
 │       ├── secret-manager/    # Encrypted secrets, env injection
 │       ├── notification/      # Webhook, Slack, Discord alerts
 │       ├── audit-logger/      # Audit trail
+│       ├── api-server/        # REST API /api/v1 and WebSocket event stream
 │       └── webui/             # HTTP server, REST API, dashboard HTML
 ├── tests/
 │   ├── unit/                  # Unit tests
