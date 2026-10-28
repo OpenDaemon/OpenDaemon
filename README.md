@@ -376,6 +376,11 @@ The built-in dashboard runs at `http://localhost:7777` with the WebUI plugin ena
 | `GET` | `/api/daemon` | Daemon status & uptime |
 | `POST` | `/api/login` | Authenticate (returns Bearer token) |
 
+## Guides
+
+- [Plugin development](docs/guides/plugin-development.md)
+- [Migrating from PM2](docs/guides/migrating-from-pm2.md)
+
 ## Architecture
 
 ```
