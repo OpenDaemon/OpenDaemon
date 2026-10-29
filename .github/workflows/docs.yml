@@ -1,11 +1,8 @@
 name: Documentation
 
+# Manual only: there is no `build:docs` script yet, so a push trigger just failed every time.
+# Restore the push trigger once the docs site builds.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'docs/**'
-      - 'packages/*/src/**'
   workflow_dispatch:
 
 jobs:
