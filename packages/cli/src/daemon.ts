@@ -12,6 +12,7 @@ import { WatchModePlugin } from '../../plugins/watch-mode/src/index.js';
 import { SchedulerPlugin } from '../../plugins/scheduler/src/index.js';
 import { SecretManagerPlugin } from '../../plugins/secret-manager/src/index.js';
 import { NotificationPlugin } from '../../plugins/notification/src/index.js';
+import { DeployStrategyPlugin } from '../../plugins/deploy-strategy/src/index.js';
 import { ApiServerPlugin } from '../../plugins/api-server/src/index.js';
 import { AuditLoggerPlugin } from '../../plugins/audit-logger/src/index.js';
 
@@ -107,6 +108,7 @@ export async function main(): Promise<void> {
     kernel.registerPlugin(new SecretManagerPlugin(home));
     kernel.registerPlugin(new LogManagerPlugin());
     kernel.registerPlugin(new ProcessManagerPlugin());
+    kernel.registerPlugin(new DeployStrategyPlugin());
     kernel.registerPlugin(new HealthCheckPlugin());
     kernel.registerPlugin(new MetricsCollectorPlugin());
     kernel.registerPlugin(new WatchModePlugin());

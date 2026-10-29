@@ -95,6 +95,17 @@ describe('ApiServerPlugin', () => {
       expect(calls[7]?.params).toEqual({ name: 'api', instances: 3 });
     });
 
+    it('should start, follow and roll back deploys', async () => {
+      answers = { 'deploy.execute': { state: 'running' }, 'deploy.status': { state: 'succeeded' }, 'deploy.rollback': { state: 'running' } };
+      expect((await http('POST', '/api/v1/processes/web/deploy', { body: { strategy: 'canary', release: { script: 'v2.js' } } })).json()).toEqual({ state: 'running' });
+      expect((await http('GET', '/api/v1/processes/web/deploy')).json()).toEqual({ state: 'succeeded' });
+      await http('PUT', '/api/v1/processes/web/rollback');
+      expect(calls.map((c) => c.method)).toEqual(['deploy.execute', 'deploy.status', 'deploy.rollback']);
+      expect(calls[0]?.params).toEqual({ name: 'web', strategy: 'canary', release: { script: 'v2.js' } });
+      answers = { 'deploy.execute': () => { throw new Error('A deploy of "web" is already running'); } };
+      expect((await http('POST', '/api/v1/processes/web/deploy', { body: {} })).status).toBe(409);
+    });
+
     it('should decode names and pass log filters', async () => {
       answers = { 'logs.query': [] };
       await http('GET', '/api/v1/processes/my%20app/logs?lines=5&grep=err&since=10&source=stderr');

@@ -167,7 +167,7 @@ plugins:
     batchWindow: 5000     # collect events for 5s and send them together (default 0 = immediately)
 ```
 
-Events: `process:crash` (non-zero exit, even if it will be restarted), `process:unhealthy`, `process:recovered`, `process:memory-limit`, `cron:failed`, `daemon:started`, `daemon:stopped`. Without `events`, a channel gets all of them. A webhook receives `{ event, title, message, name, severity, timestamp, host, data }` (several in a batch: `{ count, notifications }`). A failing channel is logged by host and never affects the daemon. Email goes through the built-in SMTP client (no dependencies): `secure: true` for implicit TLS (port 465), otherwise STARTTLS is used when offered (port 587). Credentials are never sent over an unencrypted connection to a non-local server. A batch becomes one message. Only plain `AUTH PLAIN`/`AUTH LOGIN` are supported; keep the SMTP password in a secret-managed config rather than in the repository.
+Events: `process:crash` (non-zero exit, even if it will be restarted), `process:unhealthy`, `process:recovered`, `process:memory-limit`, `process:cpu-limit`, `cron:failed`, `deploy:failed`, `deploy:succeeded`, `daemon:started`, `daemon:stopped`. Without `events`, a channel gets all of them. A webhook receives `{ event, title, message, name, severity, timestamp, host, data }` (several in a batch: `{ count, notifications }`). A failing channel is logged by host and never affects the daemon. Email goes through the built-in SMTP client (no dependencies): `secure: true` for implicit TLS (port 465), otherwise STARTTLS is used when offered (port 587). Credentials are never sent over an unencrypted connection to a non-local server. A batch becomes one message. Only plain `AUTH PLAIN`/`AUTH LOGIN` are supported; keep the SMTP password in a secret-managed config rather than in the repository.
 
 ## Audit Log
 
@@ -341,6 +341,7 @@ apps:
 | `od restart <name>` | Restart a process |
 | `od delete <name>` | Delete a process |
 | `od scale <name> <n\|max>` | Change the number of cluster workers without a restart |
+| `od deploy <name>` / `od deploy status` / `od rollback <name>` | Zero-downtime deploys: `--strategy`, `--script`, `--env`, `--release` (see Deployments) |
 | `od list` / `od ls` | List all processes (`--json`, `-q`) |
 | `od info <name>` | Detailed process info (CPU, memory, PID, uptime) |
 | `od logs [name]` | Logs of one or all processes (`--lines N`, `-f`, `--grep RE`, `--since 2h`, `--json`) |
@@ -429,6 +430,45 @@ Events: `process:started|stopped|exit|crash|error|memory-limit|cpu-limit`, `heal
 
 Security: loopback only by default, `Host` check against DNS rebinding, `Origin` must be in `cors` (or absent), constant-time token comparison, per-address rate limit, body size limit, and a cap on WebSocket connections (`maxConnections`, 100).
 
+## Deployments
+
+Replace the code of a running cluster-mode app without dropping requests. A new worker always starts and becomes ready (it listens, sends `ready`, or stays up for a second) before the worker it replaces drains, so a release that does not start never takes the old one down.
+
+```bash
+od deploy api --script ./releases/v2/server.js --release 2.0.0 --strategy rolling
+od deploy api --env FEATURE_X=1          # same code, new environment
+od restart api --strategy blue-green     # replace every worker with the current configuration
+od deploy status api                     # steps, result, error
+od rollback api                          # back to the release before the last successful deploy
+```
+
+| Strategy | What happens |
+|----------|--------------|
+| `rolling` (default for clusters) | `maxSurge` workers at a time (default 1): start the new one, switch, drain the old one |
+| `blue-green` | start a whole new set next to the old one; switch only when every new worker is ready; the old set drains for `switchTimeout` |
+| `canary` | move `canaryPercent` of the workers (steps in `canarySteps`, e.g. `[10, 50, 100]`) and watch each step for `canaryAnalysis.duration` ms: a canary worker that exits, an unhealthy health check, or an app crash aborts the deploy |
+| `recreate` | apply the release and restart (the only strategy for fork-mode apps; brief downtime) |
+
+```yaml
+apps:
+  - name: api
+    script: ./current/server.js
+    mode: cluster
+    instances: 4
+    deploy:
+      strategy: rolling
+      maxSurge: 1
+      canarySteps: [10, 50, 100]
+      canaryAnalysis: { duration: 30000 }
+      readyTimeout: 30000      # per new worker
+      rollbackOnFailure: true  # default
+      timeout: 300000
+```
+
+A failed deploy puts the previous release back (`rolled-back` in the status), unless `rollbackOnFailure: false`. A release is a script, arguments and environment; the label from `--release` reaches the workers as `OD_RELEASE`. After a successful deploy the new script and environment are the app's configuration, so crash restarts and `od restart` use them. Progress is also published as `deploy:started|progress|succeeded|failed` events (WebSocket, audit log, and `deploy:failed`/`deploy:succeeded` notifications) and over REST (`POST /api/v1/processes/:name/deploy`, `GET .../deploy`, `PUT .../rollback`).
+
+Limits: OpenDaemon has no request router, so a canary's share of traffic is its share of workers (the cluster round-robins), and `a-b` (routing by header or cookie) is not available. Rollback remembers one previous release and only until the daemon restarts. Canary analysis looks at crashes and health checks, not at application metrics.
+
 ## Guides
 
 - [Plugin development](docs/guides/plugin-development.md)
@@ -453,6 +493,7 @@ opendaemon/
 │       ├── secret-manager/    # Encrypted secrets, env injection
 │       ├── notification/      # Webhook, Slack, Discord alerts
 │       ├── audit-logger/      # Audit trail
+│       ├── deploy-strategy/   # Rolling, blue-green, canary, recreate deploys
 │       ├── api-server/        # REST API /api/v1 and WebSocket event stream
 │       └── webui/             # HTTP server, REST API, dashboard HTML
 ├── tests/

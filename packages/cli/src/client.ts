@@ -185,6 +185,24 @@ export class CliClient {
   }
 
   /**
+   * Deploys (deploy-strategy): execute and rollback return at once; follow them with deployStatus
+   */
+  async deployExecute(params: Record<string, unknown>): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('deploy.execute', params);
+  }
+
+  async deployRollback(name: string): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('deploy.rollback', { name });
+  }
+
+  async deployStatus(name?: string): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call('deploy.status', name === undefined ? {} : { name });
+  }
+
+  /**
    * Query persisted logs (log-manager): name, lines, grep, since (epoch ms), source
    */
   async queryLogs(query: Record<string, unknown>): Promise<unknown> {

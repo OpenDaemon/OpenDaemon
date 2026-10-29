@@ -101,6 +101,17 @@ const SOURCES: Array<{
       ? { title: `Scheduled job "${text(d['name'])}" failed`, message: `exit code ${text(d['exitCode'], 'none')}, attempt ${text(d['attempt'])}` }
       : undefined,
   },
+  {
+    source: 'deploy:failed', event: 'deploy:failed', severity: 'critical',
+    describe: (d) => ({
+      title: `Deploy of "${text(d['name'])}" failed`,
+      message: `${text(d['strategy'])}: ${text(d['error'])}${d['rolledBack'] ? ' (rolled back)' : ' (NOT rolled back)'}`,
+    }),
+  },
+  {
+    source: 'deploy:succeeded', event: 'deploy:succeeded', severity: 'info',
+    describe: (d) => ({ title: `Deployed "${text(d['name'])}"`, message: `${text(d['strategy'])}${d['version'] ? ` ${text(d['version'])}` : ''}` }),
+  },
   { source: 'daemon:ready', event: 'daemon:started', severity: 'info', describe: () => ({ title: 'OpenDaemon started', message: 'the daemon is ready' }) },
   { source: 'daemon:stopped', event: 'daemon:stopped', severity: 'info', describe: () => ({ title: 'OpenDaemon stopped', message: 'the daemon has shut down' }) },
 ];

@@ -66,6 +66,17 @@ describe('NotificationPlugin', () => {
     });
   });
 
+  it('should announce deploys, stressing failures that were not rolled back', async () => {
+    install({ channels: [{ type: 'webhook', url: base }], throttle: 0 });
+    events.emit('deploy:succeeded', { name: 'web', strategy: 'canary', version: '2.0' });
+    events.emit('deploy:failed', { name: 'web', strategy: 'rolling', error: 'boom', rolledBack: false });
+    await settle();
+    expect(received.map((r) => (r.body as { title: string; message: string; severity: string }))).toEqual([
+      expect.objectContaining({ title: 'Deployed "web"', message: 'canary 2.0', severity: 'info' }),
+      expect.objectContaining({ title: 'Deploy of "web" failed', message: 'rolling: boom (NOT rolled back)', severity: 'critical' }),
+    ]);
+  });
+
   it('should map daemon events to notifications and only report failed cron runs', async () => {
     install({ channels: [{ type: 'webhook', url: base }], throttle: 0 });
     events.emit('health:status:unhealthy', { name: 'api', message: 'HTTP 500' });

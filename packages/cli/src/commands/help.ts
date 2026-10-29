@@ -44,6 +44,9 @@ ${term.bold('COMMANDS')}
     restart <name>   Restart a process
     delete <name>    Remove a process
     scale <name> <n> Change cluster workers (number or max)
+    deploy <name>    Zero-downtime deploy (--strategy rolling|blue-green|canary|recreate)
+    deploy status    Show deploys
+    rollback <name>  Back to the release before the last deploy
 
   Monitoring:
     list / ls        List all processes

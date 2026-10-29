@@ -92,6 +92,16 @@ describe('AuditLoggerPlugin', () => {
     expect(entries().map((e) => e.action)).toEqual(['list']);
   });
 
+  it('should record deploy lifecycle events against the app, and treat deploy.status as a read', () => {
+    events.emit('deploy:started', { name: 'web', strategy: 'rolling' });
+    events.emit('deploy:failed', { name: 'web', strategy: 'rolling', error: 'boom', rolledBack: true });
+    audit.recordCall({ method: 'deploy.status', params: { name: 'web' }, ok: true, duration: 1, connection: 'c1' });
+    audit.recordCall({ method: 'deploy.execute', params: { name: 'web', release: { env: { TOKEN: 'x' } } }, ok: true, duration: 1, connection: 'c1' });
+    expect(entries().map((e) => e.action)).toEqual(['deploy.started', 'deploy.failed', 'deploy.execute']);
+    expect(entries()[1]).toMatchObject({ target: { type: 'deploy', name: 'web' } });
+    expect(JSON.stringify(entries()[2])).not.toContain('"x"');
+  });
+
   it('should record lifecycle events and WebUI logins, without passwords', () => {
     events.emit('process:started', { name: 'api', pid: 10 });
     events.emit('process:crash', { name: 'api', code: 1, signal: null });

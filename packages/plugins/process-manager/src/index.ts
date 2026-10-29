@@ -1,6 +1,6 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
 import { Logger, parseBytes, dependencyLevels } from '../../../core/src/index.js';
-import type { LimitAction } from '../../../core/src/index.js';
+import type { LimitAction, Release } from '../../../core/src/index.js';
 import { DaemonError, ErrorCode, ProcessError } from '../../../core/src/index.js';
 import type {
   ProcessConfig,
@@ -54,6 +54,8 @@ interface ManagedProcessInfo {
   childProcess?: ChildProcess | undefined;
   /** Cluster mode: worker index -> pid, as reported by the cluster primary */
   workerPids: Map<number, number>;
+  /** Cluster mode: deploy steps waiting for the primary's answer, by id */
+  deployWaiters?: Map<string, (message: { ok: boolean; error?: string; pid?: number }) => void> | undefined;
   /** Latest SDK runtime metrics per instance ('' in fork mode, the worker index in cluster mode) */
   customMetrics: Map<string, MetricSnapshot[]>;
   stopTimeout?: NodeJS.Timeout | undefined;
@@ -768,6 +770,7 @@ export class ProcessManagerPlugin implements Plugin {
       if (proc.childProcess === child) {
         proc.workerPids.clear();
         proc.customMetrics.clear();
+        for (const waiter of proc.deployWaiters?.values() ?? []) waiter({ ok: false, error: 'the cluster primary exited' });
       }
       this.handleProcessExit(proc, code, signal);
     });
@@ -789,6 +792,11 @@ export class ProcessManagerPlugin implements Plugin {
       type?: string; event?: string; index?: number; pid?: number;
       source?: 'stdout' | 'stderr'; message?: string; code?: number | null; signal?: string | null;
     };
+    const deploy = message as { type?: string; id?: string; ok?: boolean; error?: string; pid?: number };
+    if (deploy.type === 'od:deploy' && typeof deploy.id === 'string') {
+      proc.deployWaiters?.get(deploy.id)?.({ ok: deploy.ok === true, ...(deploy.error === undefined ? {} : { error: deploy.error }), ...(deploy.pid === undefined ? {} : { pid: deploy.pid }) });
+      return;
+    }
     if (typeof msg.index !== 'number') return;
 
     const metrics = metricsFrom(message);
@@ -808,6 +816,7 @@ export class ProcessManagerPlugin implements Plugin {
       proc.workerPids.delete(msg.index);
       proc.customMetrics.delete(String(msg.index));
       this.logger.info(`Worker exited: ${proc.config.name}[${String(msg.index)}]`, { code: msg.code, signal: msg.signal });
+      this.context.events.emit('process:worker-exit', { name: proc.config.name, index: msg.index, code: msg.code, signal: msg.signal });
     } else if (msg.event === 'restart') {
       // Worker crash restarts count like process restarts, so `od list` shows the crash loop
       proc.restartCount++;
@@ -1116,6 +1125,19 @@ export class ProcessManagerPlugin implements Plugin {
     if (cpu !== undefined && !(typeof cpu === 'number' && cpu > 0)) {
       throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid maxCpu "${String(cpu)}" for "${config.name}" (a percentage above 0)`);
     }
+    const deploy = config.deploy;
+    if (deploy) {
+      if (deploy.strategy !== undefined && !(['rolling', 'blue-green', 'canary', 'recreate'] as string[]).includes(deploy.strategy)) {
+        throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid deploy strategy "${deploy.strategy as string}" for "${config.name}" (rolling, blue-green, canary or recreate)`);
+      }
+      const positive = (value: unknown): boolean => value === undefined || (typeof value === 'number' && Number.isFinite(value) && value > 0);
+      const percent = (value: unknown): boolean => typeof value === 'number' && value > 0 && value <= 100;
+      if (![deploy.maxSurge, deploy.switchTimeout, deploy.readyTimeout, deploy.timeout, deploy.canaryAnalysis?.duration].every(positive)
+        || (deploy.canaryPercent !== undefined && !percent(deploy.canaryPercent))
+        || (deploy.canarySteps !== undefined && !(deploy.canarySteps.length > 0 && deploy.canarySteps.every(percent)))) {
+        throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid deploy settings for "${config.name}" (times and maxSurge above 0, percentages from 1 to 100)`);
+      }
+    }
     for (const action of [config.limits?.memory?.action, config.limits?.cpu?.action]) {
       if (action !== undefined && !(['warn', 'restart', 'stop'] as string[]).includes(action)) {
         throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid limit action "${action}" for "${config.name}" (warn, restart or stop)`);
@@ -1150,6 +1172,96 @@ export class ProcessManagerPlugin implements Plugin {
       errorMessage: proc.statusReason ?? (proc.status === 'errored' ? 'Process exited with error' : undefined),
       env: {},
     };
+  }
+
+  /**
+   * Cluster deploys: the worker indices currently online
+   */
+  getWorkerIndices(name: string): number[] {
+    return [...(this.processes.get(name)?.workerPids.keys() ?? [])].sort((a, b) => a - b);
+  }
+
+  /**
+   * Send a deploy step to the cluster primary and wait for its answer
+   */
+  private clusterStep(name: string, message: { type: string; id: string } & Record<string, unknown>, timeoutMs: number): Promise<{ ok: boolean; error?: string; pid?: number }> {
+    const proc = this.processes.get(name);
+    const primary = proc?.childProcess;
+    if (!proc || proc.config.mode !== 'cluster' || !primary?.connected) {
+      return Promise.reject(new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, name, `Process "${name}" is not a running cluster`));
+    }
+    const waiters = proc.deployWaiters ??= new Map<string, (message: { ok: boolean; error?: string; pid?: number }) => void>();
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { waiters.delete(message.id); resolve({ ok: false, error: `no answer from the cluster primary after ${String(timeoutMs)}ms` }); }, timeoutMs);
+      waiters.set(message.id, (answer) => { clearTimeout(timer); waiters.delete(message.id); resolve(answer); });
+      primary.send(message);
+    });
+  }
+
+  /**
+   * Start a candidate worker for `index` running `release`; resolves once it is ready. The live
+   * worker keeps serving until `deployCommit`.
+   */
+  deployPrepare(name: string, id: string, index: number, release: Release, readyTimeout = 30000): Promise<{ ok: boolean; error?: string; pid?: number }> {
+    const proc = this.processes.get(name);
+    const base = proc?.config;
+    const spec = base ? this.releaseSpec(base, release) : {};
+    return this.clusterStep(name, { type: 'od:prepare', id, index, spec, timeout: readyTimeout }, readyTimeout + 5000);
+  }
+
+  deployCommit(name: string, id: string, drain?: number): Promise<{ ok: boolean; error?: string; pid?: number }> {
+    return this.clusterStep(name, { type: 'od:commit', id, ...(drain === undefined ? {} : { drain }) }, 10000);
+  }
+
+  deployAbort(name: string, id: string): Promise<{ ok: boolean; error?: string; pid?: number }> {
+    return this.clusterStep(name, { type: 'od:abort', id }, 10000);
+  }
+
+  /**
+   * The primary's view of a release: absolute script, arguments and the app's environment with the release's on top
+   */
+  private releaseSpec(config: ProcessConfig, release: Release): { script?: string; args?: string[]; env: Record<string, string>; version?: string } {
+    const merged: ProcessConfig = { ...config, ...(release.env ? { env: { ...config.env, ...release.env } } : {}) };
+    // Only the app's own variables: the workers inherit the rest from the primary
+    const resolved = this.buildEnv(merged);
+    const env = Object.fromEntries(Object.keys(merged.env ?? {}).map((key) => [key, resolved[key] ?? '']));
+    return {
+      ...(release.script === undefined ? {} : { script: resolve(release.script) }),
+      ...(release.args === undefined ? {} : { args: release.args }),
+      env,
+      // Always set, so a release without a label clears the previous one
+      version: release.version ?? '',
+    };
+  }
+
+  /**
+   * Make `release` the process's configuration: later (re)starts and crash restarts use it, and a
+   * running cluster's workers fork from it. Does not restart anything.
+   */
+  applyRelease(name: string, release: Release, replace = false): void {
+    const proc = this.processes.get(name);
+    if (!proc) throw new ProcessError(ErrorCode.PROCESS_NOT_FOUND, name, `Process "${name}" not found`);
+    // `replace` puts back exactly what a release changed (rollback), without leftovers
+    const { args: _args, env: _env, ...rest } = proc.config;
+    proc.config = replace
+      ? { ...rest, script: release.script ?? proc.config.script, ...(release.args === undefined ? {} : { args: release.args }), ...(release.env === undefined ? {} : { env: release.env }) }
+      : {
+        ...proc.config,
+        ...(release.script === undefined ? {} : { script: release.script }),
+        ...(release.args === undefined ? {} : { args: release.args }),
+        ...(release.env ? { env: { ...proc.config.env, ...release.env } } : {}),
+      };
+    const primary = proc.childProcess;
+    if (proc.config.mode === 'cluster' && primary?.connected) {
+      primary.send({
+        type: 'od:release',
+        spec: this.releaseSpec(proc.config, {
+          script: proc.config.script,
+          ...(proc.config.args === undefined ? {} : { args: proc.config.args }),
+          ...(release.version === undefined ? {} : { version: release.version }),
+        }),
+      });
+    }
   }
 
   /**

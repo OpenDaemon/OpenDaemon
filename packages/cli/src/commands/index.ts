@@ -273,11 +273,18 @@ export class StopCommand implements Command {
 export class RestartCommand implements Command {
   name = 'restart';
   description = 'Restart process(es)';
-  options = [];
+  options = [
+    { name: 'strategy', type: 'string' as const, description: 'Replace workers without downtime: rolling, blue-green or canary (cluster mode)' },
+  ];
 
-  async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
+  async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
     const name = args[0];
     if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
+
+    if (typeof options['strategy'] === 'string') {
+      await new DeployCommand().execute([name], options);
+      return;
+    }
 
     const spinner = term.spinner(`Restarting ${name}...`);
     spinner.start();
@@ -1091,5 +1098,119 @@ export class DaemonCommand implements Command {
       console.log(`  Status: ${status.status}`);
       console.log(`  Uptime: ${Math.floor(status.uptime)}s`);
     } catch { /* IPC not available */ }
+  }
+}
+
+/**
+ * Print the steps of a deploy as they happen, until it ends; exits non-zero unless it succeeded
+ */
+async function followDeploy(client: CliClient, name: string, json: boolean): Promise<void> {
+  interface State { state: string; strategy: string; steps: string[]; error?: string }
+  let shown = 0;
+  for (;;) {
+    const state = await client.deployStatus(name) as State | null;
+    if (!state) throw new Error(`No deploy of "${name}"`);
+    if (!json) {
+      for (const step of state.steps.slice(shown)) term.info(`  ${step}`);
+      shown = state.steps.length;
+    }
+    if (state.state !== 'running') {
+      if (json) console.log(JSON.stringify(state, null, 2));
+      if (state.state === 'succeeded') {
+        if (!json) term.success(`Deployed ${name} (${state.strategy})`);
+        return;
+      }
+      if (!json) term.error(`Deploy of ${name} ${state.state}: ${state.error ?? 'unknown error'}`);
+      process.exit(1);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
+/**
+ * Deploy command - replace a running app's code without downtime
+ */
+export class DeployCommand implements Command {
+  name = 'deploy';
+  description = 'Deploy a new release (rolling, blue-green, canary, recreate)';
+  options = [
+    { name: 'strategy', type: 'string' as const, description: 'rolling, blue-green, canary or recreate (default: the app\'s deploy.strategy)' },
+    { name: 'script', type: 'string' as const, description: 'New script (the release to run)' },
+    { name: 'env', type: 'array' as const, description: 'Environment overrides for the release (KEY=value)' },
+    { name: 'release', type: 'string' as const, description: 'Version label (workers see it as OD_RELEASE)' },
+    { name: 'json', type: 'boolean' as const, description: 'Output as JSON' },
+  ];
+
+  async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
+    const json = options['json'] === true;
+    try {
+      const client = new CliClient();
+      await client.connect();
+
+      // od deploy status [name]
+      if (args[0] === 'status') {
+        const state = await client.deployStatus(args[1]);
+        await client.disconnect();
+        if (json || state === null) console.log(JSON.stringify(state, null, 2));
+        else for (const s of Array.isArray(state) ? state : [state]) {
+          const d = s as { name: string; state: string; strategy: string; version?: string; startedAt: string; error?: string; steps: string[] };
+          term.info(`${d.name}  ${d.state}  ${d.strategy}${d.version ? `  ${d.version}` : ''}  started ${d.startedAt}`);
+          for (const step of d.steps.slice(-8)) term.info(`  ${step}`);
+          if (d.error) term.error(`  ${d.error}`);
+        }
+        return;
+      }
+
+      const name = args[0];
+      if (name === undefined) { term.error('Usage: od deploy <name> [--strategy s] [--script path] [--env K=V] [--release label]\n       od deploy status [name]'); process.exit(1); return; }
+
+      const env: Record<string, string> = {};
+      const envOption = options['env'];
+      for (const entry of Array.isArray(envOption) ? envOption : typeof envOption === 'string' ? [envOption] : []) {
+        const eq = entry.indexOf('=');
+        if (eq < 1) { term.error(`Invalid --env "${entry}" (expected KEY=value)`); process.exit(1); return; }
+        env[entry.slice(0, eq)] = entry.slice(eq + 1);
+      }
+      const release = {
+        ...(typeof options['script'] === 'string' ? { script: options['script'] } : {}),
+        ...(Object.keys(env).length > 0 ? { env } : {}),
+        ...(typeof options['release'] === 'string' ? { version: options['release'] } : {}),
+      };
+      await client.deployExecute({
+        name,
+        ...(typeof options['strategy'] === 'string' ? { strategy: options['strategy'] } : {}),
+        release,
+      });
+      await followDeploy(client, name, json);
+      await client.disconnect();
+    } catch (err) {
+      term.error(`Deploy failed: ${(err instanceof Error ? err : new Error(String(err))).message}`);
+      process.exit(1);
+    }
+  }
+}
+
+/**
+ * Rollback command - go back to the release from before the last deploy
+ */
+export class RollbackCommand implements Command {
+  name = 'rollback';
+  description = 'Roll back to the release before the last deploy';
+  options = [{ name: 'json', type: 'boolean' as const, description: 'Output as JSON' }];
+
+  async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
+    const name = args[0];
+    if (name === undefined) { term.error('Usage: od rollback <name>'); process.exit(1); return; }
+    try {
+      const client = new CliClient();
+      await client.connect();
+      await client.deployRollback(name);
+      await followDeploy(client, name, options['json'] === true);
+      await client.disconnect();
+    } catch (err) {
+      term.error(`Rollback failed: ${(err instanceof Error ? err : new Error(String(err))).message}`);
+      process.exit(1);
+    }
   }
 }

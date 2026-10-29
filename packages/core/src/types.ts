@@ -135,6 +135,43 @@ export type BackoffStrategy = 'fixed' | 'linear' | 'exponential';
  */
 export type ProcessMode = 'fork' | 'cluster';
 
+export type DeployStrategy = 'rolling' | 'blue-green' | 'canary' | 'recreate';
+
+/**
+ * What a deploy changes: the code (script, args) and environment workers run with
+ */
+export interface Release {
+  script?: string;
+  args?: string[];
+  /** Merged over the app's env */
+  env?: Record<string, EnvValue>;
+  /** Label shown in `od deploy status`; workers see it as OD_RELEASE */
+  version?: string;
+}
+
+/**
+ * How a new release replaces the running one (cluster mode, except `recreate`)
+ */
+export interface DeployConfig {
+  strategy?: DeployStrategy;
+  /** rolling: workers replaced at the same time (default 1). A new worker always starts before its predecessor stops */
+  maxSurge?: number;
+  /** canary: share of workers on the new release first, in percent (default 10) */
+  canaryPercent?: number;
+  /** canary: the ramp, ending in 100 (default [canaryPercent, 100]) */
+  canarySteps?: number[];
+  /** canary: how long each step is watched for crashes and failing health checks, in ms (default 10000) */
+  canaryAnalysis?: { duration?: number };
+  /** blue-green: how long the old workers may keep finishing requests after the switch, in ms (default killTimeout) */
+  switchTimeout?: number;
+  /** Per new worker: how long it may take to become ready (listening, `ready` message or stable), in ms (default 30000) */
+  readyTimeout?: number;
+  /** Put the previous release back when a deploy fails (default true) */
+  rollbackOnFailure?: boolean;
+  /** Longest a whole deploy may take, in ms (default 300000) */
+  timeout?: number;
+}
+
 /**
  * Process configuration
  */
@@ -157,6 +194,7 @@ export interface ProcessConfig {
   /** Shorthand for limits.cpu { max, action: 'warn', duration: 60000 } */
   maxCpu?: number;
   limits?: ResourceLimits;
+  deploy?: DeployConfig;
 
   // Lifecycle
   autoRestart?: boolean | RestartStrategy;

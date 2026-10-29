@@ -259,6 +259,7 @@ export class ApiServerPlugin implements Plugin {
   /** RPC errors are mostly the caller's doing; only a lost connection is the server's */
   private rpcStatus(err: Error): number {
     if (/not found/i.test(err.message)) return 404;
+    if (/already running/i.test(err.message)) return 409;
     if (/not connected|ECONN|ENOENT|timeout/i.test(err.message)) return 502;
     return 400;
   }
@@ -305,6 +306,12 @@ export class ApiServerPlugin implements Plugin {
       if (method === 'PUT' && (action === 'stop' || action === 'restart')) return this.rpc(action, { name });
       // A reload restarts the process so it picks up its current configuration
       if (method === 'PUT' && action === 'reload') return this.rpc('restart', { name });
+      if (action === 'deploy' && method === 'GET') return this.rpc('deploy.status', { name });
+      if (action === 'deploy' && method === 'POST') {
+        const { strategy, release } = await this.readJson(req);
+        return this.rpc('deploy.execute', { name, strategy, release });
+      }
+      if (action === 'rollback' && method === 'PUT') return this.rpc('deploy.rollback', { name });
       if (method === 'PUT' && action === 'scale') {
         const { instances } = await this.readJson(req);
         return this.rpc('scale', { name, instances });
@@ -395,6 +402,7 @@ export class ApiServerPlugin implements Plugin {
       'process:started', 'process:stopped', 'process:exit', 'process:crash', 'process:error',
       'process:memory-limit', 'process:cpu-limit',
       'health:status:healthy', 'health:status:unhealthy', 'health:action:restart', 'health:action:stop',
+      'deploy:started', 'deploy:progress', 'deploy:succeeded', 'deploy:failed',
       'watch:change', 'cron:run', 'cron:finish', 'config:reloaded', 'daemon:ready', 'daemon:stopped',
     ];
     const offs = sources.map((event) => this.context.events.on(event, (data: unknown) => { this.broadcast(event, data); }));

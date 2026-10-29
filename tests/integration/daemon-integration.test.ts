@@ -173,7 +173,7 @@ describe('Daemon Entry Point Integration', () => {
       await main();
       
       const names = mockKernelRegisterPlugin.mock.calls.map((call) => (call[0] as { name: string }).name);
-      expect(names).toEqual(['audit-logger', 'config-manager', 'secret-manager', 'log-manager', 'process-manager', 'health-check', 'metrics-collector', 'watch-mode', 'scheduler', 'notification', 'webui', 'api-server']);
+      expect(names).toEqual(['audit-logger', 'config-manager', 'secret-manager', 'log-manager', 'process-manager', 'deploy-strategy', 'health-check', 'metrics-collector', 'watch-mode', 'scheduler', 'notification', 'webui', 'api-server']);
     });
 
     it('should start kernel', async () => {

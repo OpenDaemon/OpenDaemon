@@ -42,7 +42,7 @@ export function redact(value: unknown, key = '', depth = 0): unknown {
  * RPC methods that only read state: skipped unless `includeReads` is set, since they dominate
  * the log (the dashboard polls them every second) and say nothing about what changed
  */
-const READ_ONLY = new Set(['list', 'info', 'logs', 'logs.query', 'logs.follow', 'health', 'metrics', 'cron', 'daemon.status', 'get']);
+const READ_ONLY = new Set(['list', 'info', 'logs', 'logs.query', 'logs.follow', 'health', 'metrics', 'cron', 'daemon.status', 'get', 'deploy.status']);
 
 /**
  * Process lifecycle events recorded alongside RPC calls: event -> audit action
@@ -56,6 +56,9 @@ const LIFECYCLE: Array<[string, string]> = [
   ['health:action:restart', 'health.restart'],
   ['health:action:stop', 'health.stop'],
   ['watch:change', 'watch.restart'],
+  ['deploy:started', 'deploy.started'],
+  ['deploy:succeeded', 'deploy.succeeded'],
+  ['deploy:failed', 'deploy.failed'],
   ['cron:run', 'cron.run'],
   ['config:reloaded', 'config.reloaded'],
   ['daemon:ready', 'daemon.started'],

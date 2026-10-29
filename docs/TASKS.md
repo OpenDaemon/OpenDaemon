@@ -515,7 +515,7 @@ Phase 9: Final Polish
 - [x] TUI dashboard
 - [x] Watch mode
 - [x] Scheduler
-- [ ] Deploy strategies
+- [x] Deploy strategies (rolling, blue-green, canary, recreate; no a-b: needs request routing)
 
 ---
 
