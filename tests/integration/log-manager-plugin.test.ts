@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { LogManagerPlugin } from '../../packages/plugins/log-manager/src/index.js';
@@ -153,5 +153,29 @@ describe('LogManagerPlugin', () => {
     const files = readdirSync(join(dir, 'logs')).sort();
     expect(files).toEqual(['big-out.log', 'small-out.log', 'small-out.log.1']);
     expect(existsSync(join(dir, 'logs', 'small-out.log.2'))).toBe(false);
+  });
+
+  it('should apply maxAge from the plugin config, and warn about invalid interval and maxAge', () => {
+    plugin.onStop();
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    plugin = install({ maxAge: '1d', interval: 'weekly' });
+    expect(warn).toHaveBeenCalledWith('Ignoring invalid log interval "weekly" (hourly or daily)');
+
+    processConfigs.set('old', { name: 'old', script: 'x.js', logRotation: { maxAge: 'soon' } });
+    mkdirSync(join(dir, 'logs'), { recursive: true });
+    const stale = join(dir, 'logs', 'web-out.log.1');
+    const fresh = join(dir, 'logs', 'web-out.log.2');
+    writeFileSync(stale, 'x\n');
+    writeFileSync(fresh, 'x\n');
+    const longAgo = Date.now() / 1000 - 3 * 86400;
+    utimesSync(stale, longAgo, longAgo);
+
+    log('web', 'hello');
+    log('old', 'hello');
+    plugin.onStop();
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    expect(warn).toHaveBeenCalledWith('Ignoring invalid log maxAge "soon"');
+    warn.mockRestore();
   });
 });

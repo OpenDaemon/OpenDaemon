@@ -252,6 +252,9 @@ export interface LogRotationConfig {
   enabled?: boolean;
   maxSize?: string | number;
   maxFiles?: number;
+  /** Rotate when the hour or day changes, in addition to maxSize */
+  interval?: 'hourly' | 'daily';
+  /** Delete rotated files older than this: milliseconds or '12h', '7d' */
   maxAge?: string | number;
   compress?: boolean;
   directory?: string;

@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   renameSync,
   statSync,
@@ -10,7 +11,7 @@ import {
   writeFileSync,
   writeSync,
 } from 'fs';
-import { dirname } from 'path';
+import { basename, dirname, join } from 'path';
 import { gunzipSync, gzipSync } from 'zlib';
 import type { ProcessLogEntry } from '../../../core/src/index.js';
 
@@ -22,6 +23,17 @@ export interface RotationOptions {
   maxFiles: number;
   /** gzip rotated files (name.log.1.gz) */
   compress: boolean;
+  /** Also rotate when the local hour or day changes */
+  interval?: 'hourly' | 'daily';
+  /** Delete rotated files not modified for this many milliseconds */
+  maxAge?: number;
+}
+
+/** Local-time bucket a timestamp falls into, so a change of key means a new hour or day */
+function periodKey(interval: 'hourly' | 'daily', time: number): string {
+  const d = new Date(time);
+  const day = `${String(d.getFullYear())}-${String(d.getMonth())}-${String(d.getDate())}`;
+  return interval === 'hourly' ? `${day}-${String(d.getHours())}` : day;
 }
 
 /**
@@ -36,8 +48,10 @@ export class LogFile {
   private size = 0;
   private pending: string[] = [];
   private scheduled = false;
+  /** When the active file was last written (its mtime until this instance writes) */
+  private lastWrite = 0;
 
-  constructor(readonly path: string, private readonly options: RotationOptions) {}
+  constructor(readonly path: string, private readonly options: RotationOptions, private readonly clock: () => number = Date.now) {}
 
   write(line: string): void {
     this.pending.push(`${line}\n`);
@@ -56,13 +70,17 @@ export class LogFile {
     this.pending = [];
 
     const fd = this.open();
-    if (this.options.enabled && this.size > 0 && this.size + data.length > this.options.maxSize) {
+    const now = this.clock();
+    const { interval } = this.options;
+    const newPeriod = interval !== undefined && this.size > 0 && periodKey(interval, this.lastWrite) !== periodKey(interval, now);
+    if (this.options.enabled && this.size > 0 && (newPeriod || this.size + data.length > this.options.maxSize)) {
       this.rotate();
       writeSync(this.open(), data);
     } else {
       writeSync(fd, data);
     }
     this.size += data.length;
+    this.lastWrite = now;
   }
 
   close(): void {
@@ -94,7 +112,10 @@ export class LogFile {
     if (this.fd === undefined) {
       mkdirSync(dirname(this.path), { recursive: true });
       this.fd = openSync(this.path, 'a');
-      this.size = statSync(this.path).size;
+      const stat = statSync(this.path);
+      this.size = stat.size;
+      this.lastWrite = stat.size > 0 ? stat.mtimeMs : this.clock();
+      this.prune();
     }
     return this.fd;
   }
@@ -124,6 +145,26 @@ export class LogFile {
       renameSync(this.path, `${this.path}.1`);
     }
     this.size = 0;
+    this.prune();
+  }
+
+  /**
+   * Delete rotated files that have not changed within maxAge
+   */
+  private prune(): void {
+    const { maxAge } = this.options;
+    if (maxAge === undefined || !this.options.enabled) return;
+    const prefix = `${basename(this.path)}.`;
+    const cutoff = this.clock() - maxAge;
+    for (const file of readdirSync(dirname(this.path))) {
+      if (!file.startsWith(prefix) || !/^\d+(\.gz)?$/.test(file.slice(prefix.length))) continue;
+      const full = join(dirname(this.path), file);
+      try {
+        if (statSync(full).mtimeMs < cutoff) unlinkSync(full);
+      } catch {
+        // already gone
+      }
+    }
   }
 }
 

@@ -277,7 +277,7 @@ od logs api --json | jq .message   # raw entries
 od flush api                       # empty api's log files
 ```
 
-Rotation is size-based. Set the defaults under `plugins.log-manager`, and override them per app with `logRotation`:
+Rotation is by size, by time, or both. Set the defaults under `plugins.log-manager`, and override them per app with `logRotation`:
 
 ```yaml
 plugins:
@@ -285,6 +285,8 @@ plugins:
     maxSize: 10M      # rotate when a file would pass this size (default 10M)
     maxFiles: 5       # rotated files to keep: name.log.1 ... name.log.5 (default 5)
     compress: true    # gzip rotated files (default true)
+    interval: daily   # also rotate when the local day (daily) or hour (hourly) changes (default: off)
+    maxAge: 7d        # delete rotated files not modified for this long: 30m, 12h, 7d, 2w (default: keep)
 apps:
   - name: chatty
     script: ./chatty.js
@@ -293,7 +295,7 @@ apps:
       enabled: true   # false: never rotate
 ```
 
-Time-based rotation, retention by age and WebSocket streaming are not implemented yet.
+Live log streaming over WebSocket is part of the API server (`log:<name>`, see REST API & WebSocket).
 
 ## Metrics
 

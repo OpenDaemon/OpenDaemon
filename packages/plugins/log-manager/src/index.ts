@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'fs';
 import { join, resolve } from 'path';
-import { encodeFrame, FrameType, parseBytes, serialize } from '../../../core/src/index.js';
+import { encodeFrame, FrameType, parseBytes, parseDuration, serialize } from '../../../core/src/index.js';
 import type {
   Plugin,
   PluginContext,
@@ -213,11 +213,24 @@ export class LogManagerPlugin implements Plugin {
     if (config.maxSize !== undefined && maxSize === undefined) {
       this.context.logger.warn(`Ignoring invalid log maxSize "${String(config.maxSize)}"`);
     }
-    return {
+    const maxAge = config.maxAge === undefined ? undefined : parseDuration(config.maxAge);
+    if (config.maxAge !== undefined && maxAge === undefined) {
+      this.context.logger.warn(`Ignoring invalid log maxAge "${String(config.maxAge)}"`);
+    }
+    const interval = config.interval === 'hourly' || config.interval === 'daily' ? config.interval : undefined;
+    if (config.interval !== undefined && interval === undefined) {
+      this.context.logger.warn(`Ignoring invalid log interval ${JSON.stringify(config.interval)} (hourly or daily)`);
+    }
+    const options: RotationOptions = {
       enabled: config.enabled ?? base.enabled,
       maxSize: maxSize ?? base.maxSize,
       maxFiles: config.maxFiles ?? base.maxFiles,
       compress: config.compress ?? base.compress,
     };
+    const finalInterval = interval ?? base.interval;
+    const finalAge = maxAge ?? base.maxAge;
+    if (finalInterval !== undefined) options.interval = finalInterval;
+    if (finalAge !== undefined) options.maxAge = finalAge;
+    return options;
   }
 }

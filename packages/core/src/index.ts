@@ -68,6 +68,7 @@ export type {
 // Utilities
 export { Logger, LogLevel, type LogEntry, type LogHandler } from './utils/logger.js';
 export { parseBytes } from './utils/bytes.js';
+export { parseDuration } from './utils/duration.js';
 export { dependencyLevels, type DependencyNode } from './utils/dependencies.js';
 export { parseCron, nextRun, assertTimeZone, type CronSchedule } from './utils/cron.js';
 
