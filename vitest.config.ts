@@ -24,13 +24,14 @@ export default defineConfig({
         '**/*.config.*',
         '**/types.ts',
       ],
-      // Ratchet: set just below the measured level (2026-10-27: 84/88/90/84) so
-      // regressions fail CI; raise as coverage grows toward the 100% goal
+      // Ratchet: set just below the lowest measured level so regressions fail CI; raise as
+      // coverage grows toward the 100% goal. Windows measures lower (2026-10-29: 85.7/86.8/93.3)
+      // because the cluster and deploy tests are skipped there
       thresholds: {
-        lines: 86,
+        lines: 85,
         functions: 92,
-        branches: 87,
-        statements: 86,
+        branches: 86,
+        statements: 85,
       },
     },
   },
