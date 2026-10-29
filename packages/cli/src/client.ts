@@ -91,17 +91,17 @@ export class CliClient {
   /**
    * Stop a process
    */
-  async stopProcess(name: string, signal?: string, timeout?: number): Promise<void> {
+  async stopProcess(name: string, signal?: string, timeout?: number, cascade?: boolean): Promise<void> {
     this.ensureConnected();
-    await this.client.call('stop', { name, signal, timeout });
+    await this.client.call('stop', { name, signal, timeout, cascade });
   }
 
   /**
    * Restart a process
    */
-  async restartProcess(name: string): Promise<unknown> {
+  async restartProcess(name: string, cascade?: boolean): Promise<unknown> {
     this.ensureConnected();
-    return this.client.call('restart', { name });
+    return this.client.call('restart', { name, cascade });
   }
 
   /**

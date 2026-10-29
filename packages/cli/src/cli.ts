@@ -103,6 +103,7 @@ async function main(): Promise<void> {
     description: 'Environment variable for the process (KEY=value), repeatable',
   });
 
+  parser.addOption({ name: 'cascade', type: 'boolean', description: 'od stop / restart: include the apps that depend on it' });
   parser.addOption({ name: 'strategy', type: 'string', description: 'od deploy / restart: rolling, blue-green, canary or recreate' });
   parser.addOption({ name: 'script', type: 'string', description: 'od deploy: the new script to run' });
   parser.addOption({ name: 'release', type: 'string', description: 'od deploy: version label' });

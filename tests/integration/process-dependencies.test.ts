@@ -138,4 +138,57 @@ describe('process dependencies', () => {
     await pm.onStop();
     expect(stopped).toEqual(['adhoc', 'gateway', 'api', 'db']);
   });
+
+  describe('cascade', () => {
+    const chain = (): ProcessConfig[] => [
+      app('gateway', { dependencies: ['api'] }),
+      app('api', { dependencies: ['database'] }),
+      app('database'),
+      app('other'),
+    ];
+
+    it('should stop dependents before what they depend on, and leave unrelated apps running', async () => {
+      await startWith(chain());
+      await waitFor(() => started.length === 4);
+      stopped.length = 0;
+
+      expect(await methods.get('stop')!({ name: 'database', cascade: true })).toEqual(['gateway', 'api', 'database']);
+      expect(stopped).toEqual(['gateway', 'api', 'database']);
+      expect((await info('other'))?.status).toBe('online');
+    });
+
+    it('should stop only the app itself without cascade', async () => {
+      await startWith(chain());
+      await waitFor(() => started.length === 4);
+      stopped.length = 0;
+
+      await methods.get('stop')!({ name: 'database' });
+      expect(stopped).toEqual(['database']);
+      expect((await info('api'))?.status).toBe('online');
+    });
+
+    it('should restart the dependents in dependency order once their dependency is ready', async () => {
+      await startWith(chain());
+      await waitFor(() => started.length === 4);
+      stopped.length = 0;
+      started.length = 0;
+
+      await methods.get('restart')!({ name: 'database', cascade: true });
+      expect(stopped).toEqual(['gateway', 'api', 'database']);
+      expect(started).toEqual(['database', 'api', 'gateway']);
+      expect((await info('gateway'))?.status).toBe('online');
+    });
+
+    it('should leave a dependent that was already stopped alone', async () => {
+      await startWith([...chain().slice(0, 3), app('late', { dependencies: ['database'], dependencyTimeout: 200 })]);
+      await waitFor(() => started.length === 4);
+      await methods.get('stop')!({ name: 'gateway' });
+      started.length = 0;
+
+      await methods.get('restart')!({ name: 'database', cascade: true });
+      expect(started[0]).toBe('database');
+      expect([...started].sort()).toEqual(['api', 'database', 'late']);
+      expect((await info('gateway'))?.status).toBe('stopped');
+    });
+  });
 });

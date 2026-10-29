@@ -343,30 +343,73 @@ export class ProcessManagerPlugin implements Plugin {
   /**
    * Stop a process
    */
-  private async stopProcess(params: { name: string; signal?: string; timeout?: number }): Promise<void> {
+  private async stopProcess(params: { name: string; signal?: string; timeout?: number; cascade?: boolean }): Promise<string[]> {
     const proc = this.processes.get(params.name);
     if (!proc) {
       throw new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`);
     }
 
+    // Dependents go first, so nothing is left running against a dependency that is gone
+    const stopped: string[] = [];
+    for (const dependent of params.cascade === true ? this.runningDependents(params.name) : []) {
+      await this.stopProcessInternal(dependent, params.signal ?? 'SIGTERM', params.timeout ?? (dependent.config.killTimeout ?? 5000));
+      stopped.push(dependent.config.name);
+    }
     await this.stopProcessInternal(
       proc,
       params.signal ?? 'SIGTERM',
       params.timeout ?? (proc.config.killTimeout ?? 5000)
     );
+    return [...stopped, params.name];
   }
 
   /**
-   * Restart a process
+   * Running apps that depend on `name`, directly or not, ordered so each comes before what it
+   * depends on (the order to stop them in; reverse it to start them)
    */
-  private async restartProcess(params: { name: string }): Promise<ProcessInfo> {
+  private runningDependents(name: string): ManagedProcessInfo[] {
+    const ordered: ManagedProcessInfo[] = [];
+    const seen = new Set<string>([name]);
+    const visit = (target: string): void => {
+      for (const proc of this.processes.values()) {
+        const dependent = proc.config.name;
+        if (seen.has(dependent) || !(proc.config.dependencies ?? []).includes(target)) continue;
+        seen.add(dependent);
+        visit(dependent);
+        if (proc.status === 'online' || proc.status === 'starting') ordered.push(proc);
+      }
+    };
+    visit(name);
+    return ordered;
+  }
+
+  /**
+   * Restart a process; with `cascade`, the apps that depend on it are stopped first and started
+   * again, in dependency order, once it is ready
+   */
+  private async restartProcess(params: { name: string; cascade?: boolean }): Promise<ProcessInfo> {
     const proc = this.processes.get(params.name);
     if (!proc) {
       throw new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`);
     }
 
+    const dependents = params.cascade === true ? this.runningDependents(params.name) : [];
+    const configs = dependents.map((dependent) => dependent.config);
+    for (const dependent of dependents) {
+      await this.stopProcessInternal(dependent, 'SIGTERM', dependent.config.killTimeout ?? 5000);
+    }
     await this.stopProcessInternal(proc, 'SIGTERM', proc.config.killTimeout ?? 5000);
-    return this.startProcess(proc.config);
+    const info = await this.startProcess(proc.config);
+
+    for (const config of configs.reverse()) {
+      const notReady = await this.waitForDependencies(config.dependencies ?? [], config.dependencyTimeout ?? 60000);
+      if (notReady !== undefined) {
+        this.markErrored(config, `dependency "${notReady}" did not become ready`);
+        continue;
+      }
+      await this.startProcess(config);
+    }
+    return info;
   }
 
   /**
@@ -1298,7 +1341,7 @@ export class ProcessManagerPlugin implements Plugin {
    * Stop a process (for WebUI and other plugins)
    */
   async stopProcessFromPlugin(name: string): Promise<void> {
-    return this.stopProcess({ name });
+    await this.stopProcess({ name });
   }
 
   /**

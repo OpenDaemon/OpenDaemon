@@ -341,6 +341,7 @@ apps:
 | `od restart <name>` | Restart a process |
 | `od delete <name>` | Delete a process |
 | `od scale <name> <n\|max>` | Change the number of cluster workers without a restart |
+| `od stop <name> --cascade` / `od restart <name> --cascade` | Also stop (dependents first) or restart (dependents after it is ready) the apps that depend on it |
 | `od deploy <name>` / `od deploy status` / `od rollback <name>` | Zero-downtime deploys: `--strategy`, `--script`, `--env`, `--release` (see Deployments) |
 | `od list` / `od ls` | List all processes (`--json`, `-q`) |
 | `od info <name>` | Detailed process info (CPU, memory, PID, uptime) |

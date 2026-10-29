@@ -244,9 +244,12 @@ export class StartCommand implements Command {
 export class StopCommand implements Command {
   name = 'stop';
   description = 'Stop process(es)';
-  options = [{ name: 'json', type: 'boolean' as const, description: 'Output as JSON' }];
+  options = [
+    { name: 'json', type: 'boolean' as const, description: 'Output as JSON' },
+    { name: 'cascade', type: 'boolean' as const, description: 'Stop the apps that depend on it first' },
+  ];
 
-  async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
+  async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
     const name = args[0];
     if (name === undefined) { term.error('No process name specified'); process.exit(1); return; }
 
@@ -256,7 +259,7 @@ export class StopCommand implements Command {
     try {
       const client = new CliClient();
       await client.connect();
-      await client.stopProcess(name);
+      await client.stopProcess(name, undefined, undefined, options['cascade'] === true);
       await client.disconnect();
       spinner.stop(true, `Stopped ${name}`);
     } catch (err) {
@@ -275,6 +278,7 @@ export class RestartCommand implements Command {
   description = 'Restart process(es)';
   options = [
     { name: 'strategy', type: 'string' as const, description: 'Replace workers without downtime: rolling, blue-green or canary (cluster mode)' },
+    { name: 'cascade', type: 'boolean' as const, description: 'Also restart the apps that depend on it, once it is ready' },
   ];
 
   async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
@@ -292,7 +296,7 @@ export class RestartCommand implements Command {
     try {
       const client = new CliClient();
       await client.connect();
-      await client.restartProcess(name);
+      await client.restartProcess(name, options['cascade'] === true);
       await client.disconnect();
       spinner.stop(true, `Restarted ${name}`);
     } catch (err) {
