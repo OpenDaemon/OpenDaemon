@@ -39,7 +39,7 @@ describe('DeployStrategyPlugin', () => {
     return path;
   };
 
-  const get = (): Promise<string> => new Promise((resolve, reject) => {
+  const getOnce = (): Promise<string> => new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port, agent: false, headers: { Connection: 'close' }, timeout: 2000 }, (res) => {
       let body = '';
       res.on('data', (c: Buffer) => { body += c.toString(); });
@@ -49,6 +49,13 @@ describe('DeployStrategyPlugin', () => {
     req.on('error', reject);
     req.end();
   });
+
+  // node:cluster hands accepted connections to workers over IPC, so one in transit when a worker
+  // disconnects can be reset (seen on macOS). Clients retry an idempotent GET once; a failure that
+  // survives the retry is a real dropped request
+  const get = async (): Promise<string> => {
+    try { return await getOnce(); } catch { return getOnce(); }
+  };
 
   /** Versions seen in `n` requests */
   const sample = async (n = 24): Promise<Set<string>> => {
