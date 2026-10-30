@@ -16,7 +16,17 @@ describe.skipIf(process.platform === 'win32')('daemon main() (real)', () => {
   let exit: { mockRestore: () => void };
 
   beforeAll(async () => {
-    writeFileSync(join(home, 'opendaemon.config.json'), JSON.stringify({ plugins: { webui: { port: 0 } } }));
+    writeFileSync(join(home, 'opendaemon.config.json'), JSON.stringify({
+      plugins: { webui: { port: 0 }, 'ext-hello': { greeting: 'hi' } },
+      extensions: ['./ext-hello.mjs', './ext-broken.mjs', './ext-clash.mjs'],
+    }));
+    writeFileSync(join(home, 'ext-hello.mjs'), `
+      export default class Hello {
+        name = 'ext-hello'; version = '0.1.0';
+        install(context) { context.registerMethod('hello', () => ({ config: context.pluginConfig })); }
+      }`);
+    writeFileSync(join(home, 'ext-broken.mjs'), 'throw new Error("boom");');
+    writeFileSync(join(home, 'ext-clash.mjs'), "export const plugin = { name: 'process-manager', version: '1', install() {} };");
     process.env['OPENDAEMON_HOME'] = join(home, 'state');
     process.chdir(home);
     exitCode = new Promise((resolve) => {
@@ -47,6 +57,16 @@ describe.skipIf(process.platform === 'win32')('daemon main() (real)', () => {
     const status = await client.getDaemonStatus() as { pid: number; status: string };
     expect(status.pid).toBe(process.pid);
     expect(await client.listProcesses()).toEqual([]);
+    await client.disconnect();
+  });
+
+  it('should load extensions from the config, skipping the ones that fail', async () => {
+    const { IpcClient } = await import('@opendaemon/core');
+    const authToken = readFileSync(join(home, 'state', 'auth-token'), 'utf-8').trim();
+    const client = new IpcClient({ socketPath: join(home, 'state', 'opendaemon.sock'), timeout: 3000, authToken });
+    await client.connect();
+    expect(await client.call('hello')).toEqual({ config: { greeting: 'hi' } });
+    expect(await client.call('list')).toEqual([]); // the real process-manager was not replaced
     await client.disconnect();
   });
 

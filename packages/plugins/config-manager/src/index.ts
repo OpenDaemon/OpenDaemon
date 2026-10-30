@@ -3,7 +3,7 @@ import { Logger } from '../../../core/src/index.js';
 import { ConfigError, ErrorCode, dependencyLevels, parseCron, assertTimeZone } from '../../../core/src/index.js';
 import type { DaemonConfig, ProcessConfig } from '../../../core/src/index.js';
 import { readFileSync, existsSync } from 'fs';
-import { resolve, extname } from 'path';
+import { dirname, resolve, extname } from 'path';
 import { pathToFileURL } from 'url';
 import { parseYaml } from './yaml.js';
 
@@ -77,6 +77,14 @@ export class ConfigManagerPlugin implements Plugin {
    */
   private getConfig(): DaemonConfig {
     return this.loadedConfig;
+  }
+
+  /**
+   * Directory of the loaded config file, for resolving relative paths; the working directory
+   * when the configuration came from defaults
+   */
+  configDirectory(): string {
+    return this.configPath ? dirname(this.configPath) : process.cwd();
   }
 
   /**
@@ -318,6 +326,14 @@ export class ConfigManagerPlugin implements Plugin {
       } catch (err) {
         throw new ConfigError(ErrorCode.CONFIG_VALIDATION_ERROR, (err as Error).message);
       }
+    }
+
+    if (cfg.extensions !== undefined
+      && (!Array.isArray(cfg.extensions) || cfg.extensions.some((e) => typeof e !== 'string' || e === ''))) {
+      throw new ConfigError(
+        ErrorCode.CONFIG_VALIDATION_ERROR,
+        'extensions must be an array of module paths or package names'
+      );
     }
 
     // Apply defaults

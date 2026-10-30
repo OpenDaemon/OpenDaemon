@@ -2,7 +2,7 @@
 
 Every feature of OpenDaemon is a plugin. This guide shows how the built-in ones are put together, so you can add your own.
 
-> The daemon registers a fixed list of plugins in `packages/cli/src/daemon.ts`. Loading third-party plugins from the config file is not implemented yet: a new plugin is added to that list.
+> Built-in plugins are registered in `packages/cli/src/daemon.ts`. Your own plugin does not need to be: list it under `extensions` in the config file (see [Loading your plugin](#loading-your-plugin)).
 
 ## Shape of a plugin
 
@@ -86,3 +86,34 @@ plugin.install(context);
 ```
 
 Then call `methods.get('hello')` and emit events on `context.events`. Add the plugin's `src` to the coverage `include` in `vitest.config.ts`.
+
+## Loading your plugin
+
+Name the module under `extensions` in the config file. A path is relative to the config file, a bare name is a package resolved from the config file's directory:
+
+```yaml
+extensions:
+  - ./plugins/hello.mjs
+  - opendaemon-plugin-pagerduty
+plugins:
+  hello:                 # the settings arrive as context.pluginConfig
+    greeting: hi
+```
+
+The module exports the plugin as its default (or as a named `plugin`): an instance, a class with a no-argument constructor, or a function that returns one (it may be async).
+
+```js
+// plugins/hello.mjs
+export default class Hello {
+  name = 'hello';
+  version = '1.0.0';
+  install(context) {
+    context.registerMethod('hello', () => ({ greeting: context.pluginConfig?.greeting ?? 'hello' }));
+  }
+}
+```
+
+- Extensions are registered after the built-in plugins, in the order listed, so they can reach the built-in ones with `context.getPlugin(...)`. A plugin name that is already taken is refused.
+- An extension that cannot be loaded (missing file, error on import, not a plugin, name taken) is logged and skipped; the daemon starts without it.
+- Extensions run inside the daemon with its privileges, so load only code you trust. The config file is as sensitive as the code it points to.
+- Changes to `extensions` take effect when the daemon restarts.

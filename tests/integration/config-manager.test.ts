@@ -90,6 +90,7 @@ describe('ConfigManagerPlugin.load', () => {
     ['an app without a script', JSON.stringify({ apps: [{ name: 'x' }] }), /must have a script/],
     ['a non-object app entry', JSON.stringify({ apps: [null] }), /must be an object/],
     ['apps that is not an array', JSON.stringify({ apps: {} }), /apps must be an array/],
+    ['extensions that is not a list of names', JSON.stringify({ extensions: ['ok', 3] }), /extensions must be an array/],
     ['malformed JSON', '{ nope', /Failed to parse JSON config/],
     ['circular dependencies', JSON.stringify({ apps: [
       { name: 'a', script: './a.js', dependencies: ['b'] }, { name: 'b', script: './b.js', dependencies: ['a'] },

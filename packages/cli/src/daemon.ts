@@ -19,6 +19,7 @@ import { AuditLoggerPlugin } from '../../plugins/audit-logger/src/index.js';
 import { readFileSync, writeFileSync, existsSync, unlinkSync, chmodSync } from 'fs';
 import { randomBytes } from 'crypto';
 import { ensureHome, runtimePaths } from './paths.js';
+import { loadExtensions } from './extensions.js';
 
 /**
  * Remove the PID file (only if it is ours) and the IPC token file
@@ -131,6 +132,16 @@ export async function main(): Promise<void> {
         throw err;
       }
     }));
+
+    // Third-party plugins from `extensions`; the daemon runs without the ones that fail to load
+    if (config.extensions?.length) {
+      const loaded = await loadExtensions(config.extensions, configManager.configDirectory(), (name) => kernel.getPlugin(name) !== undefined);
+      for (const plugin of loaded.plugins) {
+        kernel.registerPlugin(plugin);
+        logger.info(`Extension loaded: ${plugin.name}@${plugin.version}`);
+      }
+      for (const { extension, message } of loaded.errors) logger.error(`Extension "${extension}" not loaded: ${message}`);
+    }
 
     // Start kernel with configuration
     await kernel.start(config);

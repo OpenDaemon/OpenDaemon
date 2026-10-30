@@ -474,7 +474,7 @@ Limits: OpenDaemon has no request router, so a canary's share of traffic is its 
 
 ## Guides
 
-- [Plugin development](docs/guides/plugin-development.md)
+- [Plugin development](docs/guides/plugin-development.md) (including loading your own plugins with `extensions`)
 - [Migrating from PM2](docs/guides/migrating-from-pm2.md)
 
 ## Architecture

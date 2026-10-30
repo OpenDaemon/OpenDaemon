@@ -322,6 +322,12 @@ export interface DaemonConfig {
   defaults?: Partial<ProcessConfig>;
   apps?: ProcessConfig[];
   plugins?: Record<string, unknown>;
+  /**
+   * Third-party plugins to load: a module path (relative to the config file) or package name.
+   * The module's default export is a Plugin, a Plugin class, or a factory returning a Plugin;
+   * its settings come from `plugins.<plugin name>`.
+   */
+  extensions?: string[];
 }
 
 /**
