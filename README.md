@@ -356,7 +356,7 @@ apps:
 | `od status` | Daemon & process status overview |
 | `od audit` | Audit log (`--lines N`, `--json`) |
 | `od startup` / `od unstartup` | Install or remove the boot service (`--print`, `--enable`, `--system`) |
-| `od monit` | Live terminal dashboard: processes, CPU/memory sparklines, health, logs; `r` restart, `s` stop |
+| `od monit` | Live terminal dashboard: processes, CPU/memory sparklines, health, logs; `r` restart, `s` stop, `/` filter (name, mode or status; Enter keeps, Esc clears), sort with `i` id, `n` name, `c` CPU, `m` memory, `t` restarts, `u` uptime, `S` status (press again to reverse) |
 | `od daemon start\|stop\|restart\|status` | Manage the daemon |
 | `od help` | Show help |
 

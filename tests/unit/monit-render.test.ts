@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  fit, visibleLength, sparkline, formatBytes, formatUptime, handleKey, recordHistory, render,
+  fit, visibleLength, sparkline, formatBytes, formatUptime, handleKey, recordHistory, render, visibleProcesses, selectedProcess,
   type MonitState, type MonitProcess,
 } from '../../packages/cli/src/tui/render.js';
 
@@ -103,7 +103,7 @@ describe('render', () => {
     expect(text).toContain('CPU    ▁▅█  12.5%  peak 100.0%');
     expect(text).toContain('Health: no health check');
     expect(text).toContain('14:23:01 api Request processed in 12ms');
-    expect(text.split('\n').at(-1)).toContain('[r] restart  [s] stop  [q] quit');
+    expect(text.split('\n').at(-1)).toContain('[r]estart  [s]top');
   });
 
   it('should show health, notices and an empty state', () => {
@@ -111,5 +111,99 @@ describe('render', () => {
     expect(text).toContain('Health ✗ unhealthy  HTTP 500');
     expect(text).toContain('Restarting api…');
     expect(render(state({ processes: [] }), 100, 20).join('\n')).toContain('No processes. Start one with `od start <script>`.');
+  });
+});
+
+describe('sorting and filtering', () => {
+  const many = (overrides: Partial<MonitState> = {}): MonitState => state({
+    processes: [
+      proc({ id: 0, name: 'db', cpu: 5, memory: 300, restarts: 0, uptime: 9000, status: 'online' }),
+      proc({ id: 1, name: 'api', cpu: 40, memory: 100, restarts: 3, uptime: 1000, status: 'online' }),
+      proc({ id: 2, name: 'worker', cpu: 20, memory: 200, restarts: 1, uptime: 5000, status: 'errored' }),
+    ],
+    ...overrides,
+  });
+  const names = (s: MonitState) => visibleProcesses(s).map((p) => p.name);
+
+  it('should sort by id by default, and by a column on its key, reversing on a repeat', () => {
+    const s = many();
+    expect(names(s)).toEqual(['db', 'api', 'worker']);
+    handleKey(s, 'c');
+    expect(names(s)).toEqual(['api', 'worker', 'db']); // numbers: largest first
+    handleKey(s, 'c');
+    expect(names(s)).toEqual(['db', 'worker', 'api']);
+    handleKey(s, 'n');
+    expect(names(s)).toEqual(['api', 'db', 'worker']); // names: A to Z
+    handleKey(s, 'n');
+    expect(names(s)).toEqual(['worker', 'db', 'api']);
+    handleKey(s, 'm');
+    expect(names(s)).toEqual(['db', 'worker', 'api']);
+    handleKey(s, 't');
+    expect(names(s)).toEqual(['api', 'worker', 'db']);
+    handleKey(s, 'u');
+    expect(names(s)).toEqual(['db', 'worker', 'api']);
+    handleKey(s, 'S');
+    expect(names(s)).toEqual(['worker', 'db', 'api']); // A to Z: errored before online, ties by id
+    handleKey(s, 'i');
+    expect(names(s)).toEqual(['db', 'api', 'worker']);
+  });
+
+  it('should keep the selection on the same process when the order changes', () => {
+    const s = many();
+    handleKey(s, 'j');
+    expect(selectedProcess(s)?.name).toBe('api');
+    handleKey(s, 'c');
+    expect(names(s)).toEqual(['api', 'worker', 'db']);
+    expect(selectedProcess(s)?.name).toBe('api');
+    s.processes[0] = proc({ id: 0, name: 'db', cpu: 90 }); // a refresh reorders the list
+    recordHistory(s);
+    expect(names(s)[0]).toBe('db');
+    expect(selectedProcess(s)?.name).toBe('api');
+  });
+
+  it('should filter on name, mode or status while typing, keep it on Enter and clear it on Esc', () => {
+    const s = many();
+    handleKey(s, '/');
+    expect(s.filtering).toBe(true);
+    for (const char of 'wor') handleKey(s, char);
+    expect(names(s)).toEqual(['worker']);
+    expect(render(s, 100, 24).join('\n')).toContain('filter: wor_');
+
+    handleKey(s, 'q'); // typing, not quitting
+    expect(s.filter).toBe('worq');
+    handleKey(s, '\x7f');
+    handleKey(s, '\x1b[A'); // arrow keys are ignored while typing
+    expect(s.filter).toBe('wor');
+    handleKey(s, '\r');
+    expect(s.filtering).toBe(false);
+    expect(render(s, 100, 24).join('\n')).toContain('filter: wor (1 shown)');
+    expect(selectedProcess(s)?.name).toBe('worker');
+
+    handleKey(s, '\x1b');
+    expect(s.filter).toBeUndefined();
+    expect(names(s)).toHaveLength(3);
+
+    handleKey(s, '/');
+    for (const char of 'errored') handleKey(s, char);
+    expect(names(s)).toEqual(['worker']);
+    handleKey(s, '\x1b'); // Esc while typing cancels the filter
+    expect(s.filtering).toBe(false);
+    expect(names(s)).toHaveLength(3);
+  });
+
+  it('should say so when nothing matches, still quit on Ctrl+C while typing, and act on the visible selection', () => {
+    const s = many();
+    handleKey(s, '/');
+    for (const char of 'zzz') handleKey(s, char);
+    expect(render(s, 100, 24).join('\n')).toContain('No process matches the filter');
+    expect(handleKey(s, '\x03')).toEqual({ type: 'quit' });
+
+    handleKey(s, '\r');
+    expect(handleKey(s, 'r')).toBeUndefined();
+    handleKey(s, '\x1b');
+    handleKey(s, '/');
+    for (const char of 'api') handleKey(s, char);
+    handleKey(s, '\r');
+    expect(handleKey(s, 's')).toEqual({ type: 'stop', name: 'api' });
   });
 });

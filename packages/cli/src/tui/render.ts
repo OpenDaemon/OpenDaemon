@@ -21,7 +21,16 @@ export interface MonitState {
   version: string;
   system?: { cpu: number; memoryUsed: number; memoryTotal: number; uptime: number } | undefined;
   processes: MonitProcess[];
+  /** Index into the visible (filtered, sorted) list */
   selected: number;
+  /** Name of the selected process, so the selection follows it when the order changes */
+  selectedName?: string | undefined;
+  sort?: SortKey | undefined;
+  sortDescending?: boolean | undefined;
+  /** Case-insensitive text matched against name, mode and status */
+  filter?: string | undefined;
+  /** The filter is being typed: keys edit it instead of acting */
+  filtering?: boolean | undefined;
   /** recent cpu (%) and memory (bytes) samples per process name, oldest first */
   history: Map<string, { cpu: number[]; memory: number[] }>;
   health?: { status: string; message?: string | undefined } | undefined;
@@ -30,6 +39,8 @@ export interface MonitState {
   notice?: string | undefined;
   color: boolean;
 }
+
+export type SortKey = 'id' | 'name' | 'cpu' | 'memory' | 'restarts' | 'uptime' | 'status';
 
 export type MonitAction = { type: 'quit' } | { type: 'restart' | 'stop'; name: string };
 
@@ -115,30 +126,92 @@ export function recordHistory(state: MonitState): void {
   for (const name of state.history.keys()) {
     if (!state.processes.some((p) => p.name === name)) state.history.delete(name);
   }
-  state.selected = Math.min(state.selected, Math.max(0, state.processes.length - 1));
+  reanchor(state);
+}
+
+function isPrintable(text: string): boolean {
+  for (const char of text) {
+    if (char < ' ' || char === '\x7f') return false;
+  }
+  return true;
+}
+
+const SORT_KEYS: Record<string, SortKey> = { i: 'id', n: 'name', c: 'cpu', m: 'memory', t: 'restarts', u: 'uptime', S: 'status' };
+/** What a column shows first: numbers and uptime largest first, names and ids ascending */
+const DESCENDING_FIRST = new Set<SortKey>(['cpu', 'memory', 'restarts', 'uptime']);
+
+/**
+ * The processes on screen: filtered by the filter text, then sorted
+ */
+export function visibleProcesses(state: MonitState): MonitProcess[] {
+  const needle = (state.filter ?? '').trim().toLowerCase();
+  const shown = needle === ''
+    ? [...state.processes]
+    : state.processes.filter((p) => `${p.name} ${p.mode} ${p.status}`.toLowerCase().includes(needle));
+  const key = state.sort ?? 'id';
+  const direction = (state.sortDescending ?? DESCENDING_FIRST.has(key)) ? -1 : 1;
+  return shown.sort((a, b) => {
+    const left = a[key];
+    const right = b[key];
+    const order = typeof left === 'string' && typeof right === 'string' ? left.localeCompare(right) : Number(left) - Number(right);
+    return (order || a.id - b.id) * direction;
+  });
 }
 
 export function selectedProcess(state: MonitState): MonitProcess | undefined {
-  return state.processes[state.selected];
+  return visibleProcesses(state)[state.selected];
+}
+
+/**
+ * Keep the selection on the same process after the list changed, or inside the list
+ */
+function reanchor(state: MonitState): void {
+  const shown = visibleProcesses(state);
+  const at = state.selectedName === undefined ? -1 : shown.findIndex((p) => p.name === state.selectedName);
+  state.selected = at >= 0 ? at : Math.min(state.selected, Math.max(0, shown.length - 1));
+  state.selectedName = shown[state.selected]?.name;
 }
 
 /**
  * Apply a keypress; returns the action to perform, if any
  */
 export function handleKey(state: MonitState, key: string): MonitAction | undefined {
-  const last = Math.max(0, state.processes.length - 1);
+  if (state.filtering === true) {
+    if (key === '\x03') return { type: 'quit' };
+    if (key === '\r' || key === '\n') state.filtering = false;
+    else if (key === '\x1b') { state.filtering = false; state.filter = undefined; }
+    else if (key === '\x7f' || key === '\b') state.filter = (state.filter ?? '').slice(0, -1);
+    // Printable text only: arrow keys and other escape sequences are ignored while typing
+    else if (isPrintable(key)) state.filter = `${state.filter ?? ''}${key}`;
+    reanchor(state);
+    return undefined;
+  }
+
+  const shown = visibleProcesses(state);
+  const last = Math.max(0, shown.length - 1);
+  const move = (to: number): void => {
+    state.selected = to;
+    state.selectedName = shown[to]?.name;
+  };
   switch (key) {
     case '\x1b[A': case 'k':
-      state.selected = Math.max(0, state.selected - 1);
+      move(Math.max(0, state.selected - 1));
       return undefined;
     case '\x1b[B': case 'j':
-      state.selected = Math.min(last, state.selected + 1);
+      move(Math.min(last, state.selected + 1));
       return undefined;
     case '\x1b[H': case 'g':
-      state.selected = 0;
+      move(0);
       return undefined;
     case '\x1b[F': case 'G':
-      state.selected = last;
+      move(last);
+      return undefined;
+    case '/':
+      state.filtering = true;
+      return undefined;
+    case '\x1b':
+      state.filter = undefined;
+      reanchor(state);
       return undefined;
     case 'q': case '\x03':
       return { type: 'quit' };
@@ -146,8 +219,18 @@ export function handleKey(state: MonitState, key: string): MonitAction | undefin
       const proc = selectedProcess(state);
       return proc ? { type: key === 'r' ? 'restart' : 'stop', name: proc.name } : undefined;
     }
-    default:
+    default: {
+      const sort = SORT_KEYS[key];
+      if (sort !== undefined) {
+        // The same key again reverses the order
+        const current = state.sort ?? 'id';
+        const descending = state.sortDescending ?? DESCENDING_FIRST.has(current);
+        state.sortDescending = sort === current ? !descending : DESCENDING_FIRST.has(sort);
+        state.sort = sort;
+        reanchor(state);
+      }
       return undefined;
+    }
   }
 }
 
@@ -171,7 +254,11 @@ export function render(state: MonitState, width: number, height: number): string
     ? `   cpu ${sys.cpu.toFixed(0)}%   mem ${formatBytes(sys.memoryUsed)}/${formatBytes(sys.memoryTotal)}   up ${formatUptime(sys.uptime * 1000)}`
     : ''));
   const count = (status: string) => state.processes.filter((p) => p.status === status).length;
-  lines.push(` Processes: ${String(state.processes.length)} (${String(count('online'))} online, ${String(count('stopped'))} stopped, ${String(count('errored'))} errored)`);
+  const shown = visibleProcesses(state);
+  const sortKey = state.sort ?? 'id';
+  const descending = state.sortDescending ?? DESCENDING_FIRST.has(sortKey);
+  const filterText = state.filtering === true ? `  filter: ${state.filter ?? ''}_` : (state.filter ?? '') === '' ? '' : `  filter: ${state.filter ?? ''} (${String(shown.length)} shown)`;
+  lines.push(` Processes: ${String(state.processes.length)} (${String(count('online'))} online, ${String(count('stopped'))} stopped, ${String(count('errored'))} errored)   sort: ${sortKey}${descending ? '↓' : '↑'}${filterText}`);
   lines.push('');
 
   const columns = ['ID', 'Name', 'Mode', '↺', 'CPU', 'Mem', 'Uptime', 'Status'];
@@ -183,8 +270,10 @@ export function render(state: MonitState, width: number, height: number): string
   lines.push(paint('1', row(columns)));
   if (state.processes.length === 0) {
     lines.push(paint('90', ' No processes. Start one with `od start <script>`.'));
+  } else if (shown.length === 0) {
+    lines.push(paint('90', ' No process matches the filter (Esc clears it).'));
   }
-  state.processes.forEach((p, i) => {
+  shown.forEach((p, i) => {
     const mode = p.mode === 'cluster' ? `cluster ${String(p.runningInstances)}/${String(p.instances)}` : p.mode;
     const line = row([String(p.id), p.name, mode, String(p.restarts), `${p.cpu.toFixed(1)}%`, formatBytes(p.memory), p.status === 'online' ? formatUptime(p.uptime) : '-', statusCell(p.status)]);
     lines.push(i === state.selected ? (state.color ? `\x1b[7m${fit(line, width)}\x1b[0m` : `>${line.slice(1)}`) : line);
@@ -205,7 +294,11 @@ export function render(state: MonitState, width: number, height: number): string
     lines.push('');
   }
 
-  const footer = paint('90', ' [↑↓/jk] select  [r] restart  [s] stop  [q] quit') + (state.notice ? `   ${state.notice}` : '');
+  const hints = paint('90', state.filtering === true
+    ? ' type to filter  [Enter] keep  [Esc] clear'
+    : ' [↑↓] select  [r]estart  [s]top  [/] filter  sort: [i]d [n]ame [c]pu [m]em [t]restarts [u]ptime [S]tatus  [q]uit');
+  // The notice comes first: the hints are the part that can be cut on a narrow terminal
+  const footer = state.notice ? ` ${state.notice}  ${hints.trimStart()}` : hints;
   const logRows = Math.max(0, height - lines.length - 2);
   if (logRows > 0) {
     lines.push(paint('1', ' Recent logs'));

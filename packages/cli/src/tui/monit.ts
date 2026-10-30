@@ -2,7 +2,7 @@ import type { OptionValue } from '../parser.js';
 import { term } from '../output.js';
 import { CliClient } from '../client.js';
 import { getVersion } from '../commands/help.js';
-import { handleKey, recordHistory, render, type MonitProcess, type MonitState } from './render.js';
+import { handleKey, recordHistory, render, selectedProcess, type MonitProcess, type MonitState } from './render.js';
 
 const REFRESH_MS = 1000;
 
@@ -59,7 +59,7 @@ export class MonitCommand {
           cpu: metrics.system.cpu.percent, memoryUsed: metrics.system.memory.used,
           memoryTotal: metrics.system.memory.total, uptime: metrics.system.uptime,
         };
-        const selected = state.processes[state.selected];
+        const selected = selectedProcess(state);
         if (selected) {
           const reports = await client.getHealth(selected.name) as Array<{ status: string; lastResult?: { message: string } }>;
           state.health = reports[0] ? { status: reports[0].status, message: reports[0].lastResult?.message } : undefined;
