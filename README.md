@@ -470,7 +470,7 @@ apps:
 
 A failed deploy puts the previous release back (`rolled-back` in the status), unless `rollbackOnFailure: false`. A release is a script, arguments and environment; the label from `--release` reaches the workers as `OD_RELEASE`. After a successful deploy the new script and environment are the app's configuration, so crash restarts and `od restart` use them. Progress is also published as `deploy:started|progress|succeeded|failed` events (WebSocket, audit log, and `deploy:failed`/`deploy:succeeded` notifications) and over REST (`POST /api/v1/processes/:name/deploy`, `GET .../deploy`, `PUT .../rollback`).
 
-Limits: OpenDaemon has no request router, so a canary's share of traffic is its share of workers (the cluster round-robins), and `a-b` (routing by header or cookie) is not available. Rollback remembers one previous release and only until the daemon restarts. Canary analysis looks at crashes and health checks, not at application metrics.
+Limits: OpenDaemon has no request router, so a canary's share of traffic is its share of workers (the cluster round-robins), and `a-b` (routing by header or cookie) is not available. Rollback remembers one previous release and only until the daemon restarts. A deploy is a runtime change: the config file stays the source of truth, so after a daemon restart the apps start from it again. Put the new script or environment in the config file to make a release permanent. Canary analysis looks at crashes and health checks, not at application metrics.
 
 ## Guides
 
