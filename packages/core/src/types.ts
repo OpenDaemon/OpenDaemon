@@ -150,6 +150,29 @@ export interface Release {
 }
 
 /**
+ * A metric the app reports through `opendaemon/runtime`, compared between the canary workers and
+ * the workers still on the current release. The canary fails the deploy when it is worse.
+ */
+export interface CanaryMetricCheck {
+  /** Name as the app reports it */
+  metric: string;
+  /** Only the series with these labels count, e.g. { status: '500' } */
+  labels?: Record<string, string>;
+  /**
+   * Divide the metric's change by this metric's change (a counter, or a histogram's observation
+   * count): `{ metric: 'errors_total', per: 'requests_total' }` is an error rate.
+   * Without it: a counter is events per second, a histogram its mean, a gauge its mean over workers.
+   */
+  per?: string;
+  /** Fail when the canary's value is above this */
+  max?: number;
+  /** Fail when the canary's value is more than this many times the current release's */
+  maxRatio?: number;
+  /** Events the judgement needs before it counts (default 10 with `per`, else 1) */
+  minSamples?: number;
+}
+
+/**
  * How a new release replaces the running one (cluster mode, except `recreate`)
  */
 export interface DeployConfig {
@@ -161,7 +184,7 @@ export interface DeployConfig {
   /** canary: the ramp, ending in 100 (default [canaryPercent, 100]) */
   canarySteps?: number[];
   /** canary: how long each step is watched for crashes and failing health checks, in ms (default 10000) */
-  canaryAnalysis?: { duration?: number };
+  canaryAnalysis?: { duration?: number; interval?: number; metrics?: CanaryMetricCheck[] };
   /** blue-green: how long the old workers may keep finishing requests after the switch, in ms (default killTimeout) */
   switchTimeout?: number;
   /** Per new worker: how long it may take to become ready (listening, `ready` message or stable), in ms (default 30000) */

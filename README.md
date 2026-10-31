@@ -449,7 +449,7 @@ od rollback api                          # back to the release before the last s
 |----------|--------------|
 | `rolling` (default for clusters) | `maxSurge` workers at a time (default 1): start the new one, switch, drain the old one |
 | `blue-green` | start a whole new set next to the old one; switch only when every new worker is ready; the old set drains for `switchTimeout` |
-| `canary` | move `canaryPercent` of the workers (steps in `canarySteps`, e.g. `[10, 50, 100]`) and watch each step for `canaryAnalysis.duration` ms: a canary worker that exits, an unhealthy health check, or an app crash aborts the deploy |
+| `canary` | move `canaryPercent` of the workers (steps in `canarySteps`, e.g. `[10, 50, 100]`) and watch each step for `canaryAnalysis.duration` ms: a canary worker that exits, an unhealthy health check, an app crash, or a metric check (see below) aborts the deploy |
 | `recreate` | apply the release and restart (the only strategy for fork-mode apps; brief downtime) |
 
 ```yaml
@@ -462,7 +462,15 @@ apps:
       strategy: rolling
       maxSurge: 1
       canarySteps: [10, 50, 100]
-      canaryAnalysis: { duration: 30000 }
+      canaryAnalysis:
+        duration: 30000        # watch each step this long
+        metrics:               # optional: judge the canary by what the app reports
+          - metric: http_errors_total
+            labels: { status: '500' }
+            per: http_requests_total   # an error rate
+            max: 0.05                  # fail above 5%
+            maxRatio: 2                # or above twice the current release's rate
+            minSamples: 50             # requests needed before it counts
       readyTimeout: 30000      # per new worker
       rollbackOnFailure: true  # default
       timeout: 300000
@@ -470,7 +478,9 @@ apps:
 
 A failed deploy puts the previous release back (`rolled-back` in the status), unless `rollbackOnFailure: false`. A release is a script, arguments and environment; the label from `--release` reaches the workers as `OD_RELEASE`. After a successful deploy the new script and environment are the app's configuration, so crash restarts and `od restart` use them. Progress is also published as `deploy:started|progress|succeeded|failed` events (WebSocket, audit log, and `deploy:failed`/`deploy:succeeded` notifications) and over REST (`POST /api/v1/processes/:name/deploy`, `GET .../deploy`, `PUT .../rollback`).
 
-Limits: OpenDaemon has no request router, so a canary's share of traffic is its share of workers (the cluster round-robins), and `a-b` (routing by header or cookie) is not available. Rollback remembers one previous release and only until the daemon restarts. A deploy is a runtime change: the config file stays the source of truth, so after a daemon restart the apps start from it again. Put the new script or environment in the config file to make a release permanent. Canary analysis looks at crashes and health checks, not at application metrics.
+Limits: OpenDaemon has no request router, so a canary's share of traffic is its share of workers (the cluster round-robins), and `a-b` (routing by header or cookie) is not available. Rollback remembers one previous release and only until the daemon restarts. A deploy is a runtime change: the config file stays the source of truth, so after a daemon restart the apps start from it again. Put the new script or environment in the config file to make a release permanent. 
+
+Canary metrics come from the SDK runtime (`opendaemon/runtime`), which reports every few seconds, so use a `duration` of at least 10 seconds. The checks compare the canary workers with the workers still on the current release, over the time of the step. With `per`, the check is the change of `metric` divided by the change of `per` (a counter, or a histogram's observation count). `labels` select only the numerator, so `per` counts all requests. Without `per`, a counter is events per second, a histogram is its mean observation (latency) and a gauge is its mean across workers. `max` is an absolute limit and `maxRatio` is relative to the current release (it only applies once that has a non-zero value). A check with too few events is reported as "not enough data" and does not fail the deploy. Canary analysis looks at crashes, health checks and these metrics; it does not look at logs.
 
 ## Guides
 

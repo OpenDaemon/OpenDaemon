@@ -1180,6 +1180,19 @@ export class ProcessManagerPlugin implements Plugin {
         || (deploy.canarySteps !== undefined && !(deploy.canarySteps.length > 0 && deploy.canarySteps.every(percent)))) {
         throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid deploy settings for "${config.name}" (times and maxSurge above 0, percentages from 1 to 100)`);
       }
+      const analysis = deploy.canaryAnalysis;
+      if (!positive(analysis?.interval)) {
+        throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid canaryAnalysis.interval for "${config.name}" (milliseconds above 0)`);
+      }
+      const checks: unknown = analysis?.metrics;
+      if (checks !== undefined && (!Array.isArray(checks) || !checks.every((check: Record<string, unknown> | null) =>
+        typeof check === 'object' && check !== null && typeof check['metric'] === 'string' && check['metric'] !== ''
+        && (check['per'] === undefined || typeof check['per'] === 'string')
+        && (check['max'] !== undefined || check['maxRatio'] !== undefined)
+        && [check['max'], check['maxRatio']].every((v) => v === undefined || (typeof v === 'number' && v > 0))
+        && (check['minSamples'] === undefined || (typeof check['minSamples'] === 'number' && check['minSamples'] >= 0))))) {
+        throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid canaryAnalysis.metrics for "${config.name}" (each needs a metric name and max and/or maxRatio above 0)`);
+      }
     }
     for (const action of [config.limits?.memory?.action, config.limits?.cpu?.action]) {
       if (action !== undefined && !(['warn', 'restart', 'stop'] as string[]).includes(action)) {

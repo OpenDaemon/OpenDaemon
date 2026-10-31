@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { judge, takeSample, format, type InstanceMetrics } from './canary-metrics.js';
 import type { Plugin, PluginContext, ProcessConfig, DeployConfig, DeployStrategy, Release } from '../../../core/src/index.js';
 
 type Step = { ok: boolean; error?: string; pid?: number };
@@ -12,6 +13,7 @@ interface ProcessManagerApi {
   deployAbort(name: string, id: string): Promise<Step>;
   applyRelease(name: string, release: Release, replace?: boolean): void;
   restartProcessFromPlugin(name: string): Promise<unknown>;
+  getCustomMetrics(name: string): InstanceMetrics;
 }
 
 export interface DeployState {
@@ -323,7 +325,7 @@ export class DeployStrategyPlugin implements Plugin {
       await this.replace(ctx, next, ctx.release, settings.maxSurge ?? 1);
       if (percent < 100 && target < indices.length) {
         this.log(ctx.state, `watching the canary for ${String(watch)}ms`);
-        await this.observe(ctx, new Set(indices.slice(0, target)), watch);
+        await this.observe(ctx, new Set(indices.slice(0, target)), new Set(indices.slice(target)), watch);
       }
     }
     // A last step below 100% still has to finish the job
@@ -332,18 +334,43 @@ export class DeployStrategyPlugin implements Plugin {
   }
 
   /**
-   * Fail when a canary worker dies or the app turns unhealthy within `ms`
+   * Fail when a canary worker dies, the app turns unhealthy, or a metric check finds the canary
+   * worse than the rest, within `ms`
    */
-  private observe(ctx: RunContext, canary: Set<number>, ms: number): Promise<void> {
+  private observe(ctx: RunContext, canary: Set<number>, rest: Set<number>, ms: number): Promise<void> {
     const { name } = ctx;
+    const checks = ctx.settings.canaryAnalysis?.metrics ?? [];
+    const every = ctx.settings.canaryAnalysis?.interval ?? 1000;
     return new Promise((resolve, reject) => {
       const offs: Array<() => void> = [];
+      const startedAt = Date.now();
+      const from = takeSample(this.pm.getCustomMetrics(name), checks);
+      const evaluate = (): ReturnType<typeof judge> =>
+        judge(checks, from, takeSample(this.pm.getCustomMetrics(name), checks), canary, rest, (Date.now() - startedAt) / 1000);
       const done = (err?: Error): void => {
         clearTimeout(timer);
+        clearInterval(ticker);
         for (const off of offs) off();
         if (err) reject(err); else resolve();
       };
-      const timer = setTimeout(() => { done(); }, ms);
+      // The last look is also the report: what the canary measured, for the deploy's steps
+      const finish = (): void => {
+        const verdicts = evaluate();
+        const failed = verdicts.find((v) => v.failure !== undefined);
+        for (const v of verdicts) {
+          const label = v.check.per === undefined ? v.check.metric : `${v.check.metric}/${v.check.per}`;
+          this.log(ctx.state, v.canary === undefined
+            ? `canary metric ${label}: not enough data to judge`
+            : `canary metric ${label}: ${format(v.canary)}${v.baseline === undefined ? '' : ` (current release ${format(v.baseline)})`}`);
+        }
+        done(failed?.failure === undefined ? undefined : new DeployError(failed.failure));
+      };
+      const ticker = setInterval(() => {
+        if (checks.length === 0) return;
+        const failed = evaluate().find((v) => v.failure !== undefined);
+        if (failed?.failure !== undefined) finish();
+      }, every);
+      const timer = setTimeout(finish, ms);
       offs.push(this.context.events.on('process:worker-exit', (data: unknown) => {
         const d = data as { name?: string; index?: number; code?: number | null; signal?: string | null };
         if (d.name === name && typeof d.index === 'number' && canary.has(d.index)) {

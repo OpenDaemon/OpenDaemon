@@ -27,13 +27,23 @@ describe('DeployStrategyPlugin', () => {
   const methods = new Map<string, Method>();
 
   /** A server that answers with its version; `crashAfter` makes it exit once it has been up that long */
-  const release = (file: string, version: string, options: { crashAfter?: number; exitAtOnce?: boolean; failWorker?: number } = {}): string => {
+  const release = (file: string, version: string, options: { crashAfter?: number; exitAtOnce?: boolean; failWorker?: number; errorsPerHundred?: number } = {}): string => {
     const path = join(dir, file);
     writeFileSync(path, `
       const http = require('http');
       ${options.exitAtOnce ? 'process.exit(3);' : ''}
       ${options.failWorker === undefined ? '' : `if (process.env.OD_WORKER_ID === '${String(options.failWorker)}') process.exit(3);`}
       http.createServer((req, res) => res.end(${JSON.stringify(version)} + ':' + (process.env.TAG || ''))).listen(Number(process.env.PORT), '127.0.0.1');
+      ${options.errorsPerHundred === undefined ? '' : `
+      let ticks = 0;
+      // What the SDK runtime would report: 100 requests per tick, some of them failed
+      setInterval(() => {
+        ticks++;
+        process.send({ type: 'od:metrics', metrics: [
+          { name: 'requests_total', type: 'counter', help: '', series: [{ labels: {}, value: ticks * 100 }] },
+          { name: 'errors_total', type: 'counter', help: '', series: [{ labels: { status: '500' }, value: ticks * ${String(options.errorsPerHundred)} }] },
+        ] });
+      }, 100);`}
       ${options.crashAfter ? `setTimeout(() => process.exit(1), ${String(options.crashAfter)});` : ''}
     `);
     return path;
@@ -188,6 +198,39 @@ describe('DeployStrategyPlugin', () => {
     expect([...await sample()]).toEqual(['v2']);
   }, 60000);
 
+  const errorRate = { metric: 'errors_total', per: 'requests_total', labels: { status: '500' } };
+
+  it('should abort a canary whose error rate is far above the current release, and put the old one back', async () => {
+    await startApp(release('v1.cjs', 'v1', { errorsPerHundred: 1 }), {
+      canarySteps: [34, 100], canaryAnalysis: { duration: 8000, interval: 100, metrics: [{ ...errorRate, maxRatio: 3, minSamples: 200 }] },
+    });
+    await new Promise((r) => setTimeout(r, 500)); // the current release has reported
+    const state = await run({ name: 'web', strategy: 'canary', release: { script: release('bad.cjs', 'bad', { errorsPerHundred: 30 }) } });
+    expect(state.state).toBe('rolled-back');
+    expect(state.error).toMatch(/canary errors_total\/requests_total is 0\.\d+, more than 3x the current release's 0\.0\d*/);
+    expect(state.steps.some((s) => /^canary metric errors_total\/requests_total: 0\.\d+ \(current release 0\.0/.test(s))).toBe(true);
+    await until(async () => (await sample(12)).size === 1);
+    expect([...await sample()]).toEqual(['v1']);
+  }, 60000);
+
+  it('should abort on an absolute limit even without a baseline, and promote a canary within it', async () => {
+    await startApp(release('v1.cjs', 'v1'), { canarySteps: [34, 100], canaryAnalysis: { duration: 8000, interval: 100, metrics: [{ ...errorRate, max: 0.05, minSamples: 200 }] } });
+    const bad = await run({ name: 'web', strategy: 'canary', release: { script: release('bad.cjs', 'bad', { errorsPerHundred: 30 }) } });
+    expect(bad.state).toBe('rolled-back');
+    expect(bad.error).toContain('above the limit 0.05');
+
+    const good = await run({ name: 'web', strategy: 'canary', release: { script: release('good.cjs', 'good', { errorsPerHundred: 1 }) } });
+    expect(good.state).toBe('succeeded');
+    expect(good.steps.some((s) => /^canary metric errors_total\/requests_total: 0\.0\d*$/.test(s))).toBe(true);
+  }, 90000);
+
+  it('should not judge a canary that has too little data, and say so', async () => {
+    await startApp(release('v1.cjs', 'v1'), { canarySteps: [34, 100], canaryAnalysis: { duration: 600, metrics: [{ ...errorRate, max: 0.05 }] } });
+    const state = await run({ name: 'web', strategy: 'canary', release: { script: release('v2.cjs', 'v2') } });
+    expect(state.state).toBe('succeeded');
+    expect(state.steps).toContain('canary metric errors_total/requests_total: not enough data to judge');
+  }, 60000);
+
   it('should abort a canary whose workers crash and put the old release back', async () => {
     await startApp(release('v1.cjs', 'v1'), { canarySteps: [34, 100], canaryAnalysis: { duration: 3000 } });
     const state = await run({ name: 'web', strategy: 'canary', release: { script: release('flaky.cjs', 'flaky', { crashAfter: 1500 }) } });
@@ -280,6 +323,10 @@ describe('DeployStrategyPlugin', () => {
     const script = release('v1.cjs', 'v1');
     await expect(methods.get('start')!({ name: 'a', script, deploy: { strategy: 'yolo' } })).rejects.toThrow('Invalid deploy strategy');
     await expect(methods.get('start')!({ name: 'a', script, deploy: { canarySteps: [10, 150] } })).rejects.toThrow('Invalid deploy settings');
+    for (const metrics of [[{ metric: 'x' }], [{ metric: '', max: 1 }], [{ metric: 'x', max: 0 }], [{ metric: 'x', max: 1, per: 3 }], 'x']) {
+      await expect(methods.get('start')!({ name: 'a', script, deploy: { canaryAnalysis: { metrics } } })).rejects.toThrow('Invalid canaryAnalysis.metrics');
+    }
+    await expect(methods.get('start')!({ name: 'a', script, deploy: { canaryAnalysis: { interval: 0 } } })).rejects.toThrow('Invalid canaryAnalysis.interval');
     await expect(methods.get('start')!({ name: 'a', script, deploy: { maxSurge: 0 } })).rejects.toThrow('Invalid deploy settings');
   });
 });

@@ -53,6 +53,7 @@ export type {
   EnvValue,
   LimitAction,
   DeployConfig,
+  CanaryMetricCheck,
   DeployStrategy,
   Release,
   ResourceLimits,
