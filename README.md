@@ -171,7 +171,7 @@ Events: `process:crash` (non-zero exit, even if it will be restarted), `process:
 
 ## Audit Log
 
-`~/.opendaemon/audit.log` records, as JSON lines (rotated, gzip): every RPC call that changes something (who, what, parameters, result, duration), process lifecycle events, and WebUI logins. Parameters are redacted: values under keys like `password`, `token` or `secret`, and every value in a process `env`, are replaced by `[redacted]`. `od audit` shows the newest entries (`--lines N`, `--json`); set `plugins.audit-logger.includeReads: true` to also record read-only calls such as `list`.
+`~/.opendaemon/audit.log` records, as JSON lines (rotated by size, gzip): every RPC call that changes something (who, what, parameters, result, duration), process lifecycle events, and WebUI logins. Parameters are redacted: values under keys like `password`, `token` or `secret`, and every value in a process `env`, are replaced by `[redacted]`. `od audit` shows the newest entries (`--lines N`, `--json`); set `plugins.audit-logger.includeReads: true` to also record read-only calls such as `list`. Rotation takes the same keys as a process's `logRotation` under `plugins.audit-logger` (`maxSize`, `maxFiles`, `compress`, `interval: hourly|daily`, `maxAge`); the default is 10 MB, 5 files, gzip.
 
 ## Start at Boot
 

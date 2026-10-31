@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { AuditLoggerPlugin, redact, type AuditEntry } from '../../packages/plugins/audit-logger/src/index.js';
@@ -126,5 +126,36 @@ describe('AuditLoggerPlugin', () => {
     install();
     events.emit('process:started', { name: 'later' });
     expect(entries().map((e) => e.target?.name)).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'later']);
+  });
+
+  it('should rotate by size, interval and age from the plugin config', () => {
+    audit.onStop();
+    install({ maxSize: '1K', maxFiles: 3, compress: false, maxAge: '7d', interval: 'daily' });
+    for (let i = 0; i < 30; i++) {
+      events.emit('process:started', { name: `p${String(i)}` });
+      entries(); // flushes, so each batch is checked against the size limit
+    }
+    audit.onStop();
+    expect(readdirSync(home).filter((f) => /^audit\.log\.\d+$/.test(f)).length).toBeGreaterThan(0);
+    expect(readdirSync(home).some((f) => f.endsWith('.gz'))).toBe(false);
+  });
+
+  it('should warn about invalid rotation settings and keep the defaults', () => {
+    const warnings: string[] = [];
+    audit.onStop();
+    audit = new AuditLoggerPlugin(home);
+    const logger = new Logger('audit-test');
+    logger.warn = (m: string) => { warnings.push(m); };
+    audit.install({
+      config: {}, pluginConfig: { maxSize: 'huge', maxAge: 'soon', interval: 'weekly' }, events, logger,
+      store: new StateStore(), registerMethod: () => {}, getPlugin: () => undefined,
+    } as unknown as PluginContext);
+    expect(warnings).toEqual([
+      'Ignoring invalid audit log maxSize "huge"',
+      'Ignoring invalid audit log maxAge "soon"',
+      'Ignoring invalid audit log interval "weekly"',
+    ]);
+    events.emit('process:started', { name: 'x' });
+    expect(entries()).toHaveLength(1);
   });
 });

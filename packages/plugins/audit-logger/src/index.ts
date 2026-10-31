@@ -1,8 +1,9 @@
 import { readFileSync, existsSync } from 'fs';
 import { userInfo } from 'os';
 import { resolve } from 'path';
+import { parseBytes, parseDuration } from '../../../core/src/index.js';
 import type { IpcCall, Plugin, PluginContext } from '../../../core/src/index.js';
-import { LogFile } from '../../log-manager/src/files.js';
+import { LogFile, type RotationOptions } from '../../log-manager/src/files.js';
 
 export interface AuditEntry {
   timestamp: string;
@@ -65,6 +66,17 @@ const LIFECYCLE: Array<[string, string]> = [
   ['daemon:stopped', 'daemon.stopped'],
 ];
 
+interface RotationConfig {
+  includeReads?: boolean;
+  maxSize?: number | string;
+  maxFiles?: number;
+  compress?: boolean;
+  maxAge?: number | string;
+  interval?: unknown;
+}
+
+const DEFAULT_ROTATION: RotationOptions = { enabled: true, maxSize: 10 * 1024 * 1024, maxFiles: 5, compress: true };
+
 /**
  * Audit Logger Plugin
  * Appends who did what to <home>/audit.log (JSON lines, rotated): RPC calls with redacted
@@ -78,18 +90,24 @@ export class AuditLoggerPlugin implements Plugin {
 
   // Set in install(), which the kernel always calls before any other hook
   private context!: PluginContext;
-  private readonly file: LogFile;
+  private file: LogFile;
   private readonly path: string;
   private includeReads = false;
 
   constructor(home: string) {
     this.path = resolve(home, 'audit.log');
-    this.file = new LogFile(this.path, { enabled: true, maxSize: 10 * 1024 * 1024, maxFiles: 5, compress: true });
+    this.file = new LogFile(this.path, DEFAULT_ROTATION);
   }
 
   install(context: PluginContext): void {
     this.context = context;
-    this.includeReads = (context.pluginConfig as { includeReads?: boolean } | undefined)?.includeReads === true;
+    const config = (context.pluginConfig ?? {}) as RotationConfig;
+    this.includeReads = config.includeReads === true;
+    const options = this.rotationOptions(config);
+    if (options !== undefined) {
+      this.file.close();
+      this.file = new LogFile(this.path, options);
+    }
 
     for (const [event, action] of LIFECYCLE) {
       context.events.on(event, (data: unknown) => {
@@ -122,6 +140,35 @@ export class AuditLoggerPlugin implements Plugin {
 
   onStop(): void {
     this.file.close();
+  }
+
+  /**
+   * Rotation settings from the plugin config (same names as a process's logRotation), or
+   * undefined when none are set
+   */
+  private rotationOptions(config: RotationConfig): RotationOptions | undefined {
+    const warn = (key: string, value: unknown): void => {
+      this.context.logger.warn(`Ignoring invalid audit log ${key} ${JSON.stringify(value)}`);
+    };
+    const options: RotationOptions = { ...DEFAULT_ROTATION };
+    let changed = false;
+    if (config.maxSize !== undefined) {
+      const maxSize = parseBytes(config.maxSize);
+      if (maxSize === undefined) warn('maxSize', config.maxSize);
+      else { options.maxSize = maxSize; changed = true; }
+    }
+    if (config.maxAge !== undefined) {
+      const maxAge = parseDuration(config.maxAge);
+      if (maxAge === undefined) warn('maxAge', config.maxAge);
+      else { options.maxAge = maxAge; changed = true; }
+    }
+    if (config.interval !== undefined) {
+      if (config.interval === 'hourly' || config.interval === 'daily') { options.interval = config.interval; changed = true; }
+      else warn('interval', config.interval);
+    }
+    if (typeof config.maxFiles === 'number' && config.maxFiles >= 0) { options.maxFiles = config.maxFiles; changed = true; }
+    if (typeof config.compress === 'boolean') { options.compress = config.compress; changed = true; }
+    return changed ? options : undefined;
   }
 
   /**
