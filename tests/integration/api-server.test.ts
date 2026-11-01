@@ -95,6 +95,14 @@ describe('ApiServerPlugin', () => {
       expect(calls[7]?.params).toEqual({ name: 'api', instances: 3 });
     });
 
+    it('should pass ?cascade=true on to stop and restart', async () => {
+      answers = { stop: null, restart: { name: 'db' } };
+      await http('PUT', '/api/v1/processes/db/stop?cascade=true');
+      await http('PUT', '/api/v1/processes/db/restart?cascade=true');
+      await http('PUT', '/api/v1/processes/db/restart');
+      expect(calls.map((c) => c.params)).toEqual([{ name: 'db', cascade: true }, { name: 'db', cascade: true }, { name: 'db' }]);
+    });
+
     it('should start, follow and roll back deploys', async () => {
       answers = { 'deploy.execute': { state: 'running' }, 'deploy.status': { state: 'succeeded' }, 'deploy.rollback': { state: 'running' } };
       expect((await http('POST', '/api/v1/processes/web/deploy', { body: { strategy: 'canary', release: { script: 'v2.js' } } })).json()).toEqual({ state: 'running' });

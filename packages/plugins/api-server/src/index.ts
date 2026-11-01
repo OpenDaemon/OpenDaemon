@@ -303,9 +303,11 @@ export class ApiServerPlugin implements Plugin {
         if (!found) throw new HttpError(404, `Process "${name}" not found`);
         return found;
       }
-      if (method === 'PUT' && (action === 'stop' || action === 'restart')) return this.rpc(action, { name });
+      // ?cascade=true also handles the apps that depend on this one
+      const cascade = query.get('cascade') === 'true' ? { cascade: true } : {};
+      if (method === 'PUT' && (action === 'stop' || action === 'restart')) return this.rpc(action, { name, ...cascade });
       // A reload restarts the process so it picks up its current configuration
-      if (method === 'PUT' && action === 'reload') return this.rpc('restart', { name });
+      if (method === 'PUT' && action === 'reload') return this.rpc('restart', { name, ...cascade });
       if (action === 'deploy' && method === 'GET') return this.rpc('deploy.status', { name });
       if (action === 'deploy' && method === 'POST') {
         const { strategy, release } = await this.readJson(req);

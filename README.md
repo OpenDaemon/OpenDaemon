@@ -406,7 +406,7 @@ Send `Authorization: Bearer <token>` with every request except `GET /api/v1/heal
 | `GET` | `/api/v1/processes` | List |
 | `POST` | `/api/v1/processes` | Start (JSON process config) |
 | `GET` | `/api/v1/processes/:name` | Info |
-| `PUT` | `/api/v1/processes/:name/stop` `restart` `reload` | `reload` restarts the process with its current configuration |
+| `PUT` | `/api/v1/processes/:name/stop` `restart` `reload` | `reload` restarts the process with its current configuration; `?cascade=true` also stops and restarts the apps that depend on it |
 | `PUT` | `/api/v1/processes/:name/scale` | `{ "instances": 4 }` or `"max"` (cluster mode) |
 | `DELETE` | `/api/v1/processes/:name` | Delete |
 | `GET` | `/api/v1/processes/:name/logs` | `?lines=&grep=&since=&source=` |
