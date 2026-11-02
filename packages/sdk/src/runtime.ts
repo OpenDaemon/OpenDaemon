@@ -1,4 +1,5 @@
 // Runtime metrics and monitoring
+import { monitorEventLoopDelay, type IntervalHistogram } from 'perf_hooks';
 import type { MetricSnapshot } from '../../core/src/types.js';
 
 export type { MetricSnapshot };
@@ -281,8 +282,31 @@ class MetricsRegistry {
    */
   flush(): boolean {
     if (!underOpenDaemon() || !process.connected || !process.send) return false;
-    process.send({ type: 'od:metrics', metrics: this.snapshot() });
+    process.send({ type: 'od:metrics', metrics: [...this.snapshot(), ...this.runtimeSnapshot()] });
     return true;
+  }
+
+  /**
+   * Also report the event loop delay (p99 over each reporting interval, in seconds) as the
+   * gauge `nodejs_eventloop_delay_p99_seconds`, which `limits.eventLoop` reads. Needs no
+   * other metric; a no-op outside OpenDaemon.
+   */
+  monitorRuntime(): void {
+    this.startReporting();
+  }
+
+  private loopDelay: IntervalHistogram | undefined;
+
+  private runtimeSnapshot(): MetricSnapshot[] {
+    if (!this.loopDelay) return [];
+    // 0 until the loop was sampled at least once
+    const p99 = this.loopDelay.count > 0 ? this.loopDelay.percentile(99) / 1e9 : 0;
+    this.loopDelay.reset();
+    return [{
+      name: 'nodejs_eventloop_delay_p99_seconds', type: 'gauge',
+      help: 'Event loop delay, 99th percentile over the last reporting interval',
+      series: [{ labels: {}, value: p99 }],
+    }];
   }
 
   /**
@@ -304,6 +328,8 @@ class MetricsRegistry {
     if (this.reporter || !underOpenDaemon()) return;
     const interval = Number(process.env['OD_METRICS_INTERVAL'] ?? 5000);
     if (!Number.isFinite(interval) || interval <= 0) return;
+    this.loopDelay = monitorEventLoopDelay({ resolution: 10 });
+    this.loopDelay.enable();
     this.reporter = setInterval(() => { this.flush(); }, interval);
     this.reporter.unref();
   }

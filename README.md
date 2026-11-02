@@ -336,9 +336,13 @@ apps:
       children:
         max: 20            # child processes, all descendants (Linux only)
         action: stop
+      eventLoop:
+        max: 200           # event loop delay in ms (p99 over 5 s) of the worst instance
+        grace: 15000       # blocked this long before acting
+        action: restart
 ```
 
-`maxMemory: 512M` and `maxCpu: 90` are shorthands (`od start app.js --max-memory 512M` too). An action runs once per breach: a `warn` re-arms when the value drops back under the limit, and a restart starts a fresh process. Restarts count in `od list`. Every action logs, emits `process:memory-limit` / `process:cpu-limit` / `process:fds-limit` / `process:children-limit` (which the notification plugin and the audit log pick up). `fds` and `children` are read from `/proc`, so they work on Linux only (elsewhere they are never measured and never trigger). CPU throttling and event loop limits are not implemented.
+`maxMemory: 512M` and `maxCpu: 90` are shorthands (`od start app.js --max-memory 512M` too). An action runs once per breach: a `warn` re-arms when the value drops back under the limit, and a restart starts a fresh process. Restarts count in `od list`. Every action logs, emits `process:memory-limit` / `process:cpu-limit` / `process:fds-limit` / `process:children-limit` / `process:eventLoop-limit` (which the notification plugin and the audit log pick up). `fds` and `children` are read from `/proc`, so they work on Linux only (elsewhere they are never measured and never trigger). `eventLoop` is measured inside the app, so the app has to report it: `import { metrics } from '@opendaemon/sdk'; metrics.monitorRuntime();` (any other SDK metric starts it too). Without a report the limit never triggers. CPU throttling is not implemented.
 
 ## CLI Commands
 

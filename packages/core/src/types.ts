@@ -122,6 +122,11 @@ export interface ResourceLimits {
   fds?: CountLimit;
   /** Child processes (all descendants) of all instances together (Linux only) */
   children?: CountLimit;
+  /**
+   * Event loop delay (p99, in ms) of the worst instance. The app has to report it: import the
+   * SDK and call `metrics.monitorRuntime()` (or use any SDK metric)
+   */
+  eventLoop?: CountLimit;
 }
 
 export interface CountLimit {

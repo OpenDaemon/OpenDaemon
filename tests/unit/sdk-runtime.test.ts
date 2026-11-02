@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Counter, Gauge, Histogram, metrics } from '../../packages/sdk/src/runtime.js';
 
 describe('Counter', () => {
@@ -322,5 +322,40 @@ describe('metric snapshots and reporting', () => {
     expect(process.env['OD_MANAGED']).toBeUndefined();
     expect(metrics.flush()).toBe(false);
     metrics.reset();
+  });
+});
+
+describe('runtime metrics', () => {
+  afterEach(() => {
+    delete process.env['OD_MANAGED'];
+    vi.restoreAllMocks();
+    metrics.reset();
+  });
+
+  it('should report the event loop delay of the interval with the flush', async () => {
+    process.env['OD_MANAGED'] = '1';
+    process.env['OD_METRICS_INTERVAL'] = '600000';
+    const sent: Array<{ type: string; metrics: Array<{ name: string; series: Array<{ value: number }> }> }> = [];
+    const original = { send: process.send, connected: process.connected };
+    Object.assign(process, { connected: true, send: (message: never) => { sent.push(message); return true; } });
+    try {
+      metrics.monitorRuntime();
+      await new Promise((r) => setTimeout(r, 50));
+      const end = Date.now() + 120; // block the loop
+      while (Date.now() < end) { /* busy */ }
+      await new Promise((r) => setTimeout(r, 30));
+
+      expect(metrics.flush()).toBe(true);
+      const gauge = sent[0]?.metrics.find((m) => m.name === 'nodejs_eventloop_delay_p99_seconds');
+      expect(gauge?.series[0]?.value).toBeGreaterThan(0.05);
+
+      // The next interval starts over, calm
+      await new Promise((r) => setTimeout(r, 100));
+      metrics.flush();
+      expect(sent[1]?.metrics.find((m) => m.name === 'nodejs_eventloop_delay_p99_seconds')?.series[0]?.value).toBeLessThan(0.05);
+    } finally {
+      Object.assign(process, original);
+      delete process.env['OD_METRICS_INTERVAL'];
+    }
   });
 });

@@ -402,7 +402,7 @@ export class ApiServerPlugin implements Plugin {
   private subscribeEvents(): () => void {
     const sources = [
       'process:started', 'process:stopped', 'process:exit', 'process:crash', 'process:error',
-      'process:memory-limit', 'process:cpu-limit', 'process:fds-limit', 'process:children-limit',
+      'process:memory-limit', 'process:cpu-limit', 'process:fds-limit', 'process:children-limit', 'process:eventLoop-limit',
       'health:status:healthy', 'health:status:unhealthy', 'health:action:restart', 'health:action:stop',
       'deploy:started', 'deploy:progress', 'deploy:succeeded', 'deploy:failed',
       'watch:change', 'cron:run', 'cron:finish', 'config:reloaded', 'daemon:ready', 'daemon:stopped',

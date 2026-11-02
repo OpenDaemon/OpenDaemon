@@ -110,6 +110,13 @@ const SOURCES: Array<{
     }),
   },
   {
+    source: 'process:eventLoop-limit', event: 'process:eventLoop-limit', severity: 'warning',
+    describe: (d) => ({
+      title: `Process "${text(d['name'])}" event loop is blocked`,
+      message: `${Number(d['eventLoop']).toFixed(0)} ms p99 delay, limit ${text(d['limit'])} ms; action: ${text(d['action'], 'warn')}`,
+    }),
+  },
+  {
     source: 'cron:finish', event: 'cron:failed', severity: 'warning',
     describe: (d) => d['result'] === 'failed'
       ? { title: `Scheduled job "${text(d['name'])}" failed`, message: `exit code ${text(d['exitCode'], 'none')}, attempt ${text(d['attempt'])}` }

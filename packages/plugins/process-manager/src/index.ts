@@ -42,7 +42,7 @@ interface LogEntry {
   message: string;
 }
 
-type LimitKind = 'memory' | 'cpu' | 'fds' | 'children';
+type LimitKind = 'memory' | 'cpu' | 'fds' | 'children' | 'eventLoop';
 
 interface ManagedProcessInfo {
   id: number;
@@ -600,6 +600,7 @@ export class ProcessManagerPlugin implements Plugin {
     cpu?: { max: number; action: LimitAction; duration: number };
     fds?: { max: number; action: LimitAction; grace: number };
     children?: { max: number; action: LimitAction; grace: number };
+    eventLoop?: { max: number; action: LimitAction; grace: number };
   } {
     const count = (limit: CountLimit | undefined) => limit === undefined ? {} : {
       max: limit.max, action: limit.action ?? 'warn', grace: limit.grace ?? 0,
@@ -616,6 +617,7 @@ export class ProcessManagerPlugin implements Plugin {
       }),
       ...(config.limits?.fds === undefined ? {} : { fds: count(config.limits.fds) as { max: number; action: LimitAction; grace: number } }),
       ...(config.limits?.children === undefined ? {} : { children: count(config.limits.children) as { max: number; action: LimitAction; grace: number } }),
+      ...(config.limits?.eventLoop === undefined ? {} : { eventLoop: count(config.limits.eventLoop) as { max: number; action: LimitAction; grace: number } }),
     };
   }
 
@@ -647,12 +649,30 @@ export class ProcessManagerPlugin implements Plugin {
     if (limits.memory) check('memory', proc.memory, limits.memory.max, limits.memory.grace, limits.memory.action);
     if (limits.cpu) check('cpu', proc.cpu, limits.cpu.max, limits.cpu.duration, limits.cpu.action);
     if (limits.fds && proc.fds !== undefined) check('fds', proc.fds, limits.fds.max, limits.fds.grace, limits.fds.action);
+    if (limits.eventLoop) {
+      const delay = this.eventLoopDelay(proc);
+      if (delay !== undefined) check('eventLoop', delay, limits.eventLoop.max, limits.eventLoop.grace, limits.eventLoop.action);
+    }
     if (limits.children && proc.children !== undefined) check('children', proc.children, limits.children.max, limits.children.grace, limits.children.action);
+  }
+
+  /**
+   * The worst event loop delay (p99, ms) the instances reported, if any did
+   */
+  private eventLoopDelay(proc: ManagedProcessInfo): number | undefined {
+    let worst: number | undefined;
+    for (const snapshots of proc.customMetrics.values()) {
+      const gauge = snapshots.find((m) => m.name === 'nodejs_eventloop_delay_p99_seconds');
+      for (const series of gauge?.series ?? []) {
+        if (series.value !== undefined) worst = Math.max(worst ?? 0, series.value * 1000);
+      }
+    }
+    return worst;
   }
 
   private applyLimitAction(proc: ManagedProcessInfo, kind: LimitKind, value: number, limit: number, action: LimitAction): void {
     const name = proc.config.name;
-    const unit = { memory: ' bytes', cpu: '%', fds: ' open files', children: ' child processes' }[kind];
+    const unit = { memory: ' bytes', cpu: '%', fds: ' open files', children: ' child processes', eventLoop: ' ms event loop delay' }[kind];
     this.logger.warn(`Process "${name}" ${kind} ${value.toFixed(kind === 'cpu' ? 1 : 0)}${unit} exceeds the limit (${String(limit)}${unit}); action: ${action}`);
     this.context.events.emit(`process:${kind}-limit`, { name, [kind]: value, limit, action });
 
@@ -1231,7 +1251,7 @@ export class ProcessManagerPlugin implements Plugin {
     if (cpu !== undefined && !(typeof cpu === 'number' && cpu > 0)) {
       throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid maxCpu "${String(cpu)}" for "${config.name}" (a percentage above 0)`);
     }
-    for (const kind of ['fds', 'children'] as const) {
+    for (const kind of ['fds', 'children', 'eventLoop'] as const) {
       const limit = config.limits?.[kind];
       if (limit === undefined) continue;
       if (!(typeof limit.max === 'number' && Number.isInteger(limit.max) && limit.max > 0)) {
@@ -1264,7 +1284,7 @@ export class ProcessManagerPlugin implements Plugin {
         throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid canaryAnalysis.metrics for "${config.name}" (each needs a metric name and max and/or maxRatio above 0)`);
       }
     }
-    for (const action of [config.limits?.memory?.action, config.limits?.cpu?.action, config.limits?.fds?.action, config.limits?.children?.action]) {
+    for (const action of [config.limits?.memory?.action, config.limits?.cpu?.action, config.limits?.fds?.action, config.limits?.children?.action, config.limits?.eventLoop?.action]) {
       if (action !== undefined && !(['warn', 'restart', 'stop'] as string[]).includes(action)) {
         throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid limit action "${action}" for "${config.name}" (warn, restart or stop)`);
       }

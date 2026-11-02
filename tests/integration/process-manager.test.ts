@@ -255,7 +255,7 @@ describe('ProcessManagerPlugin', () => {
         hits.length = 0;
         // ~80MB resident and a busy loop (~60% of a core)
         writeFileSync(hogPath, "const keep = Buffer.alloc(80 * 1024 * 1024, 1); setInterval(() => { const end = Date.now() + 60; while (Date.now() < end) {} keep[0]++; }, 100);");
-        for (const kind of ['memory', 'cpu', 'fds', 'children']) {
+        for (const kind of ['memory', 'cpu', 'fds', 'children', 'eventLoop']) {
           events.on(`process:${kind}-limit`, (data: unknown) => { hits.push({ kind, data: data as (typeof hits)[number]['data'] }); });
         }
       });
@@ -323,6 +323,24 @@ describe('ProcessManagerPlugin', () => {
         }
       }, 20_000);
 
+      it('should act on the event loop delay the app reports', async () => {
+        const lagging = resolve('./test-limit-loop.cjs');
+        const report = (seconds: number) => `process.send({ type: 'od:metrics', metrics: [{ name: 'nodejs_eventloop_delay_p99_seconds', type: 'gauge', help: '', series: [{ labels: {}, value: ${String(seconds)} }] }] });`;
+        // Calm first, then 250 ms of delay
+        writeFileSync(lagging, `${report(0.005)} setTimeout(() => { ${report(0.25)} }, 2500); setInterval(() => {}, 1000);`);
+        try {
+          const started = Date.now();
+          await methods.get('start')!({ name: 'hog', script: lagging, killTimeout: 300, limits: { eventLoop: { max: 100, action: 'warn' } } });
+          await until(() => hits.length > 0);
+          expect(Date.now() - started).toBeGreaterThan(2000); // the calm report did not trigger it
+          expect(hits[0]).toMatchObject({ kind: 'eventLoop', data: { name: 'hog', action: 'warn', limit: 100 } });
+          expect((hits[0]?.data as unknown as { eventLoop: number }).eventLoop).toBeCloseTo(250, 0);
+        } finally {
+          await methods.get('stop')!({ name: 'hog' }).catch(() => undefined);
+          unlinkSync(lagging);
+        }
+      }, 20_000);
+
       it('should keep the maxMemory shorthand as a restart', async () => {
         const first = await methods.get('start')!({ name: 'hog', script: hogPath, killTimeout: 300, maxMemory: '30M' }) as Info;
         await until(async () => (await info()).pid !== first.pid);
@@ -335,6 +353,7 @@ describe('ProcessManagerPlugin', () => {
         [{ limits: { cpu: { max: 50, action: 'throttle' } } }, /Invalid limit action "throttle"/],
         [{ limits: { fds: { max: 0 } } }, /Invalid limits.fds.max "0"/],
         [{ limits: { children: { max: 1.5 } } }, /Invalid limits.children.max "1.5"/],
+        [{ limits: { eventLoop: { max: -5 } } }, /Invalid limits.eventLoop.max "-5"/],
         [{ limits: { children: { max: 5, action: 'kill' } } }, /Invalid limit action "kill"/],
       ])('should reject %j', async (extra, message) => {
         await expect(methods.get('start')!({ name: 'hog', script: hogPath, ...extra })).rejects.toThrow(message);
