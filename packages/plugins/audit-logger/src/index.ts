@@ -54,6 +54,8 @@ const LIFECYCLE: Array<[string, string]> = [
   ['process:crash', 'process.crash'],
   ['process:memory-limit', 'process.memory-limit'],
   ['process:cpu-limit', 'process.cpu-limit'],
+  ['process:fds-limit', 'process.fds-limit'],
+  ['process:children-limit', 'process.children-limit'],
   ['health:action:restart', 'health.restart'],
   ['health:action:stop', 'health.stop'],
   ['watch:change', 'watch.restart'],

@@ -52,6 +52,7 @@ export type {
   SecretReference,
   EnvValue,
   LimitAction,
+  CountLimit,
   DeployConfig,
   CanaryMetricCheck,
   DeployStrategy,

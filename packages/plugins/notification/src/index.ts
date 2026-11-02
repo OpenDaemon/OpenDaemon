@@ -96,6 +96,20 @@ const SOURCES: Array<{
     }),
   },
   {
+    source: 'process:fds-limit', event: 'process:fds-limit', severity: 'warning',
+    describe: (d) => ({
+      title: `Process "${text(d['name'])}" exceeded its open file limit`,
+      message: `${text(d['fds'])} open files, limit ${text(d['limit'])}; action: ${text(d['action'], 'warn')}`,
+    }),
+  },
+  {
+    source: 'process:children-limit', event: 'process:children-limit', severity: 'warning',
+    describe: (d) => ({
+      title: `Process "${text(d['name'])}" exceeded its child process limit`,
+      message: `${text(d['children'])} child processes, limit ${text(d['limit'])}; action: ${text(d['action'], 'warn')}`,
+    }),
+  },
+  {
     source: 'cron:finish', event: 'cron:failed', severity: 'warning',
     describe: (d) => d['result'] === 'failed'
       ? { title: `Scheduled job "${text(d['name'])}" failed`, message: `exit code ${text(d['exitCode'], 'none')}, attempt ${text(d['attempt'])}` }

@@ -255,7 +255,7 @@ describe('ProcessManagerPlugin', () => {
         hits.length = 0;
         // ~80MB resident and a busy loop (~60% of a core)
         writeFileSync(hogPath, "const keep = Buffer.alloc(80 * 1024 * 1024, 1); setInterval(() => { const end = Date.now() + 60; while (Date.now() < end) {} keep[0]++; }, 100);");
-        for (const kind of ['memory', 'cpu']) {
+        for (const kind of ['memory', 'cpu', 'fds', 'children']) {
           events.on(`process:${kind}-limit`, (data: unknown) => { hits.push({ kind, data: data as (typeof hits)[number]['data'] }); });
         }
       });
@@ -296,6 +296,33 @@ describe('ProcessManagerPlugin', () => {
         expect((await info()).restartCount).toBeGreaterThanOrEqual(1);
       }, 30_000);
 
+      it('should act on open file descriptors', async () => {
+        const opener = resolve('./test-limit-fds.cjs');
+        writeFileSync(opener, "const fs = require('fs'); for (let i = 0; i < 40; i++) fs.openSync(__filename, 'r'); setInterval(() => {}, 1000);");
+        try {
+          await methods.get('start')!({ name: 'hog', script: opener, killTimeout: 300, limits: { fds: { max: 30, action: 'stop' } } });
+          await until(async () => (await info()).status === 'stopped');
+          expect(hits[0]).toMatchObject({ kind: 'fds', data: { name: 'hog', action: 'stop', limit: 30 } });
+          expect((hits[0]?.data as unknown as { fds: number }).fds).toBeGreaterThan(30);
+        } finally {
+          unlinkSync(opener);
+        }
+      });
+
+      it('should act on child processes, counting grandchildren', async () => {
+        const spawner = resolve('./test-limit-children.cjs');
+        writeFileSync(spawner, "const { spawn } = require('child_process'); for (let i = 0; i < 3; i++) spawn(process.execPath, ['-e', \"require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']); setInterval(() => {}, 1000)\"], { stdio: 'ignore' }); setInterval(() => {}, 1000);");
+        try {
+          await methods.get('start')!({ name: 'hog', script: spawner, killTimeout: 300, limits: { children: { max: 5, action: 'warn' } } });
+          await until(() => hits.length > 0);
+          expect(hits[0]).toMatchObject({ kind: 'children', data: { name: 'hog', action: 'warn', limit: 5 } });
+          expect((hits[0]?.data as unknown as { children: number }).children).toBe(6);
+        } finally {
+          await methods.get('stop')!({ name: 'hog' }).catch(() => undefined);
+          unlinkSync(spawner);
+        }
+      }, 20_000);
+
       it('should keep the maxMemory shorthand as a restart', async () => {
         const first = await methods.get('start')!({ name: 'hog', script: hogPath, killTimeout: 300, maxMemory: '30M' }) as Info;
         await until(async () => (await info()).pid !== first.pid);
@@ -306,6 +333,9 @@ describe('ProcessManagerPlugin', () => {
         [{ maxCpu: 0 }, /Invalid maxCpu "0"/],
         [{ limits: { memory: { max: 'lots' } } }, /Invalid maxMemory "lots"/],
         [{ limits: { cpu: { max: 50, action: 'throttle' } } }, /Invalid limit action "throttle"/],
+        [{ limits: { fds: { max: 0 } } }, /Invalid limits.fds.max "0"/],
+        [{ limits: { children: { max: 1.5 } } }, /Invalid limits.children.max "1.5"/],
+        [{ limits: { children: { max: 5, action: 'kill' } } }, /Invalid limit action "kill"/],
       ])('should reject %j', async (extra, message) => {
         await expect(methods.get('start')!({ name: 'hog', script: hogPath, ...extra })).rejects.toThrow(message);
       });

@@ -118,6 +118,18 @@ export interface ResourceLimits {
     /** Default: warn */
     action?: LimitAction;
   };
+  /** Open file descriptors of all instances together (Linux only) */
+  fds?: CountLimit;
+  /** Child processes (all descendants) of all instances together (Linux only) */
+  children?: CountLimit;
+}
+
+export interface CountLimit {
+  max: number;
+  /** Default: warn */
+  action?: LimitAction;
+  /** The limit must stay exceeded this long (ms) before the action runs (default 0) */
+  grace?: number;
 }
 
 /**

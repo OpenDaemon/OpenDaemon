@@ -1,6 +1,6 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
 import { Logger, parseBytes, dependencyLevels } from '../../../core/src/index.js';
-import type { LimitAction, Release } from '../../../core/src/index.js';
+import type { CountLimit, LimitAction, Release } from '../../../core/src/index.js';
 import { DaemonError, ErrorCode, ProcessError } from '../../../core/src/index.js';
 import type {
   ProcessConfig,
@@ -10,7 +10,7 @@ import type {
   MetricSnapshot,
 } from '../../../core/src/index.js';
 import { spawn, execFile, type ChildProcess } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { availableParallelism } from 'os';
 import { fileURLToPath } from 'url';
@@ -42,6 +42,8 @@ interface LogEntry {
   message: string;
 }
 
+type LimitKind = 'memory' | 'cpu' | 'fds' | 'children';
+
 interface ManagedProcessInfo {
   id: number;
   config: ProcessConfig;
@@ -61,10 +63,13 @@ interface ManagedProcessInfo {
   stopTimeout?: NodeJS.Timeout | undefined;
   cpu: number;
   memory: number;
+  /** Open file descriptors and descendant processes; only measured when a limit asks for them */
+  fds?: number;
+  children?: number;
   metricsInterval?: NodeJS.Timeout | undefined;
   cpuSamples?: Map<number, { ticks: number; at: number }> | undefined;
   /** When each exceeded limit started being exceeded, and whether its action already ran */
-  limitState?: Partial<Record<'memory' | 'cpu', { since: number; acted: boolean } | undefined>>;
+  limitState?: Partial<Record<LimitKind, { since: number; acted: boolean } | undefined>>;
   /** Why the process is waiting or errored without having run (shown in od info) */
   statusReason?: string | undefined;
   logs: LogEntry[];
@@ -516,7 +521,56 @@ export class ProcessManagerPlugin implements Plugin {
 
     proc.cpu = Math.max(0, cpu);
     proc.memory = memory;
+    const limits = this.effectiveLimits(proc.config);
+    if (limits.fds) proc.fds = this.countFds(pids);
+    if (limits.children) proc.children = this.countDescendants(pids);
     this.enforceLimits(proc);
+  }
+
+  /**
+   * Linux: open file descriptors of the pids together
+   */
+  private countFds(pids: number[]): number {
+    let total = 0;
+    for (const pid of pids) {
+      try {
+        total += readdirSync(`/proc/${pid}/fd`).length;
+      } catch {
+        // Gone, or not ours to read
+      }
+    }
+    return total;
+  }
+
+  /**
+   * Linux: all descendants of the pids, from /proc/<pid>/task/<tid>/children
+   */
+  private countDescendants(pids: number[]): number {
+    const seen = new Set<number>();
+    const queue = [...pids];
+    for (let pid = queue.pop(); pid !== undefined; pid = queue.pop()) {
+      let tasks: string[];
+      try {
+        tasks = readdirSync(`/proc/${pid}/task`);
+      } catch {
+        continue;
+      }
+      for (const task of tasks) {
+        let children = '';
+        try {
+          children = readFileSync(`/proc/${pid}/task/${task}/children`, 'utf-8');
+        } catch {
+          // Kernel without CONFIG_PROC_CHILDREN, or the thread exited
+        }
+        for (const child of children.split(' ').map(Number)) {
+          if (child > 0 && !seen.has(child)) {
+            seen.add(child);
+            queue.push(child);
+          }
+        }
+      }
+    }
+    return seen.size;
   }
 
   /**
@@ -544,7 +598,12 @@ export class ProcessManagerPlugin implements Plugin {
   private effectiveLimits(config: ProcessConfig): {
     memory?: { max: number; action: LimitAction; grace: number };
     cpu?: { max: number; action: LimitAction; duration: number };
+    fds?: { max: number; action: LimitAction; grace: number };
+    children?: { max: number; action: LimitAction; grace: number };
   } {
+    const count = (limit: CountLimit | undefined) => limit === undefined ? {} : {
+      max: limit.max, action: limit.action ?? 'warn', grace: limit.grace ?? 0,
+    };
     const memoryMax = config.limits?.memory?.max ?? config.maxMemory;
     const memoryBytes = memoryMax === undefined ? undefined : parseBytes(memoryMax);
     const cpuMax = config.limits?.cpu?.max ?? config.maxCpu;
@@ -555,6 +614,8 @@ export class ProcessManagerPlugin implements Plugin {
       ...(cpuMax === undefined ? {} : {
         cpu: { max: cpuMax, action: config.limits?.cpu?.action ?? 'warn', duration: config.limits?.cpu?.duration ?? 60000 },
       }),
+      ...(config.limits?.fds === undefined ? {} : { fds: count(config.limits.fds) as { max: number; action: LimitAction; grace: number } }),
+      ...(config.limits?.children === undefined ? {} : { children: count(config.limits.children) as { max: number; action: LimitAction; grace: number } }),
     };
   }
 
@@ -570,7 +631,7 @@ export class ProcessManagerPlugin implements Plugin {
     const now = Date.now();
 
     const check = (
-      kind: 'memory' | 'cpu', value: number, max: number, hold: number, action: LimitAction
+      kind: LimitKind, value: number, max: number, hold: number, action: LimitAction
     ): void => {
       if (value <= max) {
         // Back under the limit: forget the breach so a later one starts a new grace period
@@ -585,13 +646,15 @@ export class ProcessManagerPlugin implements Plugin {
 
     if (limits.memory) check('memory', proc.memory, limits.memory.max, limits.memory.grace, limits.memory.action);
     if (limits.cpu) check('cpu', proc.cpu, limits.cpu.max, limits.cpu.duration, limits.cpu.action);
+    if (limits.fds && proc.fds !== undefined) check('fds', proc.fds, limits.fds.max, limits.fds.grace, limits.fds.action);
+    if (limits.children && proc.children !== undefined) check('children', proc.children, limits.children.max, limits.children.grace, limits.children.action);
   }
 
-  private applyLimitAction(proc: ManagedProcessInfo, kind: 'memory' | 'cpu', value: number, limit: number, action: LimitAction): void {
+  private applyLimitAction(proc: ManagedProcessInfo, kind: LimitKind, value: number, limit: number, action: LimitAction): void {
     const name = proc.config.name;
-    const unit = kind === 'memory' ? ' bytes' : '%';
+    const unit = { memory: ' bytes', cpu: '%', fds: ' open files', children: ' child processes' }[kind];
     this.logger.warn(`Process "${name}" ${kind} ${value.toFixed(kind === 'cpu' ? 1 : 0)}${unit} exceeds the limit (${String(limit)}${unit}); action: ${action}`);
-    this.context.events.emit(`process:${kind}-limit`, { name, [kind === 'memory' ? 'memory' : 'cpu']: value, limit, action });
+    this.context.events.emit(`process:${kind}-limit`, { name, [kind]: value, limit, action });
 
     if (action === 'restart') {
       proc.restartCount++;
@@ -1168,6 +1231,13 @@ export class ProcessManagerPlugin implements Plugin {
     if (cpu !== undefined && !(typeof cpu === 'number' && cpu > 0)) {
       throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid maxCpu "${String(cpu)}" for "${config.name}" (a percentage above 0)`);
     }
+    for (const kind of ['fds', 'children'] as const) {
+      const limit = config.limits?.[kind];
+      if (limit === undefined) continue;
+      if (!(typeof limit.max === 'number' && Number.isInteger(limit.max) && limit.max > 0)) {
+        throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid limits.${kind}.max "${String(limit.max)}" for "${config.name}" (a whole number above 0)`);
+      }
+    }
     const deploy = config.deploy;
     if (deploy) {
       if (deploy.strategy !== undefined && !(['rolling', 'blue-green', 'canary', 'recreate'] as string[]).includes(deploy.strategy)) {
@@ -1194,7 +1264,7 @@ export class ProcessManagerPlugin implements Plugin {
         throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid canaryAnalysis.metrics for "${config.name}" (each needs a metric name and max and/or maxRatio above 0)`);
       }
     }
-    for (const action of [config.limits?.memory?.action, config.limits?.cpu?.action]) {
+    for (const action of [config.limits?.memory?.action, config.limits?.cpu?.action, config.limits?.fds?.action, config.limits?.children?.action]) {
       if (action !== undefined && !(['warn', 'restart', 'stop'] as string[]).includes(action)) {
         throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid limit action "${action}" for "${config.name}" (warn, restart or stop)`);
       }

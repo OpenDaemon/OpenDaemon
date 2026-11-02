@@ -330,9 +330,15 @@ apps:
         max: 90            # percent of one core, all instances together
         duration: 60000    # sustained this long (ms) (default 60000)
         action: warn       # default warn
+      fds:
+        max: 1024          # open file descriptors of all instances together (Linux only)
+        action: warn       # default warn; grace works like memory's
+      children:
+        max: 20            # child processes, all descendants (Linux only)
+        action: stop
 ```
 
-`maxMemory: 512M` and `maxCpu: 90` are shorthands (`od start app.js --max-memory 512M` too). An action runs once per breach: a `warn` re-arms when the value drops back under the limit, and a restart starts a fresh process. Restarts count in `od list`. Every action logs, emits `process:memory-limit` / `process:cpu-limit` (which the notification plugin and the audit log pick up). CPU throttling, file descriptor, child process and event loop limits are not implemented.
+`maxMemory: 512M` and `maxCpu: 90` are shorthands (`od start app.js --max-memory 512M` too). An action runs once per breach: a `warn` re-arms when the value drops back under the limit, and a restart starts a fresh process. Restarts count in `od list`. Every action logs, emits `process:memory-limit` / `process:cpu-limit` / `process:fds-limit` / `process:children-limit` (which the notification plugin and the audit log pick up). `fds` and `children` are read from `/proc`, so they work on Linux only (elsewhere they are never measured and never trigger). CPU throttling and event loop limits are not implemented.
 
 ## CLI Commands
 
