@@ -495,7 +495,7 @@ export class SecretCommand implements Command {
 }
 
 /**
- * Startup / unstartup commands - run the daemon at boot (systemd, launchd, OpenRC)
+ * Startup / unstartup commands - run the daemon at boot (systemd, launchd, OpenRC, Windows Task Scheduler)
  */
 export class StartupCommand implements Command {
   name = 'startup';
@@ -511,10 +511,8 @@ export class StartupCommand implements Command {
 
   execute(_args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
     const init = (typeof options['init'] === 'string' ? options['init'] : detectInit(process.platform, existsSync)) as InitSystem | undefined;
-    if (init !== 'systemd' && init !== 'launchd' && init !== 'openrc') {
-      term.error(process.platform === 'win32'
-        ? 'Windows: run the daemon at logon with  schtasks /Create /SC ONLOGON /TN OpenDaemon /TR "node <path-to>\\daemon.js"'
-        : 'No supported init system found; pass --init systemd|launchd|openrc');
+    if (init !== 'systemd' && init !== 'launchd' && init !== 'openrc' && init !== 'schtasks') {
+      term.error('No supported init system found; pass --init systemd|launchd|openrc|schtasks');
       process.exit(1);
       return Promise.resolve();
     }

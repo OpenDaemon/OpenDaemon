@@ -14,7 +14,8 @@ describe('detectInit', () => {
     expect(detectInit('linux', (p) => p === '/run/systemd/system')).toBe('systemd');
     expect(detectInit('linux', (p) => p === '/sbin/openrc-run')).toBe('openrc');
     expect(detectInit('linux', () => false)).toBeUndefined();
-    expect(detectInit('win32')).toBeUndefined();
+    expect(detectInit('win32')).toBe('schtasks');
+    expect(detectInit('freebsd')).toBeUndefined();
   });
 });
 
@@ -67,5 +68,25 @@ describe('planStartup', () => {
     expect(plan.content).toContain("export OPENDAEMON_HOME='/home/me/.opendaemon'");
     expect(plan.content).toContain("command_user='me'");
     expect(plan.enable).toContain('rc-update add opendaemon default');
+  });
+
+  it('should generate a Windows scheduled task that sets the home and restarts on failure', () => {
+    const plan = planStartup({
+      ...base, init: 'schtasks', node: 'C:\\Program Files\\nodejs\\node.exe', daemonScript: 'C:\\od\\daemon.js',
+      workingDirectory: 'C:\\srv\\a&b', home: 'C:\\Users\\me\\.opendaemon',
+    });
+    expect(plan.content).toContain('<LogonTrigger>');
+    expect(plan.content).toContain('<Arguments>/d /s /c "set "OPENDAEMON_HOME=C:\\Users\\me\\.opendaemon" &amp;&amp; "C:\\Program Files\\nodejs\\node.exe" "C:\\od\\daemon.js""</Arguments>');
+    expect(plan.content).toContain('<WorkingDirectory>C:\\srv\\a&amp;b</WorkingDirectory>');
+    expect(plan.content).toContain('<RestartOnFailure>');
+    expect(plan.content).toContain('<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>');
+    expect(plan.file.endsWith('opendaemon-task.xml')).toBe(true);
+    expect(plan.enable[0]).toMatch(/^schtasks \/Create \/TN OpenDaemon \/XML ".*opendaemon-task\.xml" \/F$/);
+    expect(plan.enable[1]).toBe('schtasks /Run /TN OpenDaemon');
+    expect(plan.disable).toEqual(['schtasks /End /TN OpenDaemon', 'schtasks /Delete /TN OpenDaemon /F']);
+
+    const system = planStartup({ ...base, init: 'schtasks', system: true });
+    expect(system.content).toContain('<BootTrigger>');
+    expect(system.content).toContain('<UserId>S-1-5-18</UserId>');
   });
 });

@@ -107,7 +107,7 @@ async function main(): Promise<void> {
   parser.addOption({ name: 'strategy', type: 'string', description: 'od deploy / restart: rolling, blue-green, canary or recreate' });
   parser.addOption({ name: 'script', type: 'string', description: 'od deploy: the new script to run' });
   parser.addOption({ name: 'release', type: 'string', description: 'od deploy: version label' });
-  parser.addOption({ name: 'init', type: 'string', description: 'Init system for od startup: systemd, launchd or openrc' });
+  parser.addOption({ name: 'init', type: 'string', description: 'Init system for od startup: systemd, launchd, openrc or schtasks' });
   parser.addOption({ name: 'system', type: 'boolean', description: 'od startup: install for the whole machine (needs root)' });
   parser.addOption({ name: 'print', type: 'boolean', description: 'od startup: print the script instead of writing it' });
   parser.addOption({ name: 'enable', type: 'boolean', description: 'od startup: also run the enable commands' });

@@ -16,7 +16,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **Persistent Logs** - JSON-lines log files per process with size rotation, gzip, search (`--grep`, `--since`) and live follow (`-f`)
 - **Notifications** - Webhook, Slack and Discord alerts for crashes, unhealthy apps, memory limits and failed jobs
 - **Audit Log** - Redacted JSON-lines trail of operations, lifecycle events and logins (`od audit`)
-- **Start at Boot** - `od startup` generates systemd, launchd or OpenRC services
+- **Start at Boot** - `od startup` generates systemd, launchd, OpenRC or Windows scheduled-task services
 - **Secrets** - AES-256-GCM secret store, `{ secret: NAME }` env references, rotation that restarts the apps using a secret
 - **Scheduled Jobs** - `cron` apps with time zones, overlap control, retries and run history (`od cron`)
 - **Watch Mode** - `--watch` restarts on file changes (recursive `fs.watch`, ignore patterns, debounce)
@@ -183,7 +183,7 @@ sudo od startup --system --enable   # machine-wide, runs as the invoking user
 od unstartup               # disable and remove it
 ```
 
-Supported: systemd (user or system unit), launchd (LaunchAgent or LaunchDaemon) and OpenRC; pick one with `--init` if detection fails. The generated service runs `daemon.js` in the foreground from the directory where you ran `od startup` (that is where the config file is found), with `OPENDAEMON_HOME` set, restarts it on failure, and allows 90 seconds for the daemon to stop its apps in dependency order. On Windows, use `schtasks /Create /SC ONLOGON /TN OpenDaemon /TR "node <path>\\daemon.js"`.
+Supported: systemd (user or system unit), launchd (LaunchAgent or LaunchDaemon), OpenRC and the Windows Task Scheduler (`schtasks`: a task that runs at logon, or at boot as SYSTEM with `--system`, restarts after a failure, has no time limit and writes its XML to `<home>\\opendaemon-task.xml`); pick one with `--init` if detection fails. The generated service runs `daemon.js` in the foreground from the directory where you ran `od startup` (that is where the config file is found), with `OPENDAEMON_HOME` set, restarts it on failure, and allows 90 seconds for the daemon to stop its apps in dependency order.
 
 ## Secrets
 

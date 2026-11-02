@@ -1,7 +1,7 @@
 import { homedir } from 'os';
 import { resolve } from 'path';
 
-export type InitSystem = 'systemd' | 'launchd' | 'openrc';
+export type InitSystem = 'systemd' | 'launchd' | 'openrc' | 'schtasks';
 
 export interface StartupOptions {
   init: InitSystem;
@@ -28,6 +28,7 @@ const SERVICE = 'opendaemon';
 
 export function detectInit(platform: NodeJS.Platform = process.platform, exists: (path: string) => boolean = () => false): InitSystem | undefined {
   if (platform === 'darwin') return 'launchd';
+  if (platform === 'win32') return 'schtasks';
   if (platform !== 'linux') return undefined;
   if (exists('/run/systemd/system')) return 'systemd';
   if (exists('/sbin/openrc-run')) return 'openrc';
@@ -103,6 +104,51 @@ export function planStartup(options: StartupOptions): StartupPlan {
     ].join('\n');
     const file = system ? `/Library/LaunchDaemons/${label}.plist` : resolve(userHome, 'Library/LaunchAgents', `${label}.plist`);
     return { init, file, content, enable: [`launchctl load -w ${file}`], disable: [`launchctl unload -w ${file}`] };
+  }
+
+  if (init === 'schtasks') {
+    // The Task Scheduler cannot set an environment, so cmd.exe sets OPENDAEMON_HOME first.
+    // /s strips the outer quotes of the command line.
+    const command = `/d /s /c "set "OPENDAEMON_HOME=${home}" && "${node}" "${daemonScript}""`;
+    const task = 'OpenDaemon';
+    const content = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
+      '  <RegistrationInfo><Description>OpenDaemon process manager</Description></RegistrationInfo>',
+      '  <Triggers>',
+      system ? '    <BootTrigger><Enabled>true</Enabled></BootTrigger>' : '    <LogonTrigger><Enabled>true</Enabled></LogonTrigger>',
+      '  </Triggers>',
+      '  <Principals>',
+      system
+        ? '    <Principal id="Author"><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal>'
+        : '    <Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>',
+      '  </Principals>',
+      '  <Settings>',
+      '    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>',
+      '    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>',
+      '    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>',
+      '    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>',
+      '    <RestartOnFailure><Interval>PT1M</Interval><Count>999</Count></RestartOnFailure>',
+      '    <Hidden>true</Hidden>',
+      '  </Settings>',
+      '  <Actions Context="Author">',
+      '    <Exec>',
+      '      <Command>cmd.exe</Command>',
+      `      <Arguments>${xmlEscape(command)}</Arguments>`,
+      `      <WorkingDirectory>${xmlEscape(workingDirectory)}</WorkingDirectory>`,
+      '    </Exec>',
+      '  </Actions>',
+      '</Task>',
+      '',
+    ].join('\n');
+    const file = resolve(home, 'opendaemon-task.xml');
+    return {
+      init,
+      file,
+      content,
+      enable: [`schtasks /Create /TN ${task} /XML "${file}" /F`, `schtasks /Run /TN ${task}`],
+      disable: [`schtasks /End /TN ${task}`, `schtasks /Delete /TN ${task} /F`],
+    };
   }
 
   const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
