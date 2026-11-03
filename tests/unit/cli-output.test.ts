@@ -203,6 +203,25 @@ describe('TerminalOutput', () => {
   });
 
   describe('spinner', () => {
+    const setTTY = (value: boolean | undefined): void => {
+      Object.defineProperty(process.stdout, 'isTTY', { value, configurable: true });
+    };
+    const originalTTY = process.stdout.isTTY;
+    beforeEach(() => { setTTY(true); });
+    afterEach(() => { setTTY(originalTTY); });
+
+    it('should write nothing but the final message when stdout is not a terminal', () => {
+      setTTY(false);
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const spinner = output.spinner('Loading...');
+      spinner.start();
+      spinner.stop(true, 'Done');
+      expect(spinner['interval']).toBeUndefined();
+      expect(writeSpy).not.toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Done'));
+      writeSpy.mockRestore();
+    });
+
     it('should create spinner', () => {
       const spinner = output.spinner('Loading...');
       expect(spinner).toBeDefined();

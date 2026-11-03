@@ -28,7 +28,9 @@ import {
 } from './commands/index.js';
 import { SaveCommand, ResurrectCommand, ResetCommand, SignalCommand, ReloadCommand, PingCommand, EcosystemCommand } from './commands/lifecycle.js';
 import { CliClient } from './client.js';
+import { RuntimeCommand } from './commands/runtime.js';
 import { term } from './output.js';
+import { basename } from 'path';
 import { MonitCommand } from './tui/monit.js';
 
 /**
@@ -163,6 +165,8 @@ async function main(): Promise<void> {
 
   // Parse arguments. After a bare `--` everything belongs to the app: `od start app.js -- --port 80`
   const argv = process.argv.slice(2);
+  // `od-runtime app.js` is `od runtime app.js` (pm2-runtime's counterpart)
+  if (/^od-runtime(\.\w+)?$/.test(basename(process.argv[1] ?? ''))) argv.unshift('runtime');
   const dashes = argv.indexOf('--');
   const args = dashes === -1 ? argv : argv.slice(0, dashes);
   const parsed = parser.parse(args);
@@ -360,6 +364,10 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       await cmd.execute();
       break;
     }
+
+    case 'runtime':
+      await new RuntimeCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
+      break;
 
     case 'reload':
       await new ReloadCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);

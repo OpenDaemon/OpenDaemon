@@ -1039,7 +1039,7 @@ function isProcessRunning(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-function getDaemonScriptPath(): string {
+export function getDaemonScriptPath(): string {
   // Resolve next to this module, not cwd, so `od` works from any directory.
   // Bundled: dist/chunk-*.js sits beside dist/daemon.js. Source: src/commands/../daemon.ts
   const moduleDir = fileURLToPath(new URL('.', import.meta.url));

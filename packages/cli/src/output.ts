@@ -205,7 +205,8 @@ class Spinner {
    * Start the spinner
    */
   start(): void {
-    if (this.interval) {
+    // No animation or cursor codes when the output is a pipe or a file (scripts, docker logs)
+    if (this.interval || !process.stdout.isTTY) {
       return;
     }
 
@@ -232,11 +233,11 @@ class Spinner {
       this.interval = undefined;
     }
 
-    // Show cursor
-    process.stdout.write('\x1b[?25h');
-
-    // Clear line
-    process.stdout.write('\r\x1b[K');
+    if (process.stdout.isTTY) {
+      // Show cursor, clear the spinner line
+      process.stdout.write('\x1b[?25h');
+      process.stdout.write('\r\x1b[K');
+    }
 
     // Print final message
     const finalMessage = message ?? this.text;

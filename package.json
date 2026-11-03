@@ -25,7 +25,8 @@
   },
   "bin": {
     "od": "./packages/cli/dist/cli.js",
-    "opendaemon": "./packages/cli/dist/cli.js"
+    "opendaemon": "./packages/cli/dist/cli.js",
+    "od-runtime": "./packages/cli/dist/cli.js"
   },
   "files": [
     "packages/*/dist/**"

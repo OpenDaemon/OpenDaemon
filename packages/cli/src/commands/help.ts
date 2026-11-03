@@ -75,6 +75,7 @@ ${term.bold('COMMANDS')}
     daemon restart   Restart the daemon
     ping             Check that the daemon answers
     kill             Stop the daemon and everything it runs
+    runtime <app>    Run in the foreground for Docker (also: od-runtime <app>)
     daemon status    Show daemon status
 
   Other:
