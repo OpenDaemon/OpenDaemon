@@ -207,6 +207,7 @@ export class StartCommand implements Command {
       process.exit(1);
     }
 
+    await ensureDaemonRunning();
     const spinner = term.spinner(`Starting ${name}...`);
     spinner.start();
 
@@ -956,6 +957,14 @@ async function daemonAnswers(): Promise<boolean> {
 /**
  * Daemon command - manage daemon
  */
+/**
+ * Start the daemon when it is not running, like PM2 does on the first command
+ */
+export async function ensureDaemonRunning(): Promise<void> {
+  if (new CliClient().isDaemonRunning() && await daemonAnswers()) return;
+  await new DaemonCommand().execute(['start']);
+}
+
 export class DaemonCommand implements Command {
   name = 'daemon';
   description = 'Manage daemon';

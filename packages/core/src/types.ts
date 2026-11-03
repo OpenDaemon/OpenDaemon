@@ -357,6 +357,8 @@ export interface DaemonConfig {
     socketPath?: string;
     shutdownTimeout?: number;
     maxLogs?: number;
+    /** Start the apps saved with `od save` when the daemon starts (default true) */
+    resurrect?: boolean;
   };
 
   defaults?: Partial<ProcessConfig>;

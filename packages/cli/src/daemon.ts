@@ -108,7 +108,7 @@ export async function main(): Promise<void> {
     kernel.registerPlugin(configManager);
     kernel.registerPlugin(new SecretManagerPlugin(home));
     kernel.registerPlugin(new LogManagerPlugin());
-    kernel.registerPlugin(new ProcessManagerPlugin());
+    kernel.registerPlugin(new ProcessManagerPlugin(home));
     kernel.registerPlugin(new DeployStrategyPlugin());
     kernel.registerPlugin(new HealthCheckPlugin());
     kernel.registerPlugin(new MetricsCollectorPlugin());

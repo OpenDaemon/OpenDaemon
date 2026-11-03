@@ -10,8 +10,8 @@ import type {
   MetricSnapshot,
 } from '../../../core/src/index.js';
 import { spawn, execFile, type ChildProcess } from 'child_process';
-import { existsSync, readdirSync, readFileSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
+import { resolve, dirname, join } from 'path';
 import { availableParallelism } from 'os';
 import { fileURLToPath } from 'url';
 
@@ -90,11 +90,85 @@ export class ProcessManagerPlugin implements Plugin {
   private context!: PluginContext;
   private readonly logger: Logger;
   private stopping = false;
+  /** Saved apps that were stopped when saved: listed, not started */
+  private savedStopped = new Set<string>();
   /** Dependency levels of the configured apps (level 0 has no dependencies) */
   private startLevels: string[][] = [];
 
-  constructor() {
+  /** Where `save` writes the process list (dump.json in the daemon's home); unset: no persistence */
+  private readonly dumpFile: string | undefined;
+
+  constructor(home?: string) {
     this.logger = new Logger('process-manager');
+    this.dumpFile = home === undefined ? undefined : join(home, 'dump.json');
+  }
+
+  /**
+   * Apps saved by `od save` that the config does not define itself. A saved list that cannot be
+   * read is ignored with a warning: it must never keep the daemon from starting.
+   */
+  private readDump(configured: ProcessConfig[]): Array<{ config: ProcessConfig; stopped: boolean }> {
+    if (this.dumpFile === undefined || !existsSync(this.dumpFile)) return [];
+    try {
+      const parsed = JSON.parse(readFileSync(this.dumpFile, 'utf-8')) as { processes?: unknown };
+      if (!Array.isArray(parsed.processes)) throw new Error('"processes" is not a list');
+      const known = new Set(configured.map((app) => app.name));
+      const saved: Array<{ config: ProcessConfig; stopped: boolean }> = [];
+      for (const entry of parsed.processes as Array<{ config?: ProcessConfig; stopped?: boolean }>) {
+        const config = entry.config;
+        if (typeof config?.name !== 'string' || typeof config.script !== 'string' || known.has(config.name)) continue;
+        known.add(config.name);
+        saved.push({ config, stopped: entry.stopped === true });
+      }
+      return saved;
+    } catch (err) {
+      this.logger.warn(`Ignoring ${this.dumpFile}: ${(err as Error).message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Write the process list to dump.json (like `pm2 save`), so the daemon brings it back after a
+   * reboot. Scheduled jobs are left out: they come from the config. The file is private to the
+   * user because it holds the apps' environment.
+   */
+  private saveProcesses(): Promise<{ file: string; saved: string[] }> {
+    if (this.dumpFile === undefined) {
+      return Promise.reject(new DaemonError(ErrorCode.CONFIG_INVALID, 'Saving is not available: the plugin has no home directory'));
+    }
+    const entries = [...this.processes.values()]
+      .filter((proc) => proc.config.cron === undefined)
+      .map((proc) => ({ config: proc.config, stopped: proc.status !== 'online' && proc.status !== 'starting' }));
+    const temp = `${this.dumpFile}.${process.pid}.tmp`;
+    writeFileSync(temp, JSON.stringify({ version: 1, savedAt: new Date().toISOString(), processes: entries }, null, 2), { mode: 0o600 });
+    renameSync(temp, this.dumpFile);
+    this.logger.info(`Saved ${entries.length} process(es) to ${this.dumpFile}`);
+    return Promise.resolve({ file: this.dumpFile, saved: entries.map((e) => e.config.name) });
+  }
+
+  /**
+   * Start what `od save` stored and is not running yet (like `pm2 resurrect`)
+   */
+  private async resurrectProcesses(): Promise<{ started: string[]; skipped: string[]; failed: string[] }> {
+    const result = { started: [] as string[], skipped: [] as string[], failed: [] as string[] };
+    // What is already running is left alone; stopped and errored apps are started again
+    const running = [...this.processes.values()]
+      .filter((proc) => proc.status !== 'stopped' && proc.status !== 'errored')
+      .map((proc) => proc.config);
+    for (const { config, stopped } of this.readDump(running)) {
+      if (stopped) {
+        this.processes.set(config.name, this.placeholder(config, 'stopped', 'saved as stopped'));
+        result.skipped.push(config.name);
+        continue;
+      }
+      try {
+        await this.startProcess(config);
+        result.started.push(config.name);
+      } catch {
+        result.failed.push(config.name);
+      }
+    }
+    return result;
   }
 
   /**
@@ -113,6 +187,8 @@ export class ProcessManagerPlugin implements Plugin {
     context.registerMethod('info', this.getProcessInfo.bind(this));
     context.registerMethod('logs', this.getProcessLogs.bind(this));
     context.registerMethod('scale', this.scaleProcess.bind(this));
+    context.registerMethod('save', this.saveProcesses.bind(this));
+    context.registerMethod('resurrect', this.resurrectProcesses.bind(this));
   }
 
   /**
@@ -124,13 +200,29 @@ export class ProcessManagerPlugin implements Plugin {
     // Load processes from config. Independent apps start in parallel and are awaited; an app
     // with `dependencies` starts once they are ready, in the background, so the daemon (and its
     // IPC) comes up without waiting for health checks.
-    const apps = context.config.apps ?? [];
+    const configured = context.config.apps ?? [];
+    // Apps saved with `od save` come back too (unless daemon.resurrect is false); when the saved
+    // list does not fit the config (a dependency that no longer exists), only the config starts
+    const saved = context.config.daemon?.resurrect === false ? [] : this.readDump(configured);
+    this.savedStopped = new Set(saved.filter((entry) => entry.stopped).map((entry) => entry.config.name));
+    let apps = [...configured, ...saved.map((entry) => entry.config)];
     let levels: string[][];
     try {
       levels = dependencyLevels(apps);
     } catch (err) {
-      this.logger.error(`Not starting apps: ${(err as Error).message}`);
-      return;
+      if (saved.length === 0) {
+        this.logger.error(`Not starting apps: ${(err as Error).message}`);
+        return;
+      }
+      this.logger.warn(`Ignoring the saved apps: ${(err as Error).message}`);
+      apps = configured;
+      this.savedStopped.clear();
+      try {
+        levels = dependencyLevels(apps);
+      } catch (err2) {
+        this.logger.error(`Not starting apps: ${(err2 as Error).message}`);
+        return;
+      }
     }
     this.startLevels = levels;
 
@@ -139,6 +231,11 @@ export class ProcessManagerPlugin implements Plugin {
     for (const name of levels.flat()) {
       const app = byName.get(name);
       if (!app) continue;
+      if (this.savedStopped.has(name)) {
+        this.processes.set(name, this.placeholder(app, 'stopped', 'saved as stopped'));
+        ready.set(name, Promise.resolve(false));
+        continue;
+      }
       if (app.cron !== undefined) {
         // Scheduled jobs run when the scheduler plugin starts them, not with the daemon
         this.processes.set(app.name, this.placeholder(app, 'stopped', `scheduled: cron "${app.cron}"`));

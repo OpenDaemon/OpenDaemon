@@ -47,6 +47,8 @@ ${term.bold('COMMANDS')}
     deploy <name>    Zero-downtime deploy (--strategy rolling|blue-green|canary|recreate)
     deploy status    Show deploys
     rollback <name>  Back to the release before the last deploy
+    save             Save the process list (restored when the daemon starts)
+    resurrect        Start the saved processes that are not running
 
   Monitoring:
     list / ls        List all processes

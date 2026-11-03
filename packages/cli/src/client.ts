@@ -245,6 +245,14 @@ export class CliClient {
   }
 
   /**
+   * Call any daemon method (the ones without a dedicated wrapper above)
+   */
+  async call(method: string, params?: unknown): Promise<unknown> {
+    this.ensureConnected();
+    return this.client.call(method, params);
+  }
+
+  /**
    * Ensure connected to daemon
    */
   private ensureConnected(): void {

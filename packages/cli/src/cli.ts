@@ -26,6 +26,7 @@ import {
   StatusCommand,
   DaemonCommand,
 } from './commands/index.js';
+import { SaveCommand, ResurrectCommand } from './commands/lifecycle.js';
 import { term } from './output.js';
 import { MonitCommand } from './tui/monit.js';
 
@@ -316,6 +317,14 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       await cmd.execute();
       break;
     }
+
+    case 'save':
+      await new SaveCommand().execute(parsed.args, parsed.options);
+      break;
+
+    case 'resurrect':
+      await new ResurrectCommand().execute(parsed.args, parsed.options);
+      break;
 
     case 'daemon': {
       const cmd = new DaemonCommand();
