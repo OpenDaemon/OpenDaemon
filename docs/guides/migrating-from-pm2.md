@@ -32,6 +32,8 @@ The daemon starts by itself on the first command, like PM2's.
 | `pm2 monit` | `od monit` |
 | `pm2 ping` / `pm2 kill` | `od ping` / `od kill` |
 | `pm2 ecosystem` | `od ecosystem` |
+| `pm2 serve ./dist 8080 --spa` | `od serve ./dist 8080 --spa` |
+| `pm2 start app.js --node-args="--harmony" --time --output o.log --error e.log --stop-exit-codes 0` | the same flags |
 | `pm2-runtime ecosystem.config.js` | `od-runtime ecosystem.config.js` |
 | `pm2 deploy ecosystem.config.js production setup\|update\|revert\|curr\|prev\|exec\|list` | `od deploy ecosystem.config.js production ...`: same `deploy` section, hooks and commands (see README). The zero-downtime restart of a running app by name is `od deploy <name>` |
 | `pm2 startOrRestart` / `startOrReload` / `startOrGracefulReload` | the same, with `od` |

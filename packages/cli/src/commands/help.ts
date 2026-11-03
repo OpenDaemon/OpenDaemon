@@ -55,6 +55,7 @@ ${term.bold('COMMANDS')}
     ecosystem        Write a sample ecosystem.config.cjs
     pid [name]       Print process ids
     env <name>       Print the environment an app is configured with
+    serve [dir] [port]  Serve a directory over HTTP (--spa for single page apps)
     save             Save the process list (restored when the daemon starts)
     resurrect        Start the saved processes that are not running
 

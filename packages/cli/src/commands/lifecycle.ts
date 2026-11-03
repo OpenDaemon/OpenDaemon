@@ -246,3 +246,72 @@ export class EnvCommand implements Command {
     });
   }
 }
+
+/**
+ * The static file server `od serve` runs, as the source of `node -e`: no files to ship, no
+ * dependencies. argv: directory, port, spa ('1' or ''), host. Paths cannot leave the directory.
+ */
+export const STATIC_SERVER = `
+const http = require('http'), fs = require('fs'), path = require('path');
+const [root, port, spa, host] = process.argv.slice(1);
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.map': 'application/json', '.woff': 'font/woff', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.xml': 'application/xml', '.pdf': 'application/pdf' };
+function send(res, file, status) {
+  fs.stat(file, (err, stat) => {
+    if (err || !stat.isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
+    res.writeHead(status, { 'Content-Type': types[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Content-Length': stat.size });
+    fs.createReadStream(file).pipe(res);
+  });
+}
+http.createServer((req, res) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return; }
+  let pathname;
+  try { pathname = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { res.writeHead(400); res.end(); return; }
+  if (pathname.includes('\\0')) { res.writeHead(400); res.end(); return; }
+  let file = path.join(root, path.normalize(pathname));
+  if (file !== root && !file.startsWith(root + path.sep)) { res.writeHead(403); res.end(); return; }
+  fs.stat(file, (err, stat) => {
+    if (!err && stat.isDirectory()) file = path.join(file, 'index.html');
+    fs.stat(file, (err2, stat2) => {
+      if (!err2 && stat2.isFile()) { send(res, file, 200); return; }
+      if (spa && !path.extname(pathname)) { send(res, path.join(root, 'index.html'), 200); return; }
+      res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found');
+    });
+  });
+}).listen(Number(port), host, () => console.log('serving ' + root + ' on http://' + host + ':' + port));
+`;
+
+/**
+ * serve - static file server as a managed app (pm2 serve)
+ */
+export class ServeCommand implements Command {
+  name = 'serve';
+  description = 'Serve a directory over HTTP as a managed app: od serve [dir] [port] [--spa]';
+  options = [
+    { name: 'name', alias: 'n', type: 'string' as const, description: 'Process name (default: serve-<port>)' },
+    { name: 'spa', type: 'boolean' as const, description: 'Answer unknown paths with index.html (single page apps)' },
+    { name: 'host', type: 'string' as const, description: 'Address to listen on (default 0.0.0.0)' },
+    jsonOption,
+  ];
+
+  async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
+    const root = resolve(args[0] ?? '.');
+    const port = Number(args[1] ?? 8080);
+    if (!existsSync(root)) { term.error(`Directory not found: ${root}`); process.exit(1); return; }
+    if (!Number.isInteger(port) || port < 0 || port > 65535) { term.error(`Invalid port "${String(args[1])}"`); process.exit(1); return; }
+    const host = typeof options['host'] === 'string' ? options['host'] : '0.0.0.0';
+    const name = typeof options['name'] === 'string' ? options['name'] : `serve-${String(port)}`;
+
+    await withDaemon('Failed to serve', async (client) => {
+      await client.startProcess({
+        name,
+        script: process.execPath,
+        interpreter: 'none',
+        args: ['-e', STATIC_SERVER, root, String(port), options['spa'] === true ? '1' : '', host],
+        cwd: root,
+        mode: 'fork',
+      });
+      if (options['json'] === true) { console.log(JSON.stringify({ name, root, port, host, spa: options['spa'] === true })); return; }
+      term.success(`Serving ${root} on http://${host === '0.0.0.0' ? 'localhost' : host}:${String(port)} as "${name}"`);
+    }, true);
+  }
+}

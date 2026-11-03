@@ -26,7 +26,7 @@ import {
   StatusCommand,
   DaemonCommand,
 } from './commands/index.js';
-import { SaveCommand, ResurrectCommand, ResetCommand, SignalCommand, ReloadCommand, PingCommand, EcosystemCommand, PidCommand, EnvCommand } from './commands/lifecycle.js';
+import { SaveCommand, ResurrectCommand, ResetCommand, SignalCommand, ReloadCommand, PingCommand, EcosystemCommand, PidCommand, EnvCommand, ServeCommand } from './commands/lifecycle.js';
 import { CliClient } from './client.js';
 import { RuntimeCommand } from './commands/runtime.js';
 import { term } from './output.js';
@@ -119,6 +119,11 @@ async function main(): Promise<void> {
   parser.addOption({ name: 'out', type: 'boolean', description: 'od logs: only stdout' });
   parser.addOption({ name: 'raw', type: 'boolean', description: 'od logs: the messages only' });
   parser.addOption({ name: 'nostream', type: 'boolean', description: 'od logs: print and exit (the default; accepted for PM2 scripts)' });
+  for (const [name, type] of [['output', 'string'], ['error', 'string'], ['log', 'string'], ['time', 'boolean'], ['node-args', 'string'], ['ignore-watch', 'string'], ['wait-ready', 'boolean'], ['listen-timeout', 'number'], ['stop-exit-codes', 'string']] as const) {
+    parser.addOption({ name, type, description: `od start: ${name}` });
+  }
+  parser.addOption({ name: 'spa', type: 'boolean', description: 'od serve: single page app fallback' });
+  parser.addOption({ name: 'host', type: 'string', description: 'od serve: address to listen on' });
   parser.addOption({ name: 'cascade', type: 'boolean', description: 'od stop / restart: include the apps that depend on it' });
   parser.addOption({ name: 'strategy', type: 'string', description: 'od deploy / restart: rolling, blue-green, canary or recreate' });
   parser.addOption({ name: 'script', type: 'string', description: 'od deploy: the new script to run' });
@@ -427,6 +432,10 @@ async function executeCommand(original: ParsedCommand): Promise<void> {
     case 'signal':
     case 'sendSignal':
       await new SignalCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
+      break;
+
+    case 'serve':
+      await new ServeCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
       break;
 
     case 'pid':

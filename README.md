@@ -381,7 +381,7 @@ apps:
 
 | Command | Description |
 |---------|-------------|
-| `od start <script\|command\|file>` | Start a process, a command (`"npm start"`) or the apps of an ecosystem/config file. `-n` name, `-i` instances (number or `max`), `--env KEY=value` (or `--env production` for a file's `env_production`), `--only a,b`, `--cwd`, `--interpreter`, `--max-memory 512M`, `--no-autorestart`, `--max-restarts`, `--restart-delay`, `--kill-timeout`, `--cron-restart`, `--watch`; arguments for the app go after `--` |
+| `od start <script\|command\|file>` | Start a process, a command (`"npm start"`) or the apps of an ecosystem/config file. `-n` name, `-i` instances (number or `max`), `--env KEY=value` (or `--env production` for a file's `env_production`), `--only a,b`, `--cwd`, `--interpreter`, `--max-memory 512M`, `--no-autorestart`, `--max-restarts`, `--restart-delay`, `--kill-timeout`, `--stop-exit-codes 42,43`, `--cron-restart`, `--wait-ready`, `--listen-timeout`, `--watch`, `--ignore-watch a,b`, `--node-args="--max-old-space-size=200"`, `--output`, `--error`, `--log`, `--time` (a value that starts with `-` is written `--flag=value`); arguments for the app go after `--` |
 | `od stop <name...>` | Stop processes; `all` for every one |
 | `od restart <name...>` | Restart processes; `all` for every one; `--env KEY=value` changes the environment for this and later runs |
 | `od reload <name>` | Replace cluster workers one by one without downtime, restart anything else |
@@ -394,6 +394,7 @@ apps:
 | `od runtime <app>` / `od-runtime <app>` | Run in the foreground for containers: logs on stdout, SIGTERM stops gracefully, exits when the apps are gone |
 | `od startOrRestart <file>` / `od startOrReload <file>` | Start the apps of a file, or restart (reload, for cluster apps) the running ones with the file's new settings |
 | `od deploy <file> <env> [setup\|update\|revert [n]\|curr\|prev\|exec "cmd"\|list]` | Deploy from git over ssh (see Deploying from git) |
+| `od serve [dir] [port]` | Serve a directory over HTTP as a managed app: `--spa` answers unknown paths with `index.html`, `--host`, `-n` name (default `serve-<port>`). Paths cannot leave the directory |
 | `od ecosystem` | Write a sample `ecosystem.config.cjs` |
 | `od ping` / `od kill` | Check the daemon / stop it and everything it runs |
 | `od describe <name>`, `od jlist` | PM2 names for `od info`, `od list --json` |

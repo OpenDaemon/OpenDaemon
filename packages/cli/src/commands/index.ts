@@ -200,6 +200,15 @@ export class StartCommand implements Command {
     { name: 'restart-delay', type: 'number' as const, description: 'Milliseconds between restarts' },
     { name: 'kill-timeout', type: 'number' as const, description: 'Milliseconds to wait for exit before SIGKILL' },
     { name: 'cron-restart', type: 'string' as const, description: 'Restart at each match of this cron expression' },
+    { name: 'output', type: 'string' as const, description: 'File for stdout (plain text copy)' },
+    { name: 'error', type: 'string' as const, description: 'File for stderr (plain text copy)' },
+    { name: 'log', type: 'string' as const, description: 'One file for stdout and stderr' },
+    { name: 'time', type: 'boolean' as const, description: 'Prefix lines of those files with the time' },
+    { name: 'node-args', type: 'string' as const, description: 'Arguments for node itself, e.g. "--max-old-space-size=200"' },
+    { name: 'ignore-watch', type: 'string' as const, description: 'With --watch: paths to ignore (comma separated)' },
+    { name: 'wait-ready', type: 'boolean' as const, description: "Online only once the app sends process.send('ready')" },
+    { name: 'listen-timeout', type: 'number' as const, description: 'ms to wait for ready (default 3000)' },
+    { name: 'stop-exit-codes', type: 'string' as const, description: 'Exit codes after which it is not restarted (comma separated)' },
     { name: 'only', type: 'string' as const, description: 'Config file: start only these apps (comma separated)' },
     { name: 'json', type: 'boolean' as const, description: 'Output as JSON' },
   ];
@@ -284,6 +293,31 @@ export class StartCommand implements Command {
     set('killTimeout', num(options['kill-timeout']));
     set('cronRestart', str(options['cron-restart']));
     set('interpreter', str(options['interpreter']));
+    const log = str(options['log']);
+    if (log !== undefined) { out['logFile'] = resolve(log); out['mergeLogs'] = true; }
+    const output = str(options['output']);
+    if (output !== undefined) out['logFile'] = resolve(output);
+    const errorFile = str(options['error']);
+    if (errorFile !== undefined) out['errorLogFile'] = resolve(errorFile);
+    if (options['time'] === true) out['logTimestamp'] = true;
+    // A bare --node-args means its value started with "-" and was read as another option
+    for (const name of ['node-args', 'output', 'error', 'log', 'ignore-watch', 'stop-exit-codes', 'cron-restart', 'interpreter']) {
+      if (options[name] === true) throw new Error(`--${name} needs a value (for one that starts with "-", write --${name}=<value>)`);
+    }
+    const nodeArgs = str(options['node-args']);
+    if (nodeArgs !== undefined) out['interpreterArgs'] = splitArgs(nodeArgs);
+    const ignore = str(options['ignore-watch']);
+    if (ignore !== undefined && options['watch'] === true) {
+      out['watch'] = { ignore: ignore.split(',').map((p) => p.trim()).filter(Boolean) };
+    }
+    if (options['wait-ready'] === true) out['waitReady'] = true;
+    set('listenTimeout', num(options['listen-timeout']));
+    const codes = str(options['stop-exit-codes']);
+    if (codes !== undefined) {
+      const parsed = codes.split(',').map((c) => Number(c.trim()));
+      if (parsed.some((c) => !Number.isInteger(c))) throw new Error(`Invalid --stop-exit-codes "${codes}" (whole numbers, comma separated)`);
+      out['stopExitCodes'] = parsed;
+    }
     return out;
   }
 
