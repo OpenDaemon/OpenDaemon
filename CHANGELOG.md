@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On Windows the IPC port is derived from the home directory instead of the fixed 9995, so several daemons (users, `OPENDAEMON_HOME`s) can run on one machine; `OPENDAEMON_IPC_PORT` overrides it
 
 ### Fixed
+- A cluster worker that came up while a deploy was running (a `scale` just before it) kept serving the old release; the deploy now replaces it too
 - Stopping or restarting an app only signalled the process itself: what it had started (the node behind `npm start`, background jobs of a shell script) kept running and kept its ports. Apps now run in their own process group (Windows: `taskkill /T`) and the whole tree is stopped, with SIGKILL after `killTimeout`; leftovers of a process that exits on its own are removed before it is restarted
 - When the daemon was killed (SIGKILL, the OOM killer) its apps kept running unmanaged, and the next daemon started a second copy of each: port clashes and crash loops. The daemon now records its children (`children.json`) and stops the ones a dead daemon left behind before it starts anything
 - `maxRestarts` counted every restart since the app started, so an app that crashed once a day was given up on after ten days. It now counts crashes in a row: a run that lasts `stableAfter` (default 10 s) resets the count and the backoff

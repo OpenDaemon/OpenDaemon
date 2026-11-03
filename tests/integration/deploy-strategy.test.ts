@@ -135,6 +135,16 @@ describe('DeployStrategyPlugin', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('should also replace a worker that came up while the deploy was already running (scale, then deploy at once)', async () => {
+    await startApp(release('v1.cjs', 'v1'), {}, { instances: 2 });
+    await methods.get('scale')!({ name: 'web', instances: 3 });
+    // no waiting: the third worker is still starting when the deploy looks at what is online
+    const state = await run({ name: 'web', strategy: 'rolling', release: { script: release('v2.cjs', 'v2') } });
+    expect(state.state).toBe('succeeded');
+    await until(async () => pm.getWorkerIndices('web').length === 3);
+    await until(async () => { const seen = await sample(18); return seen.size === 1 && seen.has('v2'); });
+  }, 60000);
+
   it('should roll a cluster to a new release without dropping a request', async () => {
     await startApp(release('v1.cjs', 'v1'));
     const v2 = release('v2.cjs', 'v2');

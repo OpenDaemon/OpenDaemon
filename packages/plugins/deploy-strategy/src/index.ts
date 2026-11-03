@@ -200,6 +200,15 @@ export class DeployStrategyPlugin implements Plugin {
         if (state.strategy === 'rolling') await this.rolling(ctx, indices);
         else if (state.strategy === 'blue-green') await this.blueGreen(ctx, indices);
         else await this.canary(ctx, indices);
+        // A worker that came up while the deploy ran (a scale, a crash restart) was built from the
+        // old release: replace it too, or it would keep serving the old code
+        for (let pass = 0; pass < 3; pass++) {
+          const late = this.pm.getWorkerIndices(name).filter((i) => !indices.includes(i));
+          if (late.length === 0) break;
+          this.log(state, `replacing ${String(late.length)} worker(s) that came up during the deploy`);
+          await this.replace(ctx, late, ctx.release, settings.maxSurge ?? 1);
+          indices.push(...late);
+        }
         // Everything runs the new release: make it the default for crash restarts and restarts
         if (!replace) this.pm.applyRelease(name, effective);
       }
