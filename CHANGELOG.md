@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- PM2 parity: `od start` takes ecosystem files (PM2 keys translated, `env_<profile>` with `--env production`, `--only`), commands (`"npm start"`), arguments after `--`, and more flags (`--cwd`, `--interpreter`, `--no-autorestart`, `--max-restarts`, `--restart-delay`, `--kill-timeout`, `--cron-restart`, `-i max`)
+- `od save` / `od resurrect`: the process list is stored in `dump.json` and restored when the daemon starts (`daemon.resurrect: false` to disable)
+- Any program runs in fork mode: `interpreter` / `interpreterArgs` are honoured, `.py`, `.sh`, `.rb`, `.php` and `.pl` pick their interpreter, executables and commands on PATH run as they are
+- `od reload`, `od reset`, `od signal`, `od ping`, `od kill`, `od describe`, `od jlist`, `od ecosystem`; `all` and several names for `stop`, `restart`, `delete`, `reload`
+- `od runtime` / `od-runtime`: foreground mode for containers (pm2-runtime)
+- `cronRestart`, `waitReady` / `listenTimeout`, plain-text `logFile` / `errorLogFile` / `mergeLogs` / `logTimestamp`
+- Scheduled (`cron`) apps started with `od start` or restored by `od resurrect` are scheduled instead of run at once
+
+### Fixed
+- Commands started at the same time with no daemon running raced to spawn it and about half failed; a start lock now serialises it
+- A busy WebUI port stopped the whole daemon; it now only disables the WebUI
+- The CLI spinner wrote cursor codes into pipes and files
+
 ## [1.0.0] - 2026-02-22
 
 ### Added

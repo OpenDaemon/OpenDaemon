@@ -25,6 +25,7 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **IPC Communication** - Binary frame protocol + JSON-RPC 2.0 over Unix sockets / TCP
 - **Terminal Dashboard** - `od monit`, htop-style, with sparklines, health and live logs (raw ANSI, no dependencies)
 - **WebUI Dashboard** - Built-in web interface with authentication and live process monitoring
+- **A PM2 Replacement** - `od start ecosystem.config.js` (PM2 keys and `env_<profile>` work), `od save` / `od resurrect`, `od reload`, `od-runtime` for Docker, any program (Python, shell, binaries, `npm start`), `cron_restart`, `wait_ready`; see [Migrating from PM2](docs/guides/migrating-from-pm2.md)
 - **Cross-Platform** - Works on Linux, macOS, and Windows
 - **Tested End to End** - Unit and integration tests that spawn real processes, sockets and HTTP servers; CI on Linux, macOS and Windows
 
@@ -35,11 +36,19 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 npm install
 npm run build
 
-# Start the daemon
-od daemon start
-
-# Start a process
+# Start a process (the daemon starts by itself, as in PM2)
 od start app.js --name my-app
+
+# Start anything: other languages, commands, arguments after --
+od start worker.py
+od start "npm start" --name web
+od start server.js --name api -- --port 8080
+
+# Start the apps of an ecosystem file (PM2 or OpenDaemon style), with an env profile
+od start ecosystem.config.js --env production --only api
+
+# Remember the process list; the daemon brings it back after a reboot (with `od startup`)
+od save
 
 # Start with multiple instances (cluster mode)
 od start server.js --name api --instances 4
@@ -265,6 +274,28 @@ apps:
 
 While an app waits, `od list` shows it as `waiting`. If a dependency fails or the timeout passes, the app is marked `errored` and `od info` shows the reason. Unknown or circular dependencies are rejected when the config loads. When the daemon stops, it stops dependents before the apps they depend on. `od stop <name>` stops only that app.
 
+## Ecosystem files
+
+`od start <file>` reads `.json`, `.yaml`, or a JS/TS module that exports `{ apps: [...] }`. PM2 `ecosystem.config.js` files work as they are: `exec_mode`, `max_memory_restart`, `exp_backoff_restart_delay`, `node_args`, `cron_restart`, `wait_ready`, `ignore_watch`, `out_file`, `error_file`, `env_<profile>` and the rest of the common keys are translated, and a setting that cannot be carried over is reported instead of silently dropped. OpenDaemon keys (`autoRestart`, `limits`, `healthCheck`, `dependencies`, `cron` ...) can be mixed in. `cwd` and `script` are resolved against the file's directory.
+
+```js
+// ecosystem.config.js
+module.exports = {
+  apps: [{
+    name: 'api', script: './server.js', args: '--port 3000',
+    instances: 2, exec_mode: 'cluster', max_memory_restart: '300M',
+    env: { NODE_ENV: 'development' }, env_production: { NODE_ENV: 'production' },
+  }],
+};
+```
+
+```bash
+od start ecosystem.config.js --env production   # env_production overrides env
+od save                                          # remember it for the next reboot
+```
+
+`wait_ready` / `waitReady: true` marks an app online when it calls `process.send('ready')` (waiting `listen_timeout` / `listenTimeout` ms, default 3000, at most). It applies to fork mode.
+
 ## Logs
 
 The `log-manager` plugin writes each process's stdout and stderr to `<logDir>/<name>-out.log` and `<name>-error.log`, one JSON object per line (`timestamp`, `level`, `pid`, `processName`, `instanceId`, `message`, `source`). `logDir` comes from `daemon.logDir` and defaults to `~/.opendaemon/logs`. Logs survive daemon restarts.
@@ -294,6 +325,8 @@ apps:
       maxSize: 100M
       enabled: true   # false: never rotate
 ```
+
+To also get plain text files, like PM2's, name them per app: `logFile` (stdout; PM2 `out_file`), `errorLogFile` (stderr; `error_file`), `mergeLogs: true` (stderr goes to `logFile` too) and `logTimestamp: true` (a time prefix on each line, PM2's `time`). The JSON files stay the source for `od logs`. `od logs` prints the last lines and exits; `od logs -f` streams, like `pm2 logs`.
 
 Live log streaming over WebSocket is part of the API server (`log:<name>`, see REST API & WebSocket).
 
@@ -348,10 +381,18 @@ apps:
 
 | Command | Description |
 |---------|-------------|
-| `od start <script>` | Start a process (`-n` name, `-i` instances, `--env KEY=value`, `--max-memory 512M`, `--watch`) |
-| `od stop <name>` | Stop a process |
-| `od restart <name>` | Restart a process |
-| `od delete <name>` | Delete a process |
+| `od start <script\|command\|file>` | Start a process, a command (`"npm start"`) or the apps of an ecosystem/config file. `-n` name, `-i` instances (number or `max`), `--env KEY=value` (or `--env production` for a file's `env_production`), `--only a,b`, `--cwd`, `--interpreter`, `--max-memory 512M`, `--no-autorestart`, `--max-restarts`, `--restart-delay`, `--kill-timeout`, `--cron-restart`, `--watch`; arguments for the app go after `--` |
+| `od stop <name...>` | Stop processes; `all` for every one |
+| `od restart <name...>` | Restart processes; `all` for every one |
+| `od reload <name>` | Replace cluster workers one by one without downtime, restart anything else |
+| `od delete <name...>` | Delete processes; `all` for every one |
+| `od save` / `od resurrect` | Save the process list to `~/.opendaemon/dump.json`; start the saved processes again (the daemon does it at start, unless `daemon.resurrect: false`) |
+| `od reset [name]` | Zero the restart counter |
+| `od signal <name> <SIGUSR2>` | Send a signal (PM2's order, `od signal SIGUSR2 api`, works too) |
+| `od runtime <app>` / `od-runtime <app>` | Run in the foreground for containers: logs on stdout, SIGTERM stops gracefully, exits when the apps are gone |
+| `od ecosystem` | Write a sample `ecosystem.config.cjs` |
+| `od ping` / `od kill` | Check the daemon / stop it and everything it runs |
+| `od describe <name>`, `od jlist` | PM2 names for `od info`, `od list --json` |
 | `od scale <name> <n\|max>` | Change the number of cluster workers without a restart |
 | `od stop <name> --cascade` / `od restart <name> --cascade` | Also stop (dependents first) or restart (dependents after it is ready) the apps that depend on it |
 | `od deploy <name>` / `od deploy status` / `od rollback <name>` | Zero-downtime deploys: `--strategy`, `--script`, `--env`, `--release` (see Deployments) |
@@ -566,6 +607,18 @@ npm run test:e2e
 | Config format | TS, JS, JSON, YAML | JS, JSON, YAML |
 | Plugin system | First-class with DI | Limited |
 | IPC protocol | Binary frames + JSON-RPC 2.0 | Custom |
+
+## Docker
+
+`od-runtime` is `pm2-runtime`: the process manager in the foreground as the container's main process. It starts a private daemon, starts the apps, prints their output on stdout/stderr (`name | line`), passes SIGTERM/SIGINT on for a graceful stop, and exits when the apps are gone: 0 if they all stopped cleanly, 1 if one failed (so `restart: on-failure` works).
+
+```dockerfile
+FROM node:22-slim
+RUN npm install -g opendaemon
+WORKDIR /app
+COPY . .
+CMD ["od-runtime", "ecosystem.config.js", "--env", "production"]
+```
 
 ## Requirements
 
