@@ -10,6 +10,8 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      # one platform's failure must not hide the others
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [20.x, 22.x]

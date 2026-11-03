@@ -59,7 +59,8 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
 
   afterAll(() => {
     od('daemon', 'stop');
-    rmSync(root, { recursive: true, force: true });
+    // Windows keeps a directory busy while a process still has it as its cwd
+    try { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); } catch { /* temp dir, left behind */ }
   });
 
   it('starts the daemon by itself and the apps of an ecosystem file, with the production env profile', async () => {
@@ -111,7 +112,7 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     await waitFor(online('api', 'job', 'inline'));
   });
 
-  it('sends a signal in either argument order, and answers ping and describe', async () => {
+  it.runIf(process.platform !== 'win32')('sends a signal in either argument order', async () => {
     writeFileSync(join(project, 'usr.cjs'), "process.on('SIGUSR2', () => console.log('usr2 received')); setInterval(() => {}, 1000);");
     od('start', 'usr.cjs');
     await waitFor(online('usr'));
@@ -119,8 +120,14 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     await waitFor(() => logs('usr').includes('usr2 received'));
     expect(od('signal', 'USR2', 'usr').out).toMatch(/Sent SIGUSR2 to usr/);
     expect(od('signal', 'usr', 'NOPE').status).toBe(1);
+  });
+
+  it('answers ping, describe and jlist', async () => {
+    writeFileSync(join(project, 'plain.cjs'), 'setInterval(() => {}, 1000);');
+    od('start', 'plain.cjs');
+    await waitFor(online('plain'));
     expect(od('ping').out).toContain('pong');
-    expect(od('describe', 'usr').out).toMatch(/Status: online/);
+    expect(od('describe', 'plain').out).toMatch(/Status: online/);
     expect(JSON.parse(od('jlist').out).length).toBeGreaterThanOrEqual(4);
   });
 
@@ -161,7 +168,7 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
       expect((JSON.parse(listed.stdout) as unknown[]).length).toBe(10);
     } finally {
       spawnSync(process.execPath, [CLI, 'daemon', 'stop'], { cwd: fresh, env: { ...process.env, OPENDAEMON_HOME: raceHome }, encoding: 'utf-8' });
-      rmSync(fresh, { recursive: true, force: true });
+      try { rmSync(fresh, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); } catch { /* temp dir, left behind */ }
     }
   });
 

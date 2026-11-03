@@ -27,7 +27,9 @@ describe.skipIf(!existsSync(CLI))('od runtime end to end', () => {
     writeFileSync(join(project, 'once.cjs'), "console.log('ran once'); process.exit(0);");
     writeFileSync(join(project, 'bad.cjs'), "console.error('boom'); process.exit(2);");
   });
-  afterAll(() => { rmSync(root, { recursive: true, force: true }); });
+  afterAll(() => {
+    try { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); } catch { /* temp dir, left behind */ }
+  });
 
   const run = (args: string[]) => {
     const result = spawnSync(process.execPath, [CLI, ...args], { cwd: project, env: env(), encoding: 'utf-8', timeout: 60000 });
