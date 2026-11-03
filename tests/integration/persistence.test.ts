@@ -127,12 +127,47 @@ describe('save and resurrect', () => {
     expect(await statusOf('worker')).toBe('online');
   });
 
-  it('does not save scheduled jobs: they come from the config', async () => {
-    await boot({ apps: [app('nightly', { cron: '0 3 * * *' })] });
+  it('saves scheduled jobs too, and a config job of the same name is not duplicated on resurrect', async () => {
+    const pm = await boot({ apps: [app('nightly', { cron: '0 3 * * *' })] });
     await call('start', app('web'));
     const { file } = await call('save') as { file: string };
     const names = (JSON.parse(readFileSync(file, 'utf-8')) as { processes: Array<{ config: ProcessConfig }> }).processes.map((p) => p.config.name);
-    expect(names).toEqual(['web']);
+    expect(names.sort()).toEqual(['nightly', 'web']);
+    await pm.onStop();
+
+    const registered: string[] = [];
+    methods = new Map();
+    const next = new ProcessManagerPlugin(dir);
+    plugins.push(next);
+    const events = new EventBus();
+    events.on('cron:register', (data: unknown) => { registered.push((data as { config: ProcessConfig }).config.name); });
+    const context = {
+      config: { apps: [app('nightly', { cron: '0 3 * * *' })] }, events, logger: new Logger('persistence-test'), store: new StateStore(),
+      registerMethod: (name: string, handler: Method) => { methods.set(name, handler); }, getPlugin: () => undefined,
+    } as unknown as PluginContext;
+    next.install(context);
+    await next.onStart(context);
+    expect(await statusOf('web')).toBe('online');
+    expect((await list()).filter((p) => p.name === 'nightly')).toHaveLength(1);
+    expect(registered).toEqual([]);
+  });
+
+  it('announces a saved scheduled job to the scheduler instead of starting it', async () => {
+    writeFileSync(join(dir, 'dump.json'), JSON.stringify({ processes: [{ config: app('report', { cron: '0 4 * * *' }), stopped: true }] }));
+    const registered: string[] = [];
+    methods = new Map();
+    const pm = new ProcessManagerPlugin(dir);
+    plugins.push(pm);
+    const events = new EventBus();
+    events.on('cron:register', (data: unknown) => { registered.push((data as { config: ProcessConfig }).config.name); });
+    const context = {
+      config: {}, events, logger: new Logger('persistence-test'), store: new StateStore(),
+      registerMethod: (name: string, handler: Method) => { methods.set(name, handler); }, getPlugin: () => undefined,
+    } as unknown as PluginContext;
+    pm.install(context);
+    await pm.onStart(context);
+    expect(registered).toEqual(['report']);
+    expect(await statusOf('report')).toBe('stopped');
   });
 
   it('refuses to save without a home directory', async () => {

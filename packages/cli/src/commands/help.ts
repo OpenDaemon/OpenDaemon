@@ -47,6 +47,10 @@ ${term.bold('COMMANDS')}
     deploy <name>    Zero-downtime deploy (--strategy rolling|blue-green|canary|recreate)
     deploy status    Show deploys
     rollback <name>  Back to the release before the last deploy
+    reload <name>    Reload without downtime (cluster mode), or restart; also: all
+    reset [name]     Reset the restart counter
+    signal <n> <sig> Send a signal to a process (od signal api SIGUSR2)
+    ecosystem        Write a sample ecosystem.config.cjs
     save             Save the process list (restored when the daemon starts)
     resurrect        Start the saved processes that are not running
 
@@ -69,6 +73,8 @@ ${term.bold('COMMANDS')}
     daemon start     Start the daemon
     daemon stop      Stop the daemon
     daemon restart   Restart the daemon
+    ping             Check that the daemon answers
+    kill             Stop the daemon and everything it runs
     daemon status    Show daemon status
 
   Other:

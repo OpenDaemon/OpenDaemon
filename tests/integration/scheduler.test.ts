@@ -115,3 +115,25 @@ describe('SchedulerPlugin with the process manager', () => {
     expect(report().history[0]?.result).toBe('stopped');
   });
 });
+
+describe('SchedulerPlugin dynamic jobs', () => {
+  it('should schedule a job announced with cron:register, and drop it on process:deleted', () => {
+    const events = new EventBus();
+    const scheduler = new SchedulerPlugin();
+    scheduler.install({
+      config: {}, events, logger: new Logger('cron-dyn'), store: new StateStore(),
+      registerMethod: () => undefined, getPlugin: () => undefined,
+    } as unknown as PluginContext);
+    events.emit('cron:register', { config: { name: 'later', script: 'x.js', cron: '0 3 * * *' } });
+    expect(scheduler.report().map((j) => j.name)).toEqual(['later']);
+    expect(scheduler.report()[0]?.nextRun).toBeDefined();
+
+    events.emit('cron:register', { config: { name: 'later', script: 'x.js', cron: '0 4 * * *' } });
+    expect(scheduler.report()).toHaveLength(1);
+    expect(scheduler.report()[0]?.cron).toBe('0 4 * * *');
+
+    events.emit('process:deleted', { name: 'later' });
+    expect(scheduler.report()).toEqual([]);
+    scheduler.onStop();
+  });
+});

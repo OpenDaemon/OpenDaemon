@@ -1,6 +1,6 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
 import { resolveLaunch } from './launch.js';
-import { Logger, parseBytes, dependencyLevels } from '../../../core/src/index.js';
+import { Logger, parseBytes, dependencyLevels, parseCron, nextRun, assertTimeZone } from '../../../core/src/index.js';
 import type { CountLimit, LimitAction, Release } from '../../../core/src/index.js';
 import { DaemonError, ErrorCode, ProcessError } from '../../../core/src/index.js';
 import type {
@@ -13,7 +13,7 @@ import type {
 import { spawn, execFile, type ChildProcess } from 'child_process';
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
-import { availableParallelism } from 'os';
+import { availableParallelism, constants as osConstants } from 'os';
 import { fileURLToPath } from 'url';
 
 /**
@@ -68,6 +68,8 @@ interface ManagedProcessInfo {
   fds?: number;
   children?: number;
   metricsInterval?: NodeJS.Timeout | undefined;
+  /** Pending restart from `cronRestart` */
+  cronRestartTimer?: NodeJS.Timeout | undefined;
   cpuSamples?: Map<number, { ticks: number; at: number }> | undefined;
   /** When each exceeded limit started being exceeded, and whether its action already ran */
   limitState?: Partial<Record<LimitKind, { since: number; acted: boolean } | undefined>>;
@@ -130,15 +132,13 @@ export class ProcessManagerPlugin implements Plugin {
 
   /**
    * Write the process list to dump.json (like `pm2 save`), so the daemon brings it back after a
-   * reboot. Scheduled jobs are left out: they come from the config. The file is private to the
-   * user because it holds the apps' environment.
+   * reboot. The file is private to the user because it holds the apps' environment.
    */
   private saveProcesses(): Promise<{ file: string; saved: string[] }> {
     if (this.dumpFile === undefined) {
       return Promise.reject(new DaemonError(ErrorCode.CONFIG_INVALID, 'Saving is not available: the plugin has no home directory'));
     }
     const entries = [...this.processes.values()]
-      .filter((proc) => proc.config.cron === undefined)
       .map((proc) => ({ config: proc.config, stopped: proc.status !== 'online' && proc.status !== 'starting' }));
     const temp = `${this.dumpFile}.${process.pid}.tmp`;
     writeFileSync(temp, JSON.stringify({ version: 1, savedAt: new Date().toISOString(), processes: entries }, null, 2), { mode: 0o600 });
@@ -163,7 +163,7 @@ export class ProcessManagerPlugin implements Plugin {
         continue;
       }
       try {
-        await this.startProcess(config);
+        await this.startFromRpc(config);
         result.started.push(config.name);
       } catch {
         result.failed.push(config.name);
@@ -181,7 +181,7 @@ export class ProcessManagerPlugin implements Plugin {
 
     // Register RPC methods
     context.registerMethod('list', this.listProcesses.bind(this));
-    context.registerMethod('start', this.startProcess.bind(this));
+    context.registerMethod('start', this.startFromRpc.bind(this));
     context.registerMethod('stop', this.stopProcess.bind(this));
     context.registerMethod('restart', this.restartProcess.bind(this));
     context.registerMethod('delete', this.deleteProcess.bind(this));
@@ -190,6 +190,8 @@ export class ProcessManagerPlugin implements Plugin {
     context.registerMethod('scale', this.scaleProcess.bind(this));
     context.registerMethod('save', this.saveProcesses.bind(this));
     context.registerMethod('resurrect', this.resurrectProcesses.bind(this));
+    context.registerMethod('reset', this.resetProcess.bind(this));
+    context.registerMethod('signal', this.signalProcess.bind(this));
   }
 
   /**
@@ -232,14 +234,16 @@ export class ProcessManagerPlugin implements Plugin {
     for (const name of levels.flat()) {
       const app = byName.get(name);
       if (!app) continue;
-      if (this.savedStopped.has(name)) {
-        this.processes.set(name, this.placeholder(app, 'stopped', 'saved as stopped'));
-        ready.set(name, Promise.resolve(false));
-        continue;
-      }
       if (app.cron !== undefined) {
         // Scheduled jobs run when the scheduler plugin starts them, not with the daemon
         this.processes.set(app.name, this.placeholder(app, 'stopped', `scheduled: cron "${app.cron}"`));
+        // Config apps are scheduled by the scheduler's own start; saved ones are announced here
+        if (!configured.includes(app)) this.context.events.emit('cron:register', { config: app });
+        ready.set(name, Promise.resolve(false));
+        continue;
+      }
+      if (this.savedStopped.has(name)) {
+        this.processes.set(name, this.placeholder(app, 'stopped', 'saved as stopped'));
         ready.set(name, Promise.resolve(false));
         continue;
       }
@@ -376,6 +380,24 @@ export class ProcessManagerPlugin implements Plugin {
   }
 
   /**
+   * `start` over IPC. A scheduled job (`cron`) is registered with the scheduler and shown as
+   * stopped until its next tick, instead of running now; the scheduler itself starts runs through
+   * startProcessFromPlugin.
+   */
+  private async startFromRpc(config: ProcessConfig): Promise<ProcessInfo> {
+    if (config.cron === undefined) return this.startProcess(config);
+    const existing = this.processes.get(config.name);
+    if (existing && existing.status !== 'stopped' && existing.status !== 'errored' && existing.status !== 'waiting') {
+      throw new ProcessError(ErrorCode.PROCESS_ALREADY_EXISTS, config.name, `Process "${config.name}" already exists`);
+    }
+    this.validateConfig(config);
+    const info = this.placeholder(config, 'stopped', `scheduled: cron "${config.cron}"`);
+    this.processes.set(config.name, info);
+    this.context.events.emit('cron:register', { config });
+    return this.toProcessInfo(info);
+  }
+
+  /**
    * Start a process
    */
   private async startProcess(config: ProcessConfig): Promise<ProcessInfo> {
@@ -434,6 +456,7 @@ export class ProcessManagerPlugin implements Plugin {
 
       // Start metrics collection
       this.startMetricsCollection(proc);
+      this.armCronRestart(proc);
 
       this.logger.info(`Process started: ${config.name}`, { pid: proc.pid });
       this.context.events.emit('process:started', { name: config.name, pid: proc.pid });
@@ -519,6 +542,86 @@ export class ProcessManagerPlugin implements Plugin {
   }
 
   /**
+   * Restart the process at each match of its `cronRestart` expression (PM2's cron_restart). The
+   * timer belongs to this run: stopping or restarting the process replaces it.
+   */
+  private armCronRestart(proc: ManagedProcessInfo): void {
+    clearTimeout(proc.cronRestartTimer);
+    const expression = proc.config.cronRestart;
+    if (expression === undefined || proc.config.cron !== undefined) return;
+    let at: Date | undefined;
+    try {
+      at = nextRun(parseCron(expression), new Date(), proc.config.cronTimezone);
+    } catch (err) {
+      this.logger.error(`Ignoring cronRestart of ${proc.config.name}: ${(err as Error).message}`);
+      return;
+    }
+    if (at === undefined) return;
+    const target = at;
+    const wait = (): void => {
+      // setTimeout cannot wait longer than ~24.8 days: longer waits are re-armed in chunks
+      proc.cronRestartTimer = setTimeout(() => {
+        if (Date.now() < target.getTime()) { wait(); return; }
+        if (this.processes.get(proc.config.name) !== proc || proc.status !== 'online') {
+          this.armCronRestart(proc);
+          return;
+        }
+        this.logger.info(`Restarting ${proc.config.name} (cronRestart ${expression})`);
+        // The restart starts a new run, which arms its own timer
+        this.restartProcess({ name: proc.config.name }).catch((err: unknown) => {
+          this.logger.error(`Scheduled restart of ${proc.config.name} failed`, undefined, err as Error);
+        });
+      }, Math.min(Math.max(target.getTime() - Date.now(), 0), 2 ** 31 - 1));
+      proc.cronRestartTimer.unref();
+    };
+    wait();
+  }
+
+  /**
+   * Zero the restart counter of one process, or of all (pm2 reset)
+   */
+  private resetProcess(params?: { name?: string }): Promise<string[]> {
+    const names = params?.name === undefined ? [...this.processes.keys()] : [params.name];
+    const missing = names.find((name) => !this.processes.has(name));
+    if (missing !== undefined) {
+      return Promise.reject(new ProcessError(ErrorCode.PROCESS_NOT_FOUND, missing, `Process "${missing}" not found`));
+    }
+    for (const name of names) {
+      const proc = this.processes.get(name);
+      if (proc) proc.restartCount = 0;
+    }
+    return Promise.resolve(names);
+  }
+
+  /**
+   * Send a signal to a running process (pm2 sendSignal): to every worker in cluster mode, to the
+   * process itself otherwise. Returns the pids that were signalled.
+   */
+  private signalProcess(params: { name: string; signal: string }): Promise<number[]> {
+    const proc = this.processes.get(params.name);
+    if (!proc) {
+      return Promise.reject(new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`));
+    }
+    const signal = params.signal.toUpperCase().startsWith('SIG') ? params.signal.toUpperCase() : `SIG${params.signal.toUpperCase()}`;
+    if (!(signal in osConstants.signals)) {
+      return Promise.reject(new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, params.name, `Unknown signal "${params.signal}"`));
+    }
+    if (proc.status !== 'online') {
+      return Promise.reject(new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, params.name, `Process "${params.name}" is ${proc.status}, not online`));
+    }
+    const pids = proc.config.mode === 'cluster' && proc.workerPids.size > 0 ? [...proc.workerPids.values()] : proc.pid === undefined ? [] : [proc.pid];
+    const sent: number[] = [];
+    for (const pid of pids) {
+      try {
+        process.kill(pid, signal);
+        sent.push(pid);
+      } catch { /* already gone */ }
+    }
+    this.logger.info(`Sent ${signal} to ${params.name} (${sent.join(', ')})`);
+    return Promise.resolve(sent);
+  }
+
+  /**
    * Delete a process
    */
   private async deleteProcess(params: { name: string }): Promise<void> {
@@ -533,6 +636,7 @@ export class ProcessManagerPlugin implements Plugin {
 
     this.processes.delete(params.name);
     this.logger.info(`Process deleted: ${params.name}`);
+    this.context.events.emit('process:deleted', { name: params.name });
   }
 
   /**
@@ -946,8 +1050,11 @@ export class ProcessManagerPlugin implements Plugin {
       this.context.events.emit('process:error', { name: config.name, error: err.message });
     });
 
-    // Wait for process to be ready (optional)
-    if (config.minUptime) {
+    // Wait for process to be ready (optional): its own 'ready' message (waitReady, PM2's
+    // wait_ready), or minUptime
+    if (config.waitReady === true) {
+      await this.waitForReady(child, config.listenTimeout ?? 3000);
+    } else if (config.minUptime) {
       await this.waitForReady(child, config.minUptime);
     }
   }
@@ -1079,6 +1186,8 @@ export class ProcessManagerPlugin implements Plugin {
 
     // Stop metrics collection
     this.stopMetricsCollection(proc);
+    clearTimeout(proc.cronRestartTimer);
+    proc.cronRestartTimer = undefined;
 
     // Clear any pending restart timeouts
     if (proc.stopTimeout) {
@@ -1343,6 +1452,14 @@ export class ProcessManagerPlugin implements Plugin {
       throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, 'Process script is required');
     }
 
+    if (config.cronRestart !== undefined) {
+      try {
+        parseCron(config.cronRestart);
+        if (config.cronTimezone !== undefined) assertTimeZone(config.cronTimezone);
+      } catch (err) {
+        throw new DaemonError(ErrorCode.PROCESS_INVALID_CONFIG, `Invalid cronRestart for "${config.name}": ${(err as Error).message}`);
+      }
+    }
     const memory = config.limits?.memory?.max ?? config.maxMemory;
     if (memory !== undefined && parseBytes(memory) === undefined) {
       throw new DaemonError(

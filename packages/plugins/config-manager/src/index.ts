@@ -358,6 +358,14 @@ export class ConfigManagerPlugin implements Plugin {
       );
     }
 
+    if (config.cronRestart !== undefined) {
+      try {
+        parseCron(config.cronRestart);
+      } catch (err) {
+        throw new ConfigError(ErrorCode.CONFIG_VALIDATION_ERROR, `Process "${config.name}": cronRestart: ${(err as Error).message}`);
+      }
+    }
+
     if (config.cron !== undefined) {
       try {
         parseCron(config.cron);

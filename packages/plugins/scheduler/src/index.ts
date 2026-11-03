@@ -70,19 +70,33 @@ export class SchedulerPlugin implements Plugin {
       if (job?.current && !job.restarting) this.close(job, 'stopped');
     });
     context.registerMethod('cron', () => Promise.resolve(this.report()));
+    // Scheduled jobs started with `od start` or brought back by `od resurrect`, and ones deleted
+    context.events.on('cron:register', (data: unknown) => { this.schedule((data as { config: ProcessConfig }).config); });
+    context.events.on('process:deleted', (data: unknown) => {
+      const name = (data as { name: string }).name;
+      const job = this.jobs.get(name);
+      if (job) clearTimeout(job.timer);
+      this.jobs.delete(name);
+    });
   }
 
   onStart(context: PluginContext): void {
-    for (const app of context.config.apps ?? []) {
-      if (app.cron === undefined) continue;
-      try {
-        const job: Job = { config: app, schedule: parseCron(app.cron), history: [] };
-        this.jobs.set(app.name, job);
-        this.arm(job);
-        this.context.logger.info(`Scheduled "${app.name}" (${app.cron}); next run ${job.nextRun?.toISOString() ?? 'never'}`);
-      } catch (err) {
-        this.context.logger.error(`Not scheduling "${app.name}": ${(err as Error).message}`);
-      }
+    for (const app of context.config.apps ?? []) this.schedule(app);
+  }
+
+  /**
+   * Schedule `app` if it has a cron expression, replacing an earlier job of the same name
+   */
+  private schedule(app: ProcessConfig): void {
+    if (app.cron === undefined) return;
+    try {
+      clearTimeout(this.jobs.get(app.name)?.timer);
+      const job: Job = { config: app, schedule: parseCron(app.cron), history: [] };
+      this.jobs.set(app.name, job);
+      this.arm(job);
+      this.context.logger.info(`Scheduled "${app.name}" (${app.cron}); next run ${job.nextRun?.toISOString() ?? 'never'}`);
+    } catch (err) {
+      this.context.logger.error(`Not scheduling "${app.name}": ${(err as Error).message}`);
     }
   }
 

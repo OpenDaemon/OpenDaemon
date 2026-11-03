@@ -26,7 +26,8 @@ import {
   StatusCommand,
   DaemonCommand,
 } from './commands/index.js';
-import { SaveCommand, ResurrectCommand } from './commands/lifecycle.js';
+import { SaveCommand, ResurrectCommand, ResetCommand, SignalCommand, ReloadCommand, PingCommand, EcosystemCommand } from './commands/lifecycle.js';
+import { CliClient } from './client.js';
 import { term } from './output.js';
 import { MonitCommand } from './tui/monit.js';
 
@@ -194,11 +195,42 @@ async function main(): Promise<void> {
 }
 
 /**
+ * Names of every process the daemon manages, for `all`
+ */
+async function allProcessNames(): Promise<string[]> {
+  const client = new CliClient();
+  try {
+    await client.connect();
+    return (await client.listProcesses() as Array<{ name: string }>).map((p) => p.name);
+  } catch (err) {
+    term.error(`Failed to list processes: ${(err instanceof Error ? err : new Error(String(err))).message}`);
+    process.exit(1);
+    return [];
+  } finally {
+    await client.disconnect().catch(() => undefined);
+  }
+}
+
+/**
  * Execute a command
  */
+/** Commands that take process names, and so also accept several of them and PM2's `all` */
+const PER_PROCESS = new Set(['stop', 'restart', 'delete', 'reload', 'flush']);
+
 async function executeCommand(parsed: ParsedCommand): Promise<void> {
   const command = parsed.command;
   const subcommand = parsed.subcommand;
+
+  if (PER_PROCESS.has(command)) {
+    const names = [subcommand, ...parsed.args].filter((n) => n !== '');
+    if (names.length > 1 || names[0] === 'all') {
+      const targets = names.includes('all') ? await allProcessNames() : names;
+      for (const name of targets) {
+        await executeCommand({ ...parsed, subcommand: name, args: [] });
+      }
+      return;
+    }
+  }
 
   switch (command) {
     case '':
@@ -328,6 +360,41 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
       await cmd.execute();
       break;
     }
+
+    case 'reload':
+      await new ReloadCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
+      break;
+
+    case 'reset':
+      await new ResetCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
+      break;
+
+    case 'signal':
+    case 'sendSignal':
+      await new SignalCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
+      break;
+
+    case 'ping':
+      await new PingCommand().execute();
+      break;
+
+    case 'ecosystem':
+    case 'init':
+      await new EcosystemCommand().execute();
+      break;
+
+    case 'describe':
+      await new InfoCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
+      break;
+
+    case 'jlist':
+    case 'prettylist':
+      await new ListCommand().execute([], { ...parsed.options, json: true });
+      break;
+
+    case 'kill':
+      await new DaemonCommand().execute(['stop']);
+      break;
 
     case 'save':
       await new SaveCommand().execute(parsed.args, parsed.options);

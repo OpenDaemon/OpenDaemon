@@ -97,4 +97,48 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     expect(JSON.parse(result.out.trim().split('\n').pop() as string)).toMatchObject({ started: ['inline'] });
     await waitFor(online('inline'));
   });
+
+  it('restarts, stops and resets several processes at once with all', async () => {
+    const pids = () => new Map(list().map((p) => [p.name, p.pid]));
+    const before = pids();
+    expect(od('restart', 'all').out).toContain('Restarted api');
+    await waitFor(online('api', 'job', 'inline'));
+    await waitFor(() => [...before].every(([name, pid]) => pids().get(name) !== pid));
+    expect(od('reset', 'all').out).toContain('Reset the restart counter of 3 process(es)');
+    expect(od('stop', 'api', 'job').status).toBe(0);
+    await waitFor(() => ['api', 'job'].every((n) => list().find((p) => p.name === n)?.status === 'stopped'));
+    expect(od('restart', 'all').status).toBe(0);
+    await waitFor(online('api', 'job', 'inline'));
+  });
+
+  it('sends a signal in either argument order, and answers ping and describe', async () => {
+    writeFileSync(join(project, 'usr.cjs'), "process.on('SIGUSR2', () => console.log('usr2 received')); setInterval(() => {}, 1000);");
+    od('start', 'usr.cjs');
+    await waitFor(online('usr'));
+    expect(od('signal', 'usr', 'SIGUSR2').out).toMatch(/Sent SIGUSR2 to usr/);
+    await waitFor(() => logs('usr').includes('usr2 received'));
+    expect(od('signal', 'USR2', 'usr').out).toMatch(/Sent SIGUSR2 to usr/);
+    expect(od('signal', 'usr', 'NOPE').status).toBe(1);
+    expect(od('ping').out).toContain('pong');
+    expect(od('describe', 'usr').out).toMatch(/Status: online/);
+    expect(JSON.parse(od('jlist').out).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('writes a sample ecosystem file that od start accepts, and does not overwrite it', async () => {
+    const fresh = join(root, 'fresh');
+    mkdirSync(fresh);
+    writeFileSync(join(fresh, 'server.js'), 'setInterval(() => {}, 1000);');
+    writeFileSync(join(fresh, 'cleanup.js'), 'process.exit(0);');
+    const run = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { cwd: fresh, env: { ...process.env, OPENDAEMON_HOME: home, NO_COLOR: '1' }, encoding: 'utf-8' });
+    expect(run('ecosystem').status).toBe(0);
+    expect(run('ecosystem').status).toBe(1);
+    od('delete', 'api');
+    const started = run('start', 'ecosystem.config.cjs', '--env', 'production');
+    expect(strip(started.stdout)).toContain('Started api with 2 instance(s)');
+    await waitFor(online('api'));
+    // the cron app is scheduled, not run now
+    expect(list().find((p) => p.name === 'cleanup')?.status).toBe('stopped');
+    expect(JSON.parse(od('cron', '--json').out).map((j: { name: string }) => j.name)).toContain('cleanup');
+    expect(od('reload', 'api').status).toBe(0);
+  });
 });
