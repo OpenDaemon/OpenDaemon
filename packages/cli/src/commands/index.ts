@@ -83,7 +83,8 @@ export class ListCommand implements Command {
         return;
       }
 
-      const headers = ['ID', 'Name', 'Mode', 'Status', 'CPU', 'Memory', 'Restarts', 'Uptime'];
+      const spaced = processes.some((x) => (x as { namespace?: string }).namespace);
+      const headers = ['ID', 'Name', ...(spaced ? ['Namespace'] : []), 'Mode', 'Status', 'CPU', 'Memory', 'Restarts', 'Uptime'];
       const rows = processes.map((proc: unknown) => {
         const p = proc as {
           id: number;
@@ -94,10 +95,12 @@ export class ListCommand implements Command {
           memory: number;
           restartCount: number;
           uptime: number;
+          namespace?: string;
         };
         return [
           String(p.id),
           p.name,
+          ...(spaced ? [p.namespace ?? 'default'] : []),
           p.mode,
           this.formatStatus(p.status),
           `${p.cpu.toFixed(1)}%`,
@@ -194,6 +197,7 @@ export class StartCommand implements Command {
     { name: 'max-memory', type: 'string' as const, description: 'Max memory (e.g., 512M, 1G)' },
     { name: 'env', type: 'array' as const, description: 'KEY=value, or the env_<name> profile of a config file' },
     { name: 'cwd', type: 'string' as const, description: 'Working directory' },
+    { name: 'namespace', type: 'string' as const, description: 'Group name: od restart <namespace> acts on all its members' },
     { name: 'interpreter', type: 'string' as const, description: 'Program that runs the script (python3, bash, none ...)' },
     { name: 'no-autorestart', type: 'boolean' as const, description: 'Do not restart the process when it exits' },
     { name: 'max-restarts', type: 'number' as const, description: 'Give up after this many restarts' },
@@ -292,6 +296,7 @@ export class StartCommand implements Command {
     set('restartDelay', num(options['restart-delay']));
     set('killTimeout', num(options['kill-timeout']));
     set('cronRestart', str(options['cron-restart']));
+    set('namespace', str(options['namespace']));
     set('interpreter', str(options['interpreter']));
     const log = str(options['log']);
     if (log !== undefined) { out['logFile'] = resolve(log); out['mergeLogs'] = true; }

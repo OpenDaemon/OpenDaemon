@@ -102,6 +102,21 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     await waitFor(online('inline'));
   });
 
+  it('a namespace groups apps: list shows it and restart acts on every member', async () => {
+    writeFileSync(join(project, 'ns.cjs'), 'setInterval(() => {}, 1000);');
+    expect(od('start', 'ns.cjs', '--name', 'ns-a', '--namespace', 'grp').status).toBe(0);
+    expect(od('start', 'ns.cjs', '--name', 'ns-b', '--namespace', 'grp').status).toBe(0);
+    await waitFor(online('ns-a', 'ns-b'));
+    expect(od('list').out).toContain('grp');
+    const pids = () => new Map(list().map((p) => [p.name, p.pid]));
+    const before = pids();
+    expect(od('restart', 'grp').status).toBe(0);
+    await waitFor(() => ['ns-a', 'ns-b'].every((n) => pids().get(n) !== before.get(n)));
+    expect(pids().get('api')).toBe(before.get('api'));
+    expect(od('delete', 'grp').status).toBe(0);
+    await waitFor(() => !list().some((p) => p.name.startsWith('ns-')));
+  });
+
   it('update restarts the daemon and brings the saved apps back', async () => {
     const result = od('update');
     expect(result.status).toBe(0);

@@ -107,6 +107,7 @@ async function main(): Promise<void> {
     description: 'Environment variable for the process (KEY=value), repeatable',
   });
 
+  parser.addOption({ name: 'namespace', type: 'string', description: 'od start: namespace (group) of the app' });
   parser.addOption({ name: 'cwd', type: 'string', description: 'od start: working directory' });
   parser.addOption({ name: 'interpreter', type: 'string', description: 'od start: program that runs the script' });
   parser.addOption({ name: 'no-autorestart', type: 'boolean', description: 'od start: do not restart on exit' });
@@ -218,7 +219,7 @@ async function allProcesses(): Promise<Array<{ id: number; name: string }>> {
   const client = new CliClient();
   try {
     await client.connect();
-    return await client.listProcesses() as Array<{ id: number; name: string }>;
+    return await client.listProcesses() as Array<{ id: number; name: string; namespace?: string }>;
   } catch (err) {
     term.error(`Failed to list processes: ${(err instanceof Error ? err : new Error(String(err))).message}`);
     process.exit(1);
@@ -247,10 +248,10 @@ async function resolveIds(parsed: ParsedCommand): Promise<ParsedCommand> {
   const hasSub = parsed.subcommand !== '';
   const positional = hasSub ? [parsed.subcommand, ...parsed.args] : [...parsed.args];
   const numeric = positional.map((v, i) => (/^\d+$/.test(v) && (all || i === 0) ? i : -1)).filter((i) => i >= 0);
-  if (numeric.length === 0) return parsed;
+  if (numeric.length === 0 && !all) return parsed;
 
   const client = new CliClient();
-  let processes: Array<{ id: number; name: string }>;
+  let processes: Array<{ id: number; name: string; namespace?: string }>;
   try {
     await client.connect();
     processes = await client.listProcesses() as Array<{ id: number; name: string }>;
@@ -264,6 +265,15 @@ async function resolveIds(parsed: ParsedCommand): Promise<ParsedCommand> {
     if (processes.some((p) => p.name === value)) continue;
     const byId = processes.find((p) => p.id === Number(value));
     if (byId) positional[i] = byId.name;
+  }
+  if (all) {
+    // a namespace stands for all its members (PM2: `pm2 restart <namespace>`)
+    const expanded = positional.flatMap((value) => {
+      if (processes.some((p) => p.name === value)) return [value];
+      const members = processes.filter((p) => p.namespace === value).map((p) => p.name);
+      return members.length > 0 ? members : [value];
+    });
+    positional.splice(0, positional.length, ...expanded);
   }
   return hasSub ? { ...parsed, subcommand: positional[0] as string, args: positional.slice(1) } : { ...parsed, args: positional };
 }

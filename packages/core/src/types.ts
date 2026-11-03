@@ -287,6 +287,8 @@ export interface ProcessConfig {
   cronRetry?: number;
   /** Restart the app at each match of this cron expression (PM2's cron_restart) */
   cronRestart?: string;
+  /** Group name (PM2 namespace): `od restart <namespace>` acts on every member */
+  namespace?: string;
   /**
    * Treat the app as started when it sends `process.send('ready')` (PM2's wait_ready) instead of
    * as soon as it is spawned; `listenTimeout` ms is how long to wait for it (default 3000)
@@ -421,6 +423,7 @@ export interface ProcessInfo {
   memory: number;
   script: string;
   cwd?: string | undefined;
+  namespace?: string | undefined;
   createdAt: string;
   startedAt?: string | undefined;
   errorMessage?: string | undefined;

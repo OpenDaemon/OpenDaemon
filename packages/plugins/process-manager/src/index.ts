@@ -1613,6 +1613,7 @@ export class ProcessManagerPlugin implements Plugin {
       memory: proc.memory,
       script: proc.config.script,
       cwd: proc.config.cwd,
+      namespace: proc.config.namespace,
       createdAt: now.toISOString(),
       startedAt: proc.startTime?.toISOString(),
       errorMessage: proc.statusReason ?? (proc.status === 'errored' ? 'Process exited with error' : undefined),

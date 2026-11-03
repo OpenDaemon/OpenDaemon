@@ -29,12 +29,12 @@ const NATIVE_KEYS = new Set([
   'limits', 'deploy', 'autoRestart', 'restartDelay', 'maxRestarts', 'minUptime', 'killTimeout', 'backoffStrategy',
   'backoffMultiplier', 'maxBackoffDelay', 'healthCheck', 'dependencyTimeout', 'logFile', 'errorLogFile', 'logLevel',
   'mergeLogs', 'logRotation', 'uid', 'gid', 'nice', 'umask', 'detached', 'cron', 'cronTimezone', 'cronOverlap',
-  'cronRetry', 'cronRestart', 'stopExitCodes', 'stableAfter', 'logTimestamp', 'watch', 'dependencies', 'description', 'version', 'waitReady', 'listenTimeout',
+  'cronRetry', 'cronRestart', 'namespace', 'stopExitCodes', 'stableAfter', 'logTimestamp', 'watch', 'dependencies', 'description', 'version', 'waitReady', 'listenTimeout',
 ]);
 
 /** PM2 keys that have no meaning here, or that OpenDaemon does on its own: dropped without a warning */
 const SILENT_KEYS = new Set([
-  'namespace', 'vizion', 'pmx', 'automation', 'autorestart_', 'treekill', 'source_map_support', 'instance_var',
+  'vizion', 'pmx', 'automation', 'autorestart_', 'treekill', 'source_map_support', 'instance_var',
   'increment_var', 'combine_logs', 'disable_logs', 'post_update', 'filter_env', 'windowsHide', 'shutdown_with_message',
   'trace', 'deep_monitoring', 'force', 'wait_ready_', 'append_env_to_name', 'node_args_',
 ]);

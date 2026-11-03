@@ -387,6 +387,7 @@ apps:
 | `od restart <name...>` | Restart processes; `all` for every one; `--env KEY=value` changes the environment for this and later runs |
 | `od reload <name>` | Replace cluster workers one by one without downtime, restart anything else |
 | `od delete <name...>` | Delete processes; `all` for every one |
+| `od start app.js --namespace web` | Group apps (`namespace` in config/ecosystem files); `od restart web`, `stop`, `delete`, `reload` act on every member, and `od list` shows a Namespace column |
 | `od update` | Save the list, restart the daemon (after upgrading OpenDaemon) and bring the saved processes back |
 | `od save` / `od resurrect` | Save the process list to `~/.opendaemon/dump.json`; start the saved processes again (the daemon does it at start, unless `daemon.resurrect: false`) |
 | `od reset [name]` | Zero the restart counter |
