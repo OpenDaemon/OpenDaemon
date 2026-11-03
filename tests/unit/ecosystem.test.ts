@@ -56,7 +56,8 @@ describe('normalizeApp (PM2 keys)', () => {
     const raw = { env: { NODE_ENV: 'development', PORT: 80, DEBUG: true, TOKEN: { secret: 'T' } }, env_production: { NODE_ENV: 'production' } };
     expect(norm(raw).config.env).toEqual({ NODE_ENV: 'development', PORT: '80', DEBUG: 'true', TOKEN: { secret: 'T' } });
     expect(norm(raw, 'production').config.env).toMatchObject({ NODE_ENV: 'production', PORT: '80' });
-    expect(norm(raw, 'staging').warnings).toEqual(['no env_staging section: using env']);
+    expect(norm(raw, 'staging').warnings).toEqual([]);
+    expect(norm(raw, 'staging').config.env).toMatchObject({ NODE_ENV: 'development' });
   });
 
   it('resolves cwd against the config file and the script against the cwd', () => {
@@ -107,6 +108,12 @@ describe('loadEcosystem', () => {
     expect((await loadEcosystem(list)).apps[0]?.config.name).toBe('l');
     const yaml = write('apps.yaml', 'apps:\n  - name: y\n    script: y.js\n    max_restarts: 3\n');
     expect((await loadEcosystem(yaml)).apps[0]?.config).toMatchObject({ name: 'y', maxRestarts: 3 });
+  });
+
+  it('warns once when no app has the profile, and about a deploy section', async () => {
+    const file = write('warn.json', JSON.stringify({ apps: [{ name: 'a', script: 'a.js', env_production: { X: '1' } }, { name: 'b', script: 'b.js' }], deploy: { production: {} } }));
+    expect((await loadEcosystem(file, { profile: 'production' })).warnings).toEqual([expect.stringContaining('"deploy" section is not supported')]);
+    expect((await loadEcosystem(file, { profile: 'staging' })).warnings[0]).toBe('no app has an env_staging section: using env');
   });
 
   it('keeps only the apps named in only, and rejects unknown names', async () => {

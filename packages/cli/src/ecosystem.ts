@@ -62,12 +62,9 @@ export function normalizeApp(raw: Record<string, unknown>, baseDir: string, prof
 
   const env: Record<string, unknown> = { ...(raw['env'] as Record<string, unknown> | undefined) };
   if (profile !== undefined) {
+    // An app without that profile just uses env, as in PM2 (loadEcosystem warns if none has it)
     const overrides = raw[`env_${profile}`];
-    if (overrides === undefined) {
-      warnings.push(`no env_${profile} section: using env`);
-    } else {
-      Object.assign(env, overrides as Record<string, unknown>);
-    }
+    if (overrides !== undefined) Object.assign(env, overrides as Record<string, unknown>);
   }
   if (Object.keys(env).length > 0) {
     // Secret references stay as they are; PM2 allows numbers and booleans, a process environment does not
@@ -158,6 +155,8 @@ export function isEcosystemFile(target: string): boolean {
 export interface LoadedEcosystem {
   apps: NormalizedApp[];
   file: string;
+  /** Things about the file as a whole, e.g. a profile no app defines */
+  warnings: string[];
 }
 
 /**
@@ -181,6 +180,13 @@ export async function loadEcosystem(path: string, options: { profile?: string; o
   const list = Array.isArray(data) ? data : (data as { apps?: unknown } | null)?.apps;
   if (!Array.isArray(list) || list.length === 0) throw new Error(`${path} has no apps (expected { apps: [...] })`);
 
+  const warnings: string[] = [];
+  if (options.profile !== undefined && !list.some((a) => typeof a === 'object' && a !== null && `env_${options.profile as string}` in a)) {
+    warnings.push(`no app has an env_${options.profile} section: using env`);
+  }
+  const top = Array.isArray(data) ? {} : (data as Record<string, unknown>);
+  if (top['deploy'] !== undefined) warnings.push('the "deploy" section is not supported and was ignored (see od deploy for zero-downtime restarts)');
+
   const baseDir = dirname(file);
   const apps = list.map((entry, index) => {
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) throw new Error(`apps[${index}] must be an object`);
@@ -202,7 +208,7 @@ export async function loadEcosystem(path: string, options: { profile?: string; o
     const known = new Set(apps.map((a) => a.config.name));
     const unknown = only.filter((name) => !known.has(name));
     if (unknown.length > 0) throw new Error(`Not in ${path}: ${unknown.join(', ')} (it has: ${[...known].join(', ')})`);
-    return { file, apps: apps.filter((a) => only.includes(a.config.name)) };
+    return { file, warnings, apps: apps.filter((a) => only.includes(a.config.name)) };
   }
-  return { file, apps };
+  return { file, warnings, apps };
 }

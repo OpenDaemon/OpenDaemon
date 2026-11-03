@@ -278,6 +278,7 @@ export class StartCommand implements Command {
   ): Promise<ProcessConfigLike[]> {
     const only = str(options['only'])?.split(',').map((n) => n.trim()).filter(Boolean);
     const loaded = await loadEcosystem(target, { ...(profile === undefined ? {} : { profile }), ...(only === undefined ? {} : { only }) });
+    for (const warning of loaded.warnings) term.warn(warning);
     const name = str(options['name']);
     if (name !== undefined && loaded.apps.length > 1) throw new Error('--name cannot rename several apps; use --only to pick one');
     return loaded.apps.map(({ config, warnings }) => {
