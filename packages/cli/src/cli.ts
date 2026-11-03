@@ -211,10 +211,14 @@ async function main(): Promise<void> {
  * Names of every process the daemon manages, for `all`
  */
 async function allProcessNames(): Promise<string[]> {
+  return (await allProcesses()).map((p) => p.name);
+}
+
+async function allProcesses(): Promise<Array<{ id: number; name: string }>> {
   const client = new CliClient();
   try {
     await client.connect();
-    return (await client.listProcesses() as Array<{ name: string }>).map((p) => p.name);
+    return await client.listProcesses() as Array<{ id: number; name: string }>;
   } catch (err) {
     term.error(`Failed to list processes: ${(err instanceof Error ? err : new Error(String(err))).message}`);
     process.exit(1);
@@ -287,7 +291,9 @@ async function executeCommand(original: ParsedCommand): Promise<void> {
       break;
 
     case 'list':
-    case 'ls': {
+    case 'ls':
+    case 'l':
+    case 'ps': {
       const cmd = new ListCommand();
       await cmd.execute(parsed.args, parsed.options);
       break;
@@ -438,6 +444,18 @@ async function executeCommand(original: ParsedCommand): Promise<void> {
       await new ServeCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
       break;
 
+    case 'id': {
+      // pm2 id <name>: the ids of the apps with that name
+      const wanted = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      const list = await allProcesses();
+      for (const name of wanted) {
+        const found = list.filter((p) => p.name === name);
+        if (found.length === 0) { term.error(`Process "${name}" not found`); process.exit(1); }
+        for (const p of found) console.log(String(p.id));
+      }
+      break;
+    }
+
     case 'pid':
       await new PidCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args);
       break;
@@ -469,6 +487,7 @@ async function executeCommand(original: ParsedCommand): Promise<void> {
       break;
 
     case 'save':
+    case 'dump':
       await new SaveCommand().execute(parsed.args, parsed.options);
       break;
 

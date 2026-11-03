@@ -148,6 +148,12 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     expect(od('stop', id).status).toBe(0);
     await waitFor(() => list().find((p) => p.name === 'two')?.status === 'stopped');
     expect(od('pid', 'ghost').status).toBe(1);
+    // PM2's other spellings
+    expect(od('id', 'two').out.trim()).toBe(id);
+    expect(od('id', 'ghost').status).toBe(1);
+    expect(od('ps').out).toContain('two');
+    expect(od('l').out).toContain('two');
+    expect(od('dump').out).toContain('Saved');
   });
 
   it('answers ping, describe and jlist', async () => {
