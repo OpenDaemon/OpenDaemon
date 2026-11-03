@@ -1021,6 +1021,7 @@ export class ProcessManagerPlugin implements Plugin {
       env,
       detached: false,
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+      shell: launch.shell === true,
     });
 
     proc.childProcess = child;

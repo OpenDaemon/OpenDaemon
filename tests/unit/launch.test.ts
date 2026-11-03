@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, chmodSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { resolveLaunch, isOnPath } from '../../packages/plugins/process-manager/src/launch.js';
+import { resolveLaunch, isOnPath, findOnPath, quoteForCmd } from '../../packages/plugins/process-manager/src/launch.js';
 
 const posix = process.platform !== 'win32';
 
@@ -64,5 +64,29 @@ describe('resolveLaunch', () => {
     expect(isOnPath('node', { PATH: '' })).toBe(false);
     expect(isOnPath('', {})).toBe(false);
     expect(isOnPath('./node')).toBe(false);
+  });
+
+  it('quotes words for cmd.exe only when they need it', () => {
+    expect(quoteForCmd('start')).toBe('start');
+    expect(quoteForCmd('C:\\Program Files\\nodejs\\npm.cmd')).toBe('"C:\\Program Files\\nodejs\\npm.cmd"');
+    expect(quoteForCmd('say "hi"')).toBe('"say ""hi"""');
+    expect(quoteForCmd('a&b')).toBe('"a&b"');
+  });
+
+  it('finds the file a command runs from, and nothing for paths or unknown names', () => {
+    expect(findOnPath('node')).toBeDefined();
+    expect(findOnPath('no-such-command-xyz')).toBeUndefined();
+    expect(findOnPath('./node')).toBeUndefined();
+  });
+
+  it.runIf(process.platform === 'win32')('runs npm (a .cmd shim) through a shell on Windows', () => {
+    const launch = resolveLaunch({ name: 'a', script: 'npm', args: ['run', 'my script'] });
+    expect(launch).toMatchObject({ shell: true, node: false });
+    expect((launch as { command: string }).command).toMatch(/npm\.cmd"?$/i);
+    expect((launch as { args: string[] }).args).toEqual(['run', '"my script"']);
+  });
+
+  it.runIf(process.platform !== 'win32')('never uses a shell off Windows', () => {
+    expect(resolveLaunch({ name: 'a', script: 'node' })).not.toHaveProperty('shell');
   });
 });

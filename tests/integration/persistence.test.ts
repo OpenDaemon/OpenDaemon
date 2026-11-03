@@ -215,6 +215,12 @@ describe('running programs that are not Node.js scripts', () => {
     expect(await logsOf('cmd')).toContain('from -e');
   });
 
+  it('runs npm, even where it is a .cmd shim (Windows)', async () => {
+    await methods.get('start')!({ name: 'npmv', script: 'npm', args: ['--version'], autoRestart: false, killTimeout: 300 });
+    await until(async () => /\d+\.\d+\.\d+/.test(await logsOf('npmv')));
+    expect(await logsOf('npmv')).toMatch(/\d+\.\d+\.\d+/);
+  });
+
   it('passes interpreter args to node', async () => {
     const script = join(dir, 'argv.cjs');
     writeFileSync(script, 'console.log("exec:" + process.execArgv.join(",")); setInterval(() => {}, 1000)');
