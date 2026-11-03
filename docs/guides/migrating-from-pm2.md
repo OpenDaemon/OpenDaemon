@@ -35,6 +35,7 @@ The daemon starts by itself on the first command, like PM2's.
 | `pm2 serve ./dist 8080 --spa` | `od serve ./dist 8080 --spa` |
 | `pm2 start app.js --node-args="--harmony" --time --output o.log --error e.log --stop-exit-codes 0` | the same flags |
 | `pm2-runtime ecosystem.config.js` | `od-runtime ecosystem.config.js` |
+| `const pm2 = require('pm2'); pm2.connect(...)` | `const od = await (await import('opendaemon/client')).OpenDaemon.connect()` (promises instead of callbacks; see README) |
 | `pm2 deploy ecosystem.config.js production setup\|update\|revert\|curr\|prev\|exec\|list` | `od deploy ecosystem.config.js production ...`: same `deploy` section, hooks and commands (see README). The zero-downtime restart of a running app by name is `od deploy <name>` |
 | `pm2 startOrRestart` / `startOrReload` / `startOrGracefulReload` | the same, with `od` |
 | `pm2 install pm2-logrotate` | built in: `logRotation`, see README |

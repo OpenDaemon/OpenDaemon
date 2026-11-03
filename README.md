@@ -613,6 +613,24 @@ npm run test:e2e
 | Plugin system | First-class with DI | Limited |
 | IPC protocol | Binary frames + JSON-RPC 2.0 | Custom |
 
+## Programmatic API
+
+Control the daemon from a script, like PM2's `require('pm2')`:
+
+```js
+import { OpenDaemon } from 'opendaemon/client';   // or require('opendaemon/client')
+
+const od = await OpenDaemon.connect();             // needs a running daemon (`od daemon start`)
+await od.start({ name: 'api', script: './server.js', mode: 'cluster', instances: 2, env: { PORT: '3000' } });
+console.log((await od.list()).map((p) => `${p.name} ${p.status}`));
+await od.reload('api', { env: { RELEASE: '42' } });  // rolling, resolves when done
+await od.follow({ name: 'api' }, (entry) => console.log(entry.message));
+await od.save();
+await od.disconnect();
+```
+
+Methods: `list`, `describe`, `start`, `startOrRestart`, `stop`, `restart`, `delete`, `scale`, `reload`, `save`, `resurrect`, `reset`, `signal`, `env`, `logs`, `follow`, `status`, `metrics`, and `call(method, params)` for anything else. It uses the CLI's socket and token, so it works for the user who owns the daemon.
+
 ## Deploying from git (`pm2 deploy`)
 
 `od deploy <ecosystem file> <env> <command>` reads the `deploy` section of an ecosystem file (PM2's format) and runs it on the hosts over `ssh`: clone and update a checkout, run your hooks, point `current` at it.

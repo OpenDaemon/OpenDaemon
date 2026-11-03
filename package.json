@@ -17,6 +17,11 @@
       "import": "./packages/sdk/dist/index.js",
       "require": "./packages/sdk/dist/index.cjs"
     },
+    "./client": {
+      "types": "./packages/client/dist/index.d.ts",
+      "import": "./packages/client/dist/index.js",
+      "require": "./packages/client/dist/index.cjs"
+    },
     "./runtime": {
       "types": "./packages/sdk/dist/runtime.d.ts",
       "import": "./packages/sdk/dist/runtime.js",

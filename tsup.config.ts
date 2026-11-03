@@ -36,6 +36,18 @@ export default defineConfig([
       __OPENDAEMON_VERSION__: JSON.stringify(version),
     },
   },
+  // Programmatic client: `import { OpenDaemon } from 'opendaemon/client'`
+  {
+    entry: { index: 'packages/cli/src/api.ts' },
+    outDir: 'packages/client/dist',
+    format: ['esm', 'cjs'],
+    dts: true,
+    sourcemap: true,
+    clean: true,
+    splitting: false,
+    bundle: true,
+    target: 'node20',
+  },
   // SDK package
   {
     entry: ['packages/sdk/src/index.ts', 'packages/sdk/src/runtime.ts'],
