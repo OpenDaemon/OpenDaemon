@@ -143,3 +143,58 @@ describe('save and resurrect', () => {
     expect(existsSync(join(dir, 'dump.json'))).toBe(false);
   });
 });
+
+describe('running programs that are not Node.js scripts', () => {
+  let dir: string;
+  let pm: ProcessManagerPlugin;
+  const methods = new Map<string, Method>();
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'od-launch-'));
+    pm = new ProcessManagerPlugin();
+    const context = {
+      config: {}, events: new EventBus(), logger: new Logger('launch-test'), store: new StateStore(),
+      registerMethod: (name: string, handler: Method) => { methods.set(name, handler); },
+      getPlugin: () => undefined,
+    } as unknown as PluginContext;
+    pm.install(context);
+  });
+  afterEach(async () => { await pm.onStop(); rmSync(dir, { recursive: true, force: true }); });
+
+  const logsOf = async (name: string) => ((await methods.get('logs')!({ name })) as Array<{ message: string }>).map((l) => l.message).join('\n');
+  const until = async (check: () => Promise<boolean>) => {
+    for (let i = 0; i < 100 && !(await check()); i++) await new Promise((r) => setTimeout(r, 50));
+  };
+
+  it.runIf(process.platform !== 'win32')('runs a shell script and passes its arguments', async () => {
+    const script = join(dir, 'hello.sh');
+    writeFileSync(script, 'echo "hello $1 from $(basename "$0")"; sleep 5');
+    await methods.get('start')!({ name: 'sh', script, args: ['world'], killTimeout: 300 });
+    await until(async () => (await logsOf('sh')).includes('hello'));
+    expect(await logsOf('sh')).toContain('hello world from hello.sh');
+  });
+
+  it('runs a command from PATH (npm-style: script is the program, args follow)', async () => {
+    await methods.get('start')!({ name: 'cmd', script: 'node', args: ['-e', 'console.log("from -e"); setInterval(() => {}, 1000)'], killTimeout: 300 });
+    await until(async () => (await logsOf('cmd')).includes('from -e'));
+    expect(await logsOf('cmd')).toContain('from -e');
+  });
+
+  it('passes interpreter args to node', async () => {
+    const script = join(dir, 'argv.cjs');
+    writeFileSync(script, 'console.log("exec:" + process.execArgv.join(",")); setInterval(() => {}, 1000)');
+    await methods.get('start')!({ name: 'flags', script, interpreterArgs: ['--no-warnings'], killTimeout: 300 });
+    await until(async () => (await logsOf('flags')).includes('exec:'));
+    expect(await logsOf('flags')).toContain('exec:--no-warnings');
+  });
+
+  it('refuses cluster mode for anything but a Node.js script', async () => {
+    const script = join(dir, 'x.sh');
+    writeFileSync(script, 'sleep 5');
+    await expect(methods.get('start')!({ name: 'c', script, mode: 'cluster', instances: 2 })).rejects.toThrow(/Cluster mode runs Node.js scripts only/);
+  });
+
+  it('says so when the script or command does not exist', async () => {
+    await expect(methods.get('start')!({ name: 'm', script: join(dir, 'nope.js') })).rejects.toThrow(/Script not found/);
+  });
+});

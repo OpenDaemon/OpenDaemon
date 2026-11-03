@@ -1,4 +1,5 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
+import { resolveLaunch } from './launch.js';
 import { Logger, parseBytes, dependencyLevels } from '../../../core/src/index.js';
 import type { CountLimit, LimitAction, Release } from '../../../core/src/index.js';
 import { DaemonError, ErrorCode, ProcessError } from '../../../core/src/index.js';
@@ -391,13 +392,16 @@ export class ProcessManagerPlugin implements Plugin {
     // Validate config
     this.validateConfig(config);
 
-    // Resolve script path
-    const scriptPath = resolve(config.script);
-    if (!existsSync(scriptPath)) {
+    // Check there is something to run (a script file, a program with an interpreter, or a command)
+    const launch = resolveLaunch(config);
+    if ('error' in launch) {
+      throw new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, config.name, launch.error);
+    }
+    if (config.mode === 'cluster' && !launch.node) {
       throw new ProcessError(
         ErrorCode.PROCESS_INVALID_CONFIG,
         config.name,
-        `Script not found: ${config.script}`
+        'Cluster mode runs Node.js scripts only; use mode: fork for other programs'
       );
     }
 
@@ -901,12 +905,14 @@ export class ProcessManagerPlugin implements Plugin {
    */
   private async startFork(proc: ManagedProcessInfo): Promise<void> {
     const config = proc.config;
-    const scriptPath = resolve(config.script);
-    const cwd = config.cwd ? resolve(config.cwd) : dirname(scriptPath);
+    const launch = resolveLaunch(config);
+    if ('error' in launch) throw new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, config.name, launch.error);
+    // A command without a file has no directory of its own: it runs where the daemon was asked to
+    const cwd = config.cwd ? resolve(config.cwd) : existsSync(resolve(config.script)) ? dirname(resolve(config.script)) : process.cwd();
 
     const env = this.buildEnv(config);
 
-    const child = spawn(process.execPath, [scriptPath, ...(config.args ?? [])], {
+    const child = spawn(launch.command, launch.args, {
       cwd,
       env,
       detached: false,
