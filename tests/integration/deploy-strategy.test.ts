@@ -157,7 +157,7 @@ describe('DeployStrategyPlugin', () => {
       expect(state.steps).toContain('the new set is ready: switching');
     });
     expect(failures).toBe(0);
-    await until(async () => (await sample(12)).size === 1);
+    await until(async () => { const seen = await sample(12); return seen.size === 1 && seen.has('v2'); });
     expect([...await sample()]).toEqual(['v2']);
   }, 60000);
 
@@ -177,7 +177,7 @@ describe('DeployStrategyPlugin', () => {
     expect(state.state).toBe('rolled-back');
     expect(state.steps.filter((s) => s.includes('switched'))).toHaveLength(3); // #0, #1, then both reverted together
     expect(state.steps.at(-1)).toBe('rolled back');
-    await until(async () => (await sample(12)).size === 1);
+    await until(async () => { const seen = await sample(12); return seen.size === 1 && seen.has('v1'); });
     expect([...await sample()]).toEqual(['v1']);
     expect(pm.getWorkerIndices('web')).toEqual([0, 1, 2]);
   }, 60000);
@@ -209,7 +209,7 @@ describe('DeployStrategyPlugin', () => {
     expect(state.state).toBe('rolled-back');
     expect(state.error).toMatch(/canary errors_total\/requests_total is 0\.\d+, more than 3x the current release's 0\.0\d*/);
     expect(state.steps.some((s) => /^canary metric errors_total\/requests_total: 0\.\d+ \(current release 0\.0/.test(s))).toBe(true);
-    await until(async () => (await sample(12)).size === 1);
+    await until(async () => { const seen = await sample(12); return seen.size === 1 && seen.has('v1'); });
     expect([...await sample()]).toEqual(['v1']);
   }, 60000);
 
@@ -236,7 +236,7 @@ describe('DeployStrategyPlugin', () => {
     const state = await run({ name: 'web', strategy: 'canary', release: { script: release('flaky.cjs', 'flaky', { crashAfter: 1500 }) } });
     expect(state.state).toBe('rolled-back');
     expect(state.error).toMatch(/canary worker #\d exited/);
-    await until(async () => (await sample(12)).size === 1);
+    await until(async () => { const seen = await sample(12); return seen.size === 1 && seen.has('v1'); });
     expect([...await sample()]).toEqual(['v1']);
   }, 60000);
 
