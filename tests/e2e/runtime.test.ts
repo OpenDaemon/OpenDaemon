@@ -55,7 +55,8 @@ describe.skipIf(!existsSync(CLI))('od runtime end to end', () => {
     expect(result.stderr).toContain('Script not found');
   });
 
-  it('stops the app gracefully on SIGTERM and exits cleanly', async () => {
+  // Windows has no SIGTERM to handle: kill() ends the process at once
+  it.runIf(process.platform !== 'win32')('stops the app gracefully on SIGTERM and exits cleanly', async () => {
     const child = spawn(process.execPath, [CLI, 'runtime', 'svc.cjs'], { cwd: project, env: env() });
     let out = '';
     child.stdout.on('data', (d: Buffer) => { out += d.toString(); });

@@ -48,6 +48,7 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     project = join(root, 'project');
     mkdirSync(project);
     writeFileSync(join(project, 'api.cjs'), "console.log('api mode=' + process.env.APP_MODE + ' args=' + process.argv.slice(2).join(',')); setInterval(() => {}, 1000);");
+    writeFileSync(join(project, 'plain.cjs'), 'setInterval(() => {}, 1000);');
     writeFileSync(join(project, 'job.sh'), 'echo "shell job says $GREETING"; sleep 30');
     writeFileSync(join(project, 'ecosystem.config.cjs'), `module.exports = {
       apps: [
@@ -123,7 +124,6 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
   });
 
   it('answers ping, describe and jlist', async () => {
-    writeFileSync(join(project, 'plain.cjs'), 'setInterval(() => {}, 1000);');
     od('start', 'plain.cjs');
     await waitFor(online('plain'));
     expect(od('ping').out).toContain('pong');
@@ -149,29 +149,6 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     expect(od('reload', 'api').status).toBe(0);
   });
 
-  it('lets many commands start at once without a daemon: one starts it, all of them work', async () => {
-    const fresh = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'od-race-'));
-    const raceHome = join(fresh, 'home');
-    writeFileSync(join(fresh, 'idle.cjs'), 'setInterval(() => {}, 1000);');
-    const spawnOd = (name: string) => new Promise<{ status: number | null; out: string }>((done) => {
-      const child = spawn(process.execPath, [CLI, 'start', 'idle.cjs', '--name', name], { cwd: fresh, env: { ...process.env, OPENDAEMON_HOME: raceHome, NO_COLOR: '1' } });
-      let out = '';
-      child.stdout.on('data', (d: Buffer) => { out += d.toString(); });
-      child.stderr.on('data', (d: Buffer) => { out += d.toString(); });
-      child.on('exit', (status) => { done({ status, out }); });
-    });
-    try {
-      const results = await Promise.all(Array.from({ length: 10 }, (_, i) => spawnOd(`race${String(i)}`)));
-      expect(results.filter((r) => r.status !== 0).map((r) => r.out)).toEqual([]);
-      expect(results.filter((r) => r.out.includes('Daemon started'))).toHaveLength(1);
-      const listed = spawnSync(process.execPath, [CLI, 'list', '--json'], { cwd: fresh, env: { ...process.env, OPENDAEMON_HOME: raceHome }, encoding: 'utf-8' });
-      expect((JSON.parse(listed.stdout) as unknown[]).length).toBe(10);
-    } finally {
-      spawnSync(process.execPath, [CLI, 'daemon', 'stop'], { cwd: fresh, env: { ...process.env, OPENDAEMON_HOME: raceHome }, encoding: 'utf-8' });
-      try { rmSync(fresh, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); } catch { /* temp dir, left behind */ }
-    }
-  });
-
   it('keeps the WebUI closed to other local users: anonymous requests are refused, the login is in a private file', async () => {
     const log = readFileSync(join(home, 'daemon.log'), 'utf-8');
     const port = [...log.matchAll(/WebUI server listening on http:\/\/127\.0\.0\.1:(\d+)/g)].map((m) => Number(m[1])).pop();
@@ -188,5 +165,23 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     const authorised = await fetch(`http://127.0.0.1:${String(port)}/api/processes`, { headers: { Authorization: `Basic ${Buffer.from(`admin:${password}`).toString('base64')}` } });
     expect(authorised.status).toBe(200);
     if (process.platform !== 'win32') expect(statSync(join(home, 'webui-credentials')).mode & 0o777).toBe(0o600);
+  });
+  // Last: it stops the shared daemon (Windows has one fixed IPC port, so a second daemon cannot run beside it)
+  it('lets many commands start at once without a daemon: one starts it, all of them work', async () => {
+    expect(od('daemon', 'stop').status).toBe(0);
+    const spawnOd = (name: string) => new Promise<{ status: number | null; out: string }>((done) => {
+      const child = spawn(process.execPath, [CLI, 'start', 'plain.cjs', '--name', name], { cwd: project, env: { ...process.env, OPENDAEMON_HOME: home, NO_COLOR: '1' } });
+      let out = '';
+      child.stdout.on('data', (d: Buffer) => { out += d.toString(); });
+      child.stderr.on('data', (d: Buffer) => { out += d.toString(); });
+      child.on('exit', (status) => { done({ status, out }); });
+    });
+    const names = Array.from({ length: 10 }, (_, i) => `race${String(i)}`);
+    const results = await Promise.all(names.map(spawnOd));
+    expect(results.filter((r) => r.status !== 0).map((r) => r.out)).toEqual([]);
+    expect(results.filter((r) => r.out.includes('Daemon started'))).toHaveLength(1);
+    // saved apps come back with the daemon, so the list holds more than the ten
+    const listed = list().map((p) => p.name);
+    expect(listed).toEqual(expect.arrayContaining(names));
   });
 });
