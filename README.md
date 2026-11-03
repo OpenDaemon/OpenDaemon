@@ -83,7 +83,7 @@ Create an `opendaemon.config.ts` (or `.js`, `.mjs`, `.json`, `.yaml`, or an `ope
 
 If the daemon fails to start, the reason is printed and its full output is in `~/.opendaemon/daemon.log`.
 
-The daemon keeps its runtime files in `$OPENDAEMON_HOME`, which defaults to `~/.opendaemon` (mode `0700`). They are `opendaemon.pid`, `opendaemon.sock` (Unix), `auth-token`, `daemon.log` and `logs/`. This lets `od` reach the daemon from any directory. To run separate daemons, give each one its own `OPENDAEMON_HOME`. Every CLI request must carry the token. The token file and the socket are readable only by the user who started the daemon (mode `0600`), so other local users cannot control it. That includes Windows, where the daemon listens on TCP `127.0.0.1:9995`.
+The daemon keeps its runtime files in `$OPENDAEMON_HOME`, which defaults to `~/.opendaemon` (mode `0700`). They are `opendaemon.pid`, `opendaemon.sock` (Unix), `auth-token`, `daemon.log` and `logs/`. This lets `od` reach the daemon from any directory. To run separate daemons, give each one its own `OPENDAEMON_HOME`. Every CLI request must carry the token. The token file and the socket are readable only by the user who started the daemon (mode `0600`), so other local users cannot control it. That includes Windows, where the daemon listens on TCP `127.0.0.1` on a port derived from the home directory (so every user, and every `OPENDAEMON_HOME`, gets its own; `OPENDAEMON_IPC_PORT` sets it).
 
 ```typescript
 import { defineConfig } from 'opendaemon/sdk';

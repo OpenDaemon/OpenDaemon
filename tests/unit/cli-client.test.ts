@@ -66,7 +66,7 @@ describe('CliClient', () => {
       expect(IpcClient).toHaveBeenCalledWith(
         expect.objectContaining({
           host: '127.0.0.1',
-          port: 9995,
+          port: expect.any(Number),
           timeout: 30000,
         })
       );

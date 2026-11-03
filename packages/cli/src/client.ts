@@ -1,5 +1,5 @@
 import { IpcClient } from '@opendaemon/core';
-import { runtimePaths } from './paths.js';
+import { runtimePaths, ipcPort } from './paths.js';
 import { existsSync, readFileSync } from 'fs';
 
 /**
@@ -29,7 +29,7 @@ export class CliClient {
     if (this.isWindows) {
       this.client = new IpcClient({
         host: '127.0.0.1',
-        port: 9995,
+        port: ipcPort(),
         timeout: 30000,
         ...auth,
       });

@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - The WebUI was open without a login on `127.0.0.1:7777`, and `/api/start` runs any program: every local user could run code as the daemon's user. It now requires a login; without `username`/`password` in the config the daemon generates a random password, kept in `webui-credentials` (mode 0600). `plugins.webui.auth: false` restores the open behaviour
 
+### Changed
+- On Windows the IPC port is derived from the home directory instead of the fixed 9995, so several daemons (users, `OPENDAEMON_HOME`s) can run on one machine; `OPENDAEMON_IPC_PORT` overrides it
+
 ### Fixed
 - Stopping or restarting an app only signalled the process itself: what it had started (the node behind `npm start`, background jobs of a shell script) kept running and kept its ports. Apps now run in their own process group (Windows: `taskkill /T`) and the whole tree is stopped, with SIGKILL after `killTimeout`; leftovers of a process that exits on its own are removed before it is restarted
 - When the daemon was killed (SIGKILL, the OOM killer) its apps kept running unmanaged, and the next daemon started a second copy of each: port clashes and crash loops. The daemon now records its children (`children.json`) and stops the ones a dead daemon left behind before it starts anything

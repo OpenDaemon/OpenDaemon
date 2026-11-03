@@ -18,7 +18,7 @@ import { AuditLoggerPlugin } from '../../plugins/audit-logger/src/index.js';
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync, chmodSync } from 'fs';
 import { randomBytes } from 'crypto';
-import { ensureHome, runtimePaths } from './paths.js';
+import { ensureHome, runtimePaths, ipcPort } from './paths.js';
 import { loadExtensions } from './extensions.js';
 
 /**
@@ -93,7 +93,7 @@ export async function main(): Promise<void> {
     writeFileSync(tokenFile, authToken, { mode: 0o600 });
 
     const ipcConfig = isWindows
-      ? { host: '127.0.0.1', port: 9995, authToken }
+      ? { host: '127.0.0.1', port: ipcPort(), authToken }
       : { socketPath, authToken };
     const ipcServer = new IpcServer(ipcConfig);
 
