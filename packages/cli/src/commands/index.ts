@@ -1065,11 +1065,43 @@ async function daemonAnswers(): Promise<boolean> {
  * Daemon command - manage daemon
  */
 /**
- * Start the daemon when it is not running, like PM2 does on the first command
+ * Start the daemon when it is not running, like PM2 does on the first command. Several commands
+ * started at once (a script, a CI step) race here: only one of them spawns the daemon, the others
+ * wait for it (see withStartLock).
  */
 export async function ensureDaemonRunning(): Promise<void> {
   if (new CliClient().isDaemonRunning() && await daemonAnswers()) return;
-  await new DaemonCommand().execute(['start']);
+  await new DaemonCommand().startDaemon(true);
+}
+
+/**
+ * Run `body` while holding the daemon start lock: a file created exclusively, holding the PID of
+ * the command that owns it. A lock whose owner is gone is taken over.
+ */
+async function withStartLock<T>(body: () => Promise<T>, timeoutMs = 30000): Promise<T> {
+  const lock = resolve(ensureHome().home, 'daemon-start.lock');
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      writeFileSync(lock, String(process.pid), { flag: 'wx' });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      let owner = NaN;
+      try { owner = parseInt(readFileSync(lock, 'utf-8'), 10); } catch { /* released meanwhile */ }
+      if (!Number.isNaN(owner) && !isProcessRunning(owner)) {
+        try { unlinkSync(lock); } catch { /* someone else took it over */ }
+        continue;
+      }
+      if (Date.now() > deadline) throw new Error('Another od command has been starting the daemon for too long');
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+  try {
+    return await body();
+  } finally {
+    try { unlinkSync(lock); } catch { /* already gone */ }
+  }
 }
 
 export class DaemonCommand implements Command {
@@ -1094,12 +1126,28 @@ export class DaemonCommand implements Command {
     }
   }
 
-  private async startDaemon(): Promise<void> {
+  /**
+   * Start the daemon unless it runs. `quiet` stays silent when it already does (the implicit start
+   * of `od start`); the lock makes concurrent callers take turns.
+   */
+  async startDaemon(quiet = false): Promise<void> {
+    try {
+      await withStartLock(() => this.spawnDaemon(quiet));
+    } catch (err) {
+      term.error(`Failed to start daemon: ${(err instanceof Error ? err : new Error(String(err))).message}`);
+      process.exit(1);
+    }
+  }
+
+  private async spawnDaemon(quiet: boolean): Promise<void> {
     const { pidFile, socketFile, daemonLog: logFile } = ensureHome();
 
     if (existsSync(pidFile)) {
       const pid = parseInt(readFileSync(pidFile, 'utf-8'), 10);
-      if (isProcessRunning(pid)) { term.info(`Daemon is already running (PID: ${pid})`); return; }
+      if (isProcessRunning(pid)) {
+        if (!quiet) term.info(`Daemon is already running (PID: ${pid})`);
+        return;
+      }
       unlinkSync(pidFile);
     }
 
@@ -1133,8 +1181,7 @@ export class DaemonCommand implements Command {
       spinner.stop(true, 'Daemon started');
     } catch (err) {
       spinner.stop(false);
-      term.error(`Failed to start daemon: ${(err instanceof Error ? err : new Error(String(err))).message}`);
-      process.exit(1);
+      throw err;
     }
   }
 

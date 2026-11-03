@@ -4,7 +4,7 @@
  * after the daemon restarts.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { tmpdir } from 'os';
@@ -140,5 +140,28 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     expect(list().find((p) => p.name === 'cleanup')?.status).toBe('stopped');
     expect(JSON.parse(od('cron', '--json').out).map((j: { name: string }) => j.name)).toContain('cleanup');
     expect(od('reload', 'api').status).toBe(0);
+  });
+
+  it('lets many commands start at once without a daemon: one starts it, all of them work', async () => {
+    const fresh = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'od-race-'));
+    const raceHome = join(fresh, 'home');
+    writeFileSync(join(fresh, 'idle.cjs'), 'setInterval(() => {}, 1000);');
+    const spawnOd = (name: string) => new Promise<{ status: number | null; out: string }>((done) => {
+      const child = spawn(process.execPath, [CLI, 'start', 'idle.cjs', '--name', name], { cwd: fresh, env: { ...process.env, OPENDAEMON_HOME: raceHome, NO_COLOR: '1' } });
+      let out = '';
+      child.stdout.on('data', (d: Buffer) => { out += d.toString(); });
+      child.stderr.on('data', (d: Buffer) => { out += d.toString(); });
+      child.on('exit', (status) => { done({ status, out }); });
+    });
+    try {
+      const results = await Promise.all(Array.from({ length: 10 }, (_, i) => spawnOd(`race${String(i)}`)));
+      expect(results.filter((r) => r.status !== 0).map((r) => r.out)).toEqual([]);
+      expect(results.filter((r) => r.out.includes('Daemon started'))).toHaveLength(1);
+      const listed = spawnSync(process.execPath, [CLI, 'list', '--json'], { cwd: fresh, env: { ...process.env, OPENDAEMON_HOME: raceHome }, encoding: 'utf-8' });
+      expect((JSON.parse(listed.stdout) as unknown[]).length).toBe(10);
+    } finally {
+      spawnSync(process.execPath, [CLI, 'daemon', 'stop'], { cwd: fresh, env: { ...process.env, OPENDAEMON_HOME: raceHome }, encoding: 'utf-8' });
+      rmSync(fresh, { recursive: true, force: true });
+    }
   });
 });

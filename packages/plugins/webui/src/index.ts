@@ -31,7 +31,7 @@ export class WebuiPlugin implements Plugin {
   // Both are set in install(), which the kernel always calls before any other hook
   private context!: PluginContext;
   private logger!: Logger;
-  private server?: Server;
+  private server: Server | undefined;
   private port = 7777;
   // The API can start arbitrary scripts, so it is only reachable from this machine unless opted in
   private host = '127.0.0.1';
@@ -88,8 +88,10 @@ export class WebuiPlugin implements Plugin {
 
     // Start server
     const server = this.server;
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
+      let listening = false;
       server.listen(this.port, this.host, () => {
+        listening = true;
         const address = server.address();
         const port = typeof address === 'object' && address !== null ? address.port : this.port;
         this.logger.info(`WebUI server listening on http://${this.host.includes(':') ? `[${this.host}]` : this.host}:${String(port)}`);
@@ -98,7 +100,13 @@ export class WebuiPlugin implements Plugin {
 
       server.on('error', (err) => {
         this.logger.error('WebUI server error', undefined, err);
-        reject(err);
+        if (!listening) {
+          // The dashboard is optional: a busy port (a second daemon, another service) must not
+          // keep the process manager itself from starting
+          this.logger.error(`WebUI disabled: cannot listen on ${this.host}:${String(this.port)} (${err.message}); set plugins.webui.port`);
+          this.server = undefined;
+          resolve();
+        }
       });
     });
   }

@@ -177,3 +177,28 @@ describe('WebuiPlugin security', () => {
     expect((await send(port, 'GET', '/api/processes', { Authorization: `Bearer ${token}` })).status).toBe(401);
   });
 });
+
+describe('WebuiPlugin when its port is taken', () => {
+  it('should log the problem and let the daemon start without the dashboard', async () => {
+    const { createServer } = await import('http');
+    const blocker = createServer();
+    await new Promise<void>((resolveListen) => { blocker.listen(0, '127.0.0.1', resolveListen); });
+    const port = (blocker.address() as { port: number }).port;
+    try {
+      const plugin = new WebuiPlugin();
+      const errors: string[] = [];
+      const context = {
+        config: {}, pluginConfig: { port },
+        events: new EventBus(), store: new StateStore(),
+        logger: { info: () => undefined, warn: () => undefined, debug: () => undefined, error: (m: string) => { errors.push(m); } },
+        registerMethod: () => undefined, getPlugin: () => undefined,
+      } as unknown as PluginContext;
+      plugin.install(context);
+      await expect(plugin.onStart(context)).resolves.toBeUndefined();
+      expect(errors.join('\n')).toContain('WebUI disabled');
+      await expect(plugin.onStop()).resolves.toBeUndefined();
+    } finally {
+      await new Promise<void>((resolveClose) => { blocker.close(() => { resolveClose(); }); });
+    }
+  });
+});
