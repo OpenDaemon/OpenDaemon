@@ -1,4 +1,5 @@
 import { existsSync, statSync, accessSync, constants } from 'fs';
+import { spawnSync } from 'child_process';
 import { delimiter, extname, resolve, join } from 'path';
 import type { ProcessConfig } from '../../../core/src/index.js';
 
@@ -129,4 +130,41 @@ export function resolveLaunch(config: ProcessConfig, env: NodeJS.ProcessEnv = pr
   if (mapped !== undefined) return { command: mapped, args: [...interpreterArgs, scriptPath, ...args], node: false };
   if (ext === '' && process.platform !== 'win32' && isExecutableFile(scriptPath)) return { command: scriptPath, args, node: false };
   return { command: process.execPath, args: [...interpreterArgs, scriptPath, ...args], node: true };
+}
+
+/**
+ * Signal a child and everything it started (PM2's treekill). On POSIX the child leads its own
+ * process group, so a negative pid reaches the whole tree: `npm start` and the node it runs, a
+ * shell script and its background jobs. On Windows there are no groups: taskkill walks the tree.
+ */
+export function killTree(pid: number | undefined, signal: NodeJS.Signals): boolean {
+  if (pid === undefined) return false;
+  if (process.platform === 'win32') {
+    const result = spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    return result.status === 0;
+  }
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch {
+    try {
+      process.kill(pid, signal);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
+ * Whether anything is still running in the process group `pid` leads (POSIX only; false elsewhere)
+ */
+export function groupAlive(pid: number | undefined): boolean {
+  if (pid === undefined || process.platform === 'win32') return false;
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -1,5 +1,5 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
-import { resolveLaunch } from './launch.js';
+import { resolveLaunch, killTree, groupAlive } from './launch.js';
 import { ChildRegistry } from './orphans.js';
 import { Logger, parseBytes, dependencyLevels, parseCron, nextRun, assertTimeZone } from '../../../core/src/index.js';
 import type { CountLimit, LimitAction, Release } from '../../../core/src/index.js';
@@ -1055,7 +1055,9 @@ export class ProcessManagerPlugin implements Plugin {
     const child = spawn(launch.command, launch.args, {
       cwd,
       env,
-      detached: false,
+      // Its own process group (POSIX): the whole tree can be stopped, and it does not get the
+      // terminal's Ctrl+C meant for the daemon
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
       shell: launch.shell === true,
     });
@@ -1079,6 +1081,8 @@ export class ProcessManagerPlugin implements Plugin {
     // Handle process events
     child.on('exit', (code, signal) => {
       if (child.pid) this.registry?.remove(child.pid);
+      // What the process started and left running would hold its ports when it is restarted
+      if (groupAlive(child.pid)) killTree(child.pid, 'SIGKILL');
       if (proc.childProcess === child) proc.customMetrics.clear();
       this.handleProcessExit(proc, code, signal);
     });
@@ -1128,7 +1132,9 @@ export class ProcessManagerPlugin implements Plugin {
     const child = spawn(process.execPath, [clusterPrimaryPath()], {
       cwd,
       env,
-      detached: false,
+      // Its own process group (POSIX): the whole tree can be stopped, and it does not get the
+      // terminal's Ctrl+C meant for the daemon
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
     });
 
@@ -1146,6 +1152,8 @@ export class ProcessManagerPlugin implements Plugin {
     });
     child.on('exit', (code, signal) => {
       if (child.pid) this.registry?.remove(child.pid);
+      // What the process started and left running would hold its ports when it is restarted
+      if (groupAlive(child.pid)) killTree(child.pid, 'SIGKILL');
       if (proc.childProcess === child) {
         proc.workerPids.clear();
         proc.customMetrics.clear();
@@ -1244,25 +1252,26 @@ export class ProcessManagerPlugin implements Plugin {
       child !== undefined && child.exitCode === null && child.signalCode === null;
     const children = [proc.childProcess].filter(isAlive);
 
-    // Send signal to the process (in cluster mode the primary forwards it to its workers)
+    // Signal the process and what it started (in cluster mode the primary also forwards it to its workers)
+    const groups = children.map((child) => child.pid);
     for (const child of children) {
-      child.kill(signal as NodeJS.Signals);
+      killTree(child.pid, signal as NodeJS.Signals);
     }
 
-    // Wait for processes to exit
+    // Wait for the process, and the rest of its tree, to exit
     const startTime = Date.now();
     while (Date.now() - startTime < timeout) {
-      if (!children.some(isAlive)) {
+      if (!children.some(isAlive) && !groups.some((pid) => groupAlive(pid))) {
         break;
       }
 
       await new Promise((r) => setTimeout(r, 100));
     }
 
-    // Force kill if still running
+    // Force kill what is still running
     for (const child of children) {
-      if (isAlive(child)) {
-        child.kill('SIGKILL');
+      if (child.exitCode === null && child.signalCode === null || groupAlive(child.pid)) {
+        killTree(child.pid, 'SIGKILL');
       }
     }
 

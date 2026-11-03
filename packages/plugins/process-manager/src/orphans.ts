@@ -1,4 +1,7 @@
 import { execFileSync } from 'child_process';
+import { killTree, groupAlive } from './launch.js';
+
+const isRunning = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 
 /**
@@ -69,23 +72,21 @@ export class ChildRegistry {
       const pid = Number(key);
       if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) continue;
       if (processIdentity(pid) !== entry.identity) continue; // gone, or a different process now
-      try {
-        process.kill(pid, 'SIGTERM');
+      if (killTree(pid, 'SIGTERM')) {
         alive.push(pid);
         stopped.push(entry.name);
-      } catch { /* already gone */ }
+      }
     }
 
     const deadline = Date.now() + graceMs;
     while (alive.length > 0 && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 50));
       for (let i = alive.length - 1; i >= 0; i--) {
-        try { process.kill(alive[i] as number, 0); } catch { alive.splice(i, 1); }
+        const pid = alive[i] as number;
+        if (!groupAlive(pid) && !isRunning(pid)) alive.splice(i, 1);
       }
     }
-    for (const pid of alive) {
-      try { process.kill(pid, 'SIGKILL'); } catch { /* gone just now */ }
-    }
+    for (const pid of alive) killTree(pid, 'SIGKILL');
     return stopped;
   }
 
