@@ -1097,7 +1097,8 @@ async function withStartLock<T>(body: () => Promise<T>, timeoutMs = 30000): Prom
       writeFileSync(lock, String(process.pid), { flag: 'wx' });
       break;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      // Windows reports a lock that another command is deleting, or has open, as EPERM/EBUSY/EACCES
+      if (!['EEXIST', 'EPERM', 'EBUSY', 'EACCES'].includes((err as NodeJS.ErrnoException).code ?? '')) throw err;
       let owner = NaN;
       try { owner = parseInt(readFileSync(lock, 'utf-8'), 10); } catch { /* released meanwhile */ }
       if (!Number.isNaN(owner) && !isProcessRunning(owner)) {
