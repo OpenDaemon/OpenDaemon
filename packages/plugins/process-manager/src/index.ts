@@ -11,7 +11,7 @@ import type {
 } from '../../../core/src/index.js';
 import { spawn, execFile, type ChildProcess } from 'child_process';
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
-import { resolve, dirname, join } from 'path';
+import { resolve, dirname } from 'path';
 import { availableParallelism } from 'os';
 import { fileURLToPath } from 'url';
 
@@ -100,7 +100,7 @@ export class ProcessManagerPlugin implements Plugin {
 
   constructor(home?: string) {
     this.logger = new Logger('process-manager');
-    this.dumpFile = home === undefined ? undefined : join(home, 'dump.json');
+    this.dumpFile = home === undefined ? undefined : resolve(home, 'dump.json');
   }
 
   /**
