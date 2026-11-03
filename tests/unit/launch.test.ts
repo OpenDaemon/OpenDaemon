@@ -89,4 +89,42 @@ describe('resolveLaunch', () => {
   it.runIf(process.platform !== 'win32')('never uses a shell off Windows', () => {
     expect(resolveLaunch({ name: 'a', script: 'node' })).not.toHaveProperty('shell');
   });
+
+  describe('as Windows resolves commands (platform faked)', () => {
+    const realPlatform = process.platform;
+    beforeEach(() => { Object.defineProperty(process, 'platform', { value: 'win32', configurable: true }); });
+    afterEach(() => { Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true }); });
+    const exe = (name: string): string => file(name, 0o755);
+
+    it('prefers npm.cmd to the extensionless npm script that sits next to it', () => {
+      const shim = exe('npm.cmd');
+      exe('npm');
+      expect(findOnPath('npm', { PATH: dir, PATHEXT: '.exe;.cmd' })).toBe(shim);
+    });
+
+    it('takes a name that has an extension as it is', () => {
+      const script = exe('tool.sh');
+      expect(findOnPath('tool.sh', { PATH: dir, PATHEXT: '.exe;.cmd' })).toBe(script);
+      expect(findOnPath('tool', { PATH: dir, PATHEXT: '.exe;.cmd' })).toBeUndefined();
+    });
+
+    it('runs a .cmd shim from PATH through a shell, quoting the words', () => {
+      const shim = exe('yarn.cmd');
+      const launch = resolveLaunch({ name: 'a', script: 'yarn', args: ['run', 'my script'] }, { PATH: dir, PATHEXT: '.exe;.cmd' });
+      expect(launch).toEqual({ command: quoteForCmd(shim), args: ['run', '"my script"'], node: false, shell: true });
+    });
+
+    it('runs a .bat file given by path through a shell, with or without interpreter none', () => {
+      const bat = file('start.bat');
+      const expected = { command: quoteForCmd(bat), args: ['x'], node: false, shell: true };
+      expect(resolveLaunch({ name: 'a', script: bat, args: ['x'] })).toEqual(expected);
+      expect(resolveLaunch({ name: 'a', script: bat, args: ['x'], interpreter: 'none' })).toEqual(expected);
+    });
+
+    it('runs an .exe from PATH by its name, without a shell', () => {
+      exe('tool.exe');
+      expect(resolveLaunch({ name: 'a', script: 'tool', args: ['-v'] }, { PATH: dir, PATHEXT: '.exe;.cmd' }))
+        .toEqual({ command: 'tool', args: ['-v'], node: false });
+    });
+  });
 });

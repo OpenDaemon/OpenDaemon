@@ -29,7 +29,12 @@ const BY_EXTENSION: Record<string, string> = {
  */
 export function findOnPath(command: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
   if (command === '' || /[\\/]/.test(command)) return undefined;
-  const extensions = process.platform === 'win32' ? ['', ...(env['PATHEXT'] ?? '.EXE;.CMD;.BAT').split(';')] : [''];
+  // Like cmd.exe: a name without an extension is tried with each PATHEXT extension, in order. An
+  // extensionless file of the same name (npm, the shell script next to npm.cmd) does not count.
+  const windows = process.platform === 'win32';
+  const extensions = windows && !/\.[a-z0-9]+$/i.test(command)
+    ? (env['PATHEXT'] ?? '.COM;.EXE;.BAT;.CMD').split(';').filter((ext) => ext !== '')
+    : [''];
   for (const dir of (env['PATH'] ?? '').split(delimiter)) {
     if (dir === '') continue;
     for (const ext of extensions) {
