@@ -99,6 +99,8 @@ describe('ConfigManagerPlugin.load', () => {
       /Process "job": minute "61" is out of range/],
     ['an unknown cron time zone', JSON.stringify({ apps: [{ name: 'job', script: './j.js', cron: '@daily', cronTimezone: 'Mars/Base' }] }),
       /Process "job": .*time zone/i],
+    ['an invalid cronRestart expression', JSON.stringify({ apps: [{ name: 'web', script: './w.js', cronRestart: 'nope' }] }),
+      /Process "web": cronRestart: /],
     ['an unknown dependency', JSON.stringify({ apps: [{ name: 'a', script: './a.js', dependencies: ['db'] }] }),
       /depends on unknown app "db"/],
   ])('should reject %s with a ConfigError', async (_name, content, message) => {

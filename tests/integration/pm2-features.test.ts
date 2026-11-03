@@ -97,8 +97,8 @@ describe('PM2 features of the process manager', () => {
     });
   });
 
-  describe.runIf(process.platform !== 'win32')('signal', () => {
-    it('delivers a signal the app can handle', async () => {
+  describe('signal', () => {
+    it.runIf(process.platform !== 'win32')('delivers a signal the app can handle', async () => {
       await call('start', app('sig', "process.on('SIGUSR2', () => { console.log('got usr2'); }); setInterval(() => {}, 1000);"));
       const logs = async () => ((await call('logs', { name: 'sig' })) as Array<{ message: string }>).map((l) => l.message).join('\n');
       await new Promise((r) => setTimeout(r, 300));
