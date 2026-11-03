@@ -25,7 +25,8 @@ Next-generation process manager for Node.js. Built with TypeScript, zero runtime
 - **IPC Communication** - Binary frame protocol + JSON-RPC 2.0 over Unix sockets / TCP
 - **Terminal Dashboard** - `od monit`, htop-style, with sparklines, health and live logs (raw ANSI, no dependencies)
 - **WebUI Dashboard** - Built-in web interface with authentication and live process monitoring
-- **A PM2 Replacement** - `od start ecosystem.config.js` (PM2 keys and `env_<profile>` work), `od save` / `od resurrect`, `od reload`, `od-runtime` for Docker, any program (Python, shell, binaries, `npm start`), `cron_restart`, `wait_ready`; see [Migrating from PM2](docs/guides/migrating-from-pm2.md)
+- **A PM2 Replacement** - the PM2 workflow, command by command: `od start ecosystem.config.js --env production` (PM2 keys and `env_<profile>` work), `od save` / `resurrect`, `reload`, `startOrRestart`, `deploy` over ssh, `serve`, `od-runtime` for Docker, `import { OpenDaemon } from 'opendaemon/client'`, process ids as names, any program (Python, shell, binaries, `npm start`), `cron_restart`, `wait_ready`, `stop_exit_codes`. See [Migrating from PM2](docs/guides/migrating-from-pm2.md)
+- **Keeps Going** - restart limits count crashes in a row (an app that fails once a day is never given up on), a stopped app takes its whole process tree with it, and apps a killed daemon left behind are stopped before the next daemon starts them again
 - **Cross-Platform** - Works on Linux, macOS, and Windows
 - **Tested End to End** - Unit and integration tests that spawn real processes, sockets and HTTP servers; CI on Linux, macOS and Windows
 
@@ -611,6 +612,7 @@ npm run test:e2e
 | TypeScript | Native | Bolted on |
 | Config format | TS, JS, JSON, YAML | JS, JSON, YAML |
 | Plugin system | First-class with DI | Limited |
+| Built in, no modules | Health checks, dependencies between apps, Prometheus metrics, notifications, scheduled jobs, audit log, secrets, log rotation | Separate modules or PM2 Plus |
 | IPC protocol | Binary frames + JSON-RPC 2.0 | Custom |
 
 ## Programmatic API
