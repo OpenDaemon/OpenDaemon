@@ -82,6 +82,8 @@ export class LogManagerPlugin implements Plugin {
   private logDir = resolve('logs');
   private defaults: RotationOptions = DEFAULT_ROTATION;
   private readonly files = new Map<string, { file: LogFile; options: RotationOptions }>();
+  /** Plain-text copies requested with logFile / errorLogFile, by absolute path (one file may serve several apps) */
+  private readonly mirrors = new Map<string, LogFile>();
   private readonly followers = new Set<Follower>();
 
   install(context: PluginContext): void {
@@ -108,6 +110,8 @@ export class LogManagerPlugin implements Plugin {
       file.close();
     }
     this.files.clear();
+    for (const file of this.mirrors.values()) file.close();
+    this.mirrors.clear();
     this.followers.clear();
   }
 
@@ -115,7 +119,9 @@ export class LogManagerPlugin implements Plugin {
    * Persist one entry and push it to matching followers
    */
   record(entry: ProcessLogEntry): void {
-    this.fileFor(entry.processName, entry.source).file.write(JSON.stringify(entry));
+    const { file, options } = this.fileFor(entry.processName, entry.source);
+    file.write(JSON.stringify(entry));
+    this.mirror(entry, options);
 
     for (const follower of this.followers) {
       if (matches(entry, follower.filter, follower.pattern)) {
@@ -123,6 +129,26 @@ export class LogManagerPlugin implements Plugin {
         follower.socket.write(encodeFrame(FrameType.JSON_RPC_NOTIFICATION, serialize(notification)));
       }
     }
+  }
+
+  /**
+   * Write the entry as a plain line to the app's own log file, when it names one: stdout goes to
+   * `logFile`, stderr to `errorLogFile` (or to `logFile` too with `mergeLogs`). `logTimestamp`
+   * prefixes each line with the time, like PM2's --time.
+   */
+  private mirror(entry: ProcessLogEntry, options: RotationOptions): void {
+    const config = (this.context.getPlugin('process-manager') as unknown as
+      { getProcessConfig?: (n: string) => ProcessConfig | undefined } | undefined)?.getProcessConfig?.(entry.processName);
+    if (config === undefined) return;
+    const target = entry.source === 'stderr' ? config.errorLogFile ?? (config.mergeLogs === true ? config.logFile : undefined) : config.logFile;
+    if (target === undefined) return;
+    const path = resolve(target);
+    let file = this.mirrors.get(path);
+    if (!file) {
+      file = new LogFile(path, options);
+      this.mirrors.set(path, file);
+    }
+    file.write(config.logTimestamp === true ? `${entry.timestamp} ${entry.message}` : entry.message);
   }
 
   /**
@@ -173,6 +199,7 @@ export class LogManagerPlugin implements Plugin {
         this.fileFor(n, source).file.truncate();
       }
     }
+    for (const file of this.mirrors.values()) file.truncate();
     return { flushed: names };
   }
 

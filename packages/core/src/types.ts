@@ -257,6 +257,8 @@ export interface ProcessConfig {
   errorLogFile?: string;
   logLevel?: string;
   mergeLogs?: boolean;
+  /** Prefix lines of logFile / errorLogFile with the time (PM2's `time`) */
+  logTimestamp?: boolean;
   logRotation?: LogRotationConfig;
 
   // Advanced

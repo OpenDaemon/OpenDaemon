@@ -29,7 +29,7 @@ const NATIVE_KEYS = new Set([
   'limits', 'deploy', 'autoRestart', 'restartDelay', 'maxRestarts', 'minUptime', 'killTimeout', 'backoffStrategy',
   'backoffMultiplier', 'maxBackoffDelay', 'healthCheck', 'dependencyTimeout', 'logFile', 'errorLogFile', 'logLevel',
   'mergeLogs', 'logRotation', 'uid', 'gid', 'nice', 'umask', 'detached', 'cron', 'cronTimezone', 'cronOverlap',
-  'cronRetry', 'cronRestart', 'watch', 'dependencies', 'description', 'version', 'waitReady', 'listenTimeout',
+  'cronRetry', 'cronRestart', 'logTimestamp', 'watch', 'dependencies', 'description', 'version', 'waitReady', 'listenTimeout',
 ]);
 
 /** PM2 keys that have no meaning here, or that OpenDaemon does on its own: dropped without a warning */
@@ -118,13 +118,14 @@ export function normalizeApp(raw: Record<string, unknown>, baseDir: string, prof
   set('logFile', raw['out_file'] ?? raw['output'] ?? raw['log_file'] ?? raw['log']);
   set('errorLogFile', raw['error_file'] ?? raw['error']);
   set('mergeLogs', raw['merge_logs']);
+  set('logTimestamp', raw['time']);
 
   for (const key of Object.keys(raw)) {
     const handled = NATIVE_KEYS.has(key) || SILENT_KEYS.has(key) || key === 'env' || key.startsWith('env_') || [
       'args', 'interpreter_args', 'node_args', 'instances', 'exec_mode', 'autorestart', 'max_restarts', 'restart_delay',
       'min_uptime', 'kill_timeout', 'exp_backoff_restart_delay', 'max_memory_restart', 'cron_restart', 'wait_ready',
       'listen_timeout', 'watch', 'ignore_watch', 'watch_delay', 'out_file', 'output', 'log_file', 'log', 'error_file',
-      'error', 'merge_logs',
+      'error', 'merge_logs', 'time',
     ].includes(key);
     if (!handled) warnings.push(`"${key}" is not supported and was ignored`);
   }

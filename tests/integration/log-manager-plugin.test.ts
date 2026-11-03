@@ -178,4 +178,48 @@ describe('LogManagerPlugin', () => {
     expect(warn).toHaveBeenCalledWith('Ignoring invalid log maxAge "soon"');
     warn.mockRestore();
   });
+
+  describe('plain-text log files (logFile / errorLogFile)', () => {
+    const lines = (path: string) => readFileSync(path, 'utf-8').trim().split('\n');
+
+    it('should copy stdout to logFile and stderr to errorLogFile, leaving the JSON store intact', () => {
+      const out = join(dir, 'custom', 'app.out');
+      const err = join(dir, 'custom', 'app.err');
+      processConfigs.set('web', { name: 'web', script: 'x.js', logFile: out, errorLogFile: err });
+      log('web', 'listening');
+      log('web', 'boom', 'stderr');
+      plugin.onStop();
+
+      expect(lines(out)).toEqual(['listening']);
+      expect(lines(err)).toEqual(['boom']);
+      expect(existsSync(join(dir, 'logs', 'web-out.log'))).toBe(true);
+    });
+
+    it('should put stderr in logFile with mergeLogs, and only then', () => {
+      const merged = join(dir, 'merged.log');
+      processConfigs.set('a', { name: 'a', script: 'x.js', logFile: merged, mergeLogs: true });
+      processConfigs.set('b', { name: 'b', script: 'x.js', logFile: join(dir, 'b.log') });
+      log('a', 'one');
+      log('a', 'two', 'stderr');
+      log('b', 'three', 'stderr');
+      plugin.onStop();
+
+      expect(lines(merged)).toEqual(['one', 'two']);
+      expect(existsSync(join(dir, 'b.log'))).toBe(false);
+    });
+
+    it('should prefix lines with the time when logTimestamp is set, and empty the files on flush', async () => {
+      const file = join(dir, 'timed.log');
+      processConfigs.set('t', { name: 't', script: 'x.js', logFile: file, logTimestamp: true });
+      const at = Date.parse('2026-03-04T05:06:07.000Z');
+      log('t', 'hello', 'stdout', at);
+      plugin.onStop();
+      expect(lines(file)).toEqual(['2026-03-04T05:06:07.000Z hello']);
+
+      plugin = install();
+      log('t', 'again', 'stdout', at);
+      await methods.get('logs.flush')!({ name: 't' });
+      expect(readFileSync(file, 'utf-8')).toBe('');
+    });
+  });
 });
