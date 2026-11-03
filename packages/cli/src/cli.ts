@@ -94,7 +94,7 @@ async function main(): Promise<void> {
   parser.addOption({
     name: 'instances',
     alias: 'i',
-    type: 'number',
+    type: 'string',
     description: 'Number of instances',
   });
 
@@ -104,6 +104,14 @@ async function main(): Promise<void> {
     description: 'Environment variable for the process (KEY=value), repeatable',
   });
 
+  parser.addOption({ name: 'cwd', type: 'string', description: 'od start: working directory' });
+  parser.addOption({ name: 'interpreter', type: 'string', description: 'od start: program that runs the script' });
+  parser.addOption({ name: 'no-autorestart', type: 'boolean', description: 'od start: do not restart on exit' });
+  parser.addOption({ name: 'max-restarts', type: 'number', description: 'od start: restart limit' });
+  parser.addOption({ name: 'restart-delay', type: 'number', description: 'od start: ms between restarts' });
+  parser.addOption({ name: 'kill-timeout', type: 'number', description: 'od start: ms before SIGKILL' });
+  parser.addOption({ name: 'cron-restart', type: 'string', description: 'od start: restart on this cron schedule' });
+  parser.addOption({ name: 'only', type: 'string', description: 'od start <file>: only these apps' });
   parser.addOption({ name: 'cascade', type: 'boolean', description: 'od stop / restart: include the apps that depend on it' });
   parser.addOption({ name: 'strategy', type: 'string', description: 'od deploy / restart: rolling, blue-green, canary or recreate' });
   parser.addOption({ name: 'script', type: 'string', description: 'od deploy: the new script to run' });
@@ -152,9 +160,12 @@ async function main(): Promise<void> {
     description: 'Only logs since a duration (2h) or date',
   });
 
-  // Parse arguments
-  const args = process.argv.slice(2);
+  // Parse arguments. After a bare `--` everything belongs to the app: `od start app.js -- --port 80`
+  const argv = process.argv.slice(2);
+  const dashes = argv.indexOf('--');
+  const args = dashes === -1 ? argv : argv.slice(0, dashes);
   const parsed = parser.parse(args);
+  if (dashes !== -1) parsed.options['--'] = argv.slice(dashes + 1);
 
   // Handle global flags
   if (parsed.options['help']) {

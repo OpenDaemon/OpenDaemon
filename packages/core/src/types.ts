@@ -276,6 +276,14 @@ export interface ProcessConfig {
   cronOverlap?: boolean;
   /** Re-run a failed (non-zero exit) run up to this many times (default 0) */
   cronRetry?: number;
+  /** Restart the app at each match of this cron expression (PM2's cron_restart) */
+  cronRestart?: string;
+  /**
+   * Treat the app as started when it sends `process.send('ready')` (PM2's wait_ready) instead of
+   * as soon as it is spawned; `listenTimeout` ms is how long to wait for it (default 3000)
+   */
+  waitReady?: boolean;
+  listenTimeout?: number;
   watch?: boolean | WatchConfig;
   /** Apps that must be online (and healthy, if they have a health check) before this one starts */
   dependencies?: string[];

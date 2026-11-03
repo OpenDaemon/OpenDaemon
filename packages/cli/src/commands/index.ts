@@ -6,6 +6,9 @@ import { existsSync, readFileSync, unlinkSync, openSync, closeSync, statSync, mk
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ensureHome, runtimePaths } from '../paths.js';
+import { isEcosystemFile, loadEcosystem, splitArgs } from '../ecosystem.js';
+import { isOnPath } from '../../../plugins/process-manager/src/launch.js';
+import type { ProcessConfig } from '../../../core/src/index.js';
 import { detectInit, planStartup, type InitSystem } from '../startup.js';
 import { SecretStore, assertSecretName, toDotenv } from '../../../plugins/secret-manager/src/store.js';
 
@@ -159,16 +162,44 @@ export class ListCommand implements Command {
 }
 
 /**
- * Start command - start a process
+ * Environment variables from `--env KEY=value`; entries without `=` are profile names
+ * (`--env production` picks `env_production` of an ecosystem file, like PM2)
+ */
+export function parseEnvOptions(value: OptionValue | undefined): { env: Record<string, string>; profile: string | undefined } {
+  const entries = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  const env: Record<string, string> = {};
+  let profile: string | undefined;
+  for (const entry of entries) {
+    const separator = entry.indexOf('=');
+    if (separator > 0) env[entry.slice(0, separator)] = entry.slice(separator + 1);
+    else if (entry !== '' && entry !== 'true') profile = entry;
+    else throw new Error(`Invalid --env "${entry}" (expected KEY=value, or a profile name for a config file)`);
+  }
+  return { env, profile };
+}
+
+const num = (value: OptionValue | undefined): number | undefined => typeof value === 'number' && !Number.isNaN(value) ? value : undefined;
+const str = (value: OptionValue | undefined): string | undefined => typeof value === 'string' && value !== '' ? value : undefined;
+
+/**
+ * Start command - start a process, or the apps of an ecosystem/config file
  */
 export class StartCommand implements Command {
   name = 'start';
-  description = 'Start a process or processes from config';
+  description = 'Start a process, a command, or the apps of an ecosystem file';
   options = [
     { name: 'name', alias: 'n', type: 'string' as const, description: 'Process name' },
-    { name: 'instances', alias: 'i', type: 'number' as const, description: 'Number of instances', default: 1 },
+    { name: 'instances', alias: 'i', type: 'string' as const, description: 'Number of instances (a number or max)' },
     { name: 'max-memory', type: 'string' as const, description: 'Max memory (e.g., 512M, 1G)' },
-    { name: 'env', type: 'array' as const, description: 'Environment variables (KEY=value)' },
+    { name: 'env', type: 'array' as const, description: 'KEY=value, or the env_<name> profile of a config file' },
+    { name: 'cwd', type: 'string' as const, description: 'Working directory' },
+    { name: 'interpreter', type: 'string' as const, description: 'Program that runs the script (python3, bash, none ...)' },
+    { name: 'no-autorestart', type: 'boolean' as const, description: 'Do not restart the process when it exits' },
+    { name: 'max-restarts', type: 'number' as const, description: 'Give up after this many restarts' },
+    { name: 'restart-delay', type: 'number' as const, description: 'Milliseconds between restarts' },
+    { name: 'kill-timeout', type: 'number' as const, description: 'Milliseconds to wait for exit before SIGKILL' },
+    { name: 'cron-restart', type: 'string' as const, description: 'Restart at each match of this cron expression' },
+    { name: 'only', type: 'string' as const, description: 'Config file: start only these apps (comma separated)' },
     { name: 'json', type: 'boolean' as const, description: 'Output as JSON' },
   ];
 
@@ -182,61 +213,137 @@ export class StartCommand implements Command {
     }
 
     const target = args[0] || '';
-    // Default name: the script's file name without extension (`od start ./src/api.js` -> api)
-    const fileName = target.split(/[/\\]/).pop() ?? target;
-    const name = (options['name'] as string) || fileName.replace(/\.(js|ts|mjs|cjs)$/, '');
-    const instances = (options['instances'] as number) || 1;
-
-    const env: Record<string, string> = {};
-    const envOption = options['env'];
-    const envEntries = Array.isArray(envOption) ? envOption : typeof envOption === 'string' ? [envOption] : [];
-    for (const entry of envEntries) {
-      const separator = entry.indexOf('=');
-      if (separator <= 0) {
-        term.error(`Invalid --env "${entry}" (expected KEY=value)`);
-        process.exit(1);
-        return;
+    let configs: ProcessConfigLike[];
+    try {
+      const { env, profile } = parseEnvOptions(options['env']);
+      if (!isEcosystemFile(target) && profile !== undefined) {
+        throw new Error(`Invalid --env "${profile}" (expected KEY=value; a bare name picks a profile of a config file)`);
       }
-      env[entry.slice(0, separator)] = entry.slice(separator + 1);
-    }
-    const maxMemory = typeof options['max-memory'] === 'string' ? options['max-memory'] : undefined;
-
-    const scriptPath = resolve(target);
-    if (!existsSync(scriptPath)) {
-      term.error(`Script not found: ${target}`);
+      configs = isEcosystemFile(target)
+        ? await this.fromFile(target, options, env, profile)
+        : [this.fromTarget(target, options, env)];
+    } catch (err) {
+      term.error(err instanceof Error ? err.message : String(err));
       process.exit(1);
+      return;
     }
 
     await ensureDaemonRunning();
-    const spinner = term.spinner(`Starting ${name}...`);
-    spinner.start();
-
+    const failures: string[] = [];
+    const client = new CliClient();
     try {
-      const client = new CliClient();
       await client.connect();
-
-      const processConfig = {
-        name,
-        script: scriptPath,
-        instances,
-        mode: instances > 1 ? 'cluster' : 'fork',
-        cwd: process.cwd(),
-        ...(Object.keys(env).length > 0 ? { env } : {}),
-        ...(maxMemory === undefined ? {} : { maxMemory }),
-        ...(options['watch'] === true ? { watch: true } : {}),
-      };
-
-      await client.startProcess(processConfig);
-      await client.disconnect();
-
-      spinner.stop(true, `Started ${name} with ${instances} instance(s)`);
+      for (const config of configs) {
+        const spinner = term.spinner(`Starting ${config.name}...`);
+        spinner.start();
+        try {
+          await client.startProcess(config);
+          spinner.stop(true, `Started ${config.name}${config.mode === 'cluster' ? ` with ${String(config.instances ?? 1)} instance(s)` : ''}`);
+        } catch (err) {
+          spinner.stop(false);
+          failures.push(config.name);
+          term.error(`Failed to start ${config.name}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
     } catch (err) {
-      spinner.stop(false);
-      const error = err instanceof Error ? err : new Error(String(err));
-      term.error(`Failed to start process: ${error.message}`);
+      term.error(`Failed to start process: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
+    } finally {
+      await client.disconnect().catch(() => undefined);
     }
+    if (failures.length > 0) process.exit(1);
   }
+
+  /** Settings given as flags override what a file or the defaults say */
+  private overrides(options: Record<string, OptionValue | undefined>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    const maxMemory = str(options['max-memory']);
+    if (maxMemory !== undefined) out['maxMemory'] = maxMemory;
+    if (options['watch'] === true) out['watch'] = true;
+    if (options['no-autorestart'] === true) out['autoRestart'] = false;
+    const set = (key: string, value: unknown): void => { if (value !== undefined) out[key] = value; };
+    set('maxRestarts', num(options['max-restarts']));
+    set('restartDelay', num(options['restart-delay']));
+    set('killTimeout', num(options['kill-timeout']));
+    set('cronRestart', str(options['cron-restart']));
+    set('interpreter', str(options['interpreter']));
+    return out;
+  }
+
+  private async fromFile(
+    target: string,
+    options: Record<string, OptionValue | undefined>,
+    env: Record<string, string>,
+    profile: string | undefined
+  ): Promise<ProcessConfigLike[]> {
+    const only = str(options['only'])?.split(',').map((n) => n.trim()).filter(Boolean);
+    const loaded = await loadEcosystem(target, { ...(profile === undefined ? {} : { profile }), ...(only === undefined ? {} : { only }) });
+    const name = str(options['name']);
+    if (name !== undefined && loaded.apps.length > 1) throw new Error('--name cannot rename several apps; use --only to pick one');
+    return loaded.apps.map(({ config, warnings }) => {
+      for (const warning of warnings) term.warn(`${config.name}: ${warning}`);
+      const merged: ProcessConfigLike = {
+        ...config,
+        ...this.overrides(options),
+        ...(name === undefined ? {} : { name }),
+        ...(Object.keys(env).length === 0 ? {} : { env: { ...config.env, ...env } }),
+      };
+      const instances = parseInstances(options['instances']);
+      if (instances !== undefined) Object.assign(merged, { instances, mode: instances === 1 ? 'fork' : 'cluster' });
+      return merged;
+    });
+  }
+
+  private fromTarget(
+    target: string,
+    options: Record<string, OptionValue | undefined>,
+    env: Record<string, string>
+  ): ProcessConfigLike {
+    const appArgs = Array.isArray(options['--']) ? options['--'] : [];
+    let script = resolve(target);
+    let args = appArgs;
+    let interpreter: string | undefined;
+
+    if (!existsSync(script)) {
+      // `od start "npm start"` / `od start docker -- compose up`: a command, not a file
+      const [program = '', ...rest] = splitArgs(target);
+      if (program === '' || !isOnPath(program)) {
+        throw new Error(`Script not found: ${target}`);
+      }
+      script = program;
+      args = [...rest, ...appArgs];
+      interpreter = 'none';
+    }
+
+    const fileName = script.split(/[/\\]/).pop() ?? script;
+    const name = str(options['name']) ?? fileName.replace(/(?<=.)\.[^.]+$/, '');
+    const instances = parseInstances(options['instances']) ?? 1;
+    const config: ProcessConfigLike = {
+      name,
+      script,
+      instances,
+      mode: instances === 1 ? 'fork' : 'cluster',
+      cwd: str(options['cwd']) === undefined ? process.cwd() : resolve(str(options['cwd']) as string),
+      ...(args.length === 0 ? {} : { args }),
+      ...(interpreter === undefined ? {} : { interpreter }),
+      ...(Object.keys(env).length === 0 ? {} : { env }),
+      ...this.overrides(options),
+    };
+    return config;
+  }
+}
+
+type ProcessConfigLike = ProcessConfig & Record<string, unknown>;
+
+/**
+ * `-i 4` / `-i max`; undefined when not given
+ */
+export function parseInstances(value: OptionValue | undefined): number | 'max' | undefined {
+  if (value === undefined || value === true || value === '') return undefined;
+  if (value === 'max' || value === 'MAX') return 'max';
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`Invalid --instances "${String(value)}" (a whole number above 0, or max)`);
+  return n;
 }
 
 /**

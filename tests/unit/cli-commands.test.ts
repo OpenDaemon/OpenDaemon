@@ -79,7 +79,8 @@ vi.mock('fs', () => ({
 }));
 
 // Mock path module
-vi.mock('path', () => ({
+vi.mock('path', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('path')>()),
   resolve: vi.fn((...args: string[]) => args.join('/')),
 }));
 
@@ -331,7 +332,7 @@ describe('CLI Commands', () => {
 
     it('should have correct metadata', () => {
       expect(cmd.name).toBe('start');
-      expect(cmd.description).toBe('Start a process or processes from config');
+      expect(cmd.description).toBe('Start a process, a command, or the apps of an ecosystem file');
     });
 
     it('should error when no args provided', async () => {
