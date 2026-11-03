@@ -26,7 +26,7 @@ import {
   StatusCommand,
   DaemonCommand,
 } from './commands/index.js';
-import { SaveCommand, ResurrectCommand, ResetCommand, SignalCommand, ReloadCommand, PingCommand, EcosystemCommand } from './commands/lifecycle.js';
+import { SaveCommand, ResurrectCommand, ResetCommand, SignalCommand, ReloadCommand, PingCommand, EcosystemCommand, PidCommand, EnvCommand } from './commands/lifecycle.js';
 import { CliClient } from './client.js';
 import { RuntimeCommand } from './commands/runtime.js';
 import { term } from './output.js';
@@ -115,6 +115,10 @@ async function main(): Promise<void> {
   parser.addOption({ name: 'kill-timeout', type: 'number', description: 'od start: ms before SIGKILL' });
   parser.addOption({ name: 'cron-restart', type: 'string', description: 'od start: restart on this cron schedule' });
   parser.addOption({ name: 'only', type: 'string', description: 'od start <file>: only these apps' });
+  parser.addOption({ name: 'err', type: 'boolean', description: 'od logs: only stderr' });
+  parser.addOption({ name: 'out', type: 'boolean', description: 'od logs: only stdout' });
+  parser.addOption({ name: 'raw', type: 'boolean', description: 'od logs: the messages only' });
+  parser.addOption({ name: 'nostream', type: 'boolean', description: 'od logs: print and exit (the default; accepted for PM2 scripts)' });
   parser.addOption({ name: 'cascade', type: 'boolean', description: 'od stop / restart: include the apps that depend on it' });
   parser.addOption({ name: 'strategy', type: 'string', description: 'od deploy / restart: rolling, blue-green, canary or recreate' });
   parser.addOption({ name: 'script', type: 'string', description: 'od deploy: the new script to run' });
@@ -220,8 +224,43 @@ async function allProcessNames(): Promise<string[]> {
  */
 /** Commands that take process names, and so also accept several of them and PM2's `all` */
 const PER_PROCESS = new Set(['stop', 'restart', 'delete', 'reload', 'flush']);
+/** Commands whose positional arguments are process names (all of them), or just the first one */
+const NAMES_ALL = new Set(['stop', 'restart', 'delete', 'reload', 'reset', 'signal', 'sendSignal']);
+const NAMES_FIRST = new Set(['info', 'describe', 'logs', 'flush', 'scale', 'health', 'deploy', 'rollback', 'pid', 'env']);
 
-async function executeCommand(parsed: ParsedCommand): Promise<void> {
+/**
+ * PM2 addresses processes by id too (`od restart 0`): a number that is no process's name is
+ * replaced by the name of the process with that id
+ */
+async function resolveIds(parsed: ParsedCommand): Promise<ParsedCommand> {
+  const all = NAMES_ALL.has(parsed.command);
+  if (!all && !NAMES_FIRST.has(parsed.command)) return parsed;
+  const hasSub = parsed.subcommand !== '';
+  const positional = hasSub ? [parsed.subcommand, ...parsed.args] : [...parsed.args];
+  const numeric = positional.map((v, i) => (/^\d+$/.test(v) && (all || i === 0) ? i : -1)).filter((i) => i >= 0);
+  if (numeric.length === 0) return parsed;
+
+  const client = new CliClient();
+  let processes: Array<{ id: number; name: string }>;
+  try {
+    await client.connect();
+    processes = await client.listProcesses() as Array<{ id: number; name: string }>;
+  } catch {
+    return parsed; // no daemon: the command reports that itself
+  } finally {
+    await client.disconnect().catch(() => undefined);
+  }
+  for (const i of numeric) {
+    const value = positional[i] as string;
+    if (processes.some((p) => p.name === value)) continue;
+    const byId = processes.find((p) => p.id === Number(value));
+    if (byId) positional[i] = byId.name;
+  }
+  return hasSub ? { ...parsed, subcommand: positional[0] as string, args: positional.slice(1) } : { ...parsed, args: positional };
+}
+
+async function executeCommand(original: ParsedCommand): Promise<void> {
+  const parsed = await resolveIds(original);
   const command = parsed.command;
   const subcommand = parsed.subcommand;
 
@@ -380,6 +419,14 @@ async function executeCommand(parsed: ParsedCommand): Promise<void> {
     case 'signal':
     case 'sendSignal':
       await new SignalCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
+      break;
+
+    case 'pid':
+      await new PidCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args);
+      break;
+
+    case 'env':
+      await new EnvCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
       break;
 
     case 'ping':

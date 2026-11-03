@@ -123,6 +123,31 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     expect(od('signal', 'usr', 'NOPE').status).toBe(1);
   });
 
+  it('addresses processes by id, filters logs by stream, prints pids and env, and restarts with new env', async () => {
+    writeFileSync(join(project, 'two.cjs'), "console.log('to-out'); console.error('to-err'); console.log('mode=' + process.env.MODE); setInterval(() => {}, 1000);");
+    od('start', 'two.cjs', '--env', 'MODE=one');
+    await waitFor(online('two'));
+    const id = String(list().find((p) => p.name === 'two')!.pid && (JSON.parse(od('list', '--json').out) as Array<{ id: number; name: string }>).find((p) => p.name === 'two')!.id);
+
+    await waitFor(() => logs('two').includes('to-err'));
+    expect(od('logs', 'two', '--err', '--raw').out.trim()).toBe('to-err');
+    expect(od('logs', 'two', '--out', '--raw').out).toContain('to-out');
+    expect(od('logs', 'two', '--out', '--raw').out).not.toContain('to-err');
+    expect(od('logs', id, '--raw').out).toContain('to-out');
+
+    const pid = String(list().find((p) => p.name === 'two')!.pid);
+    expect(od('pid', 'two').out.trim()).toBe(pid);
+    expect(od('env', 'two').out.trim()).toBe('MODE=one');
+
+    expect(od('restart', id, '--env', 'MODE=two').out).toContain('Restarted two');
+    await waitFor(() => list().find((p) => p.name === 'two')?.pid !== Number(pid) && online('two')());
+    await waitFor(() => logs('two').includes('mode=two'));
+    expect(od('env', id).out.trim()).toBe('MODE=two');
+    expect(od('stop', id).status).toBe(0);
+    await waitFor(() => list().find((p) => p.name === 'two')?.status === 'stopped');
+    expect(od('pid', 'ghost').status).toBe(1);
+  });
+
   it('answers ping, describe and jlist', async () => {
     od('start', 'plain.cjs');
     await waitFor(online('plain'));

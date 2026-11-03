@@ -383,11 +383,13 @@ apps:
 |---------|-------------|
 | `od start <script\|command\|file>` | Start a process, a command (`"npm start"`) or the apps of an ecosystem/config file. `-n` name, `-i` instances (number or `max`), `--env KEY=value` (or `--env production` for a file's `env_production`), `--only a,b`, `--cwd`, `--interpreter`, `--max-memory 512M`, `--no-autorestart`, `--max-restarts`, `--restart-delay`, `--kill-timeout`, `--cron-restart`, `--watch`; arguments for the app go after `--` |
 | `od stop <name...>` | Stop processes; `all` for every one |
-| `od restart <name...>` | Restart processes; `all` for every one |
+| `od restart <name...>` | Restart processes; `all` for every one; `--env KEY=value` changes the environment for this and later runs |
 | `od reload <name>` | Replace cluster workers one by one without downtime, restart anything else |
 | `od delete <name...>` | Delete processes; `all` for every one |
 | `od save` / `od resurrect` | Save the process list to `~/.opendaemon/dump.json`; start the saved processes again (the daemon does it at start, unless `daemon.resurrect: false`) |
 | `od reset [name]` | Zero the restart counter |
+| `od pid [name]` / `od env <name>` | Print the process ids / the environment an app is configured with |
+| ids | Wherever a name is expected, a process id works too: `od restart 0`, `od logs 2 --err` |
 | `od signal <name> <SIGUSR2>` | Send a signal (PM2's order, `od signal SIGUSR2 api`, works too) |
 | `od runtime <app>` / `od-runtime <app>` | Run in the foreground for containers: logs on stdout, SIGTERM stops gracefully, exits when the apps are gone |
 | `od ecosystem` | Write a sample `ecosystem.config.cjs` |
@@ -398,7 +400,7 @@ apps:
 | `od deploy <name>` / `od deploy status` / `od rollback <name>` | Zero-downtime deploys: `--strategy`, `--script`, `--env`, `--release` (see Deployments) |
 | `od list` / `od ls` | List all processes (`--json`, `-q`) |
 | `od info <name>` | Detailed process info (CPU, memory, PID, uptime) |
-| `od logs [name]` | Logs of one or all processes (`--lines N`, `-f`, `--grep RE`, `--since 2h`, `--json`) |
+| `od logs [name]` | Logs of one or all processes (`--lines N`, `-f`, `--grep RE`, `--since 2h`, `--err`, `--out`, `--raw`, `--json`) |
 | `od flush [name]` | Empty log files |
 | `od secret <set\|get\|list\|delete\|export\|rotate>` | Encrypted secrets |
 | `od cron` | Scheduled jobs: next run and last result |

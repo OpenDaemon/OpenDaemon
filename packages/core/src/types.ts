@@ -241,6 +241,13 @@ export interface ProcessConfig {
   restartDelay?: number;
   maxRestarts?: number;
   minUptime?: number;
+  /**
+   * A run this long (ms) counts as stable: crashes before it no longer count against maxRestarts
+   * and the backoff starts over (default: minUptime, else 10000). PM2's min_uptime maps here
+   */
+  stableAfter?: number;
+  /** Exit codes after which the app is not restarted (PM2's stop_exit_codes) */
+  stopExitCodes?: number[];
   killTimeout?: number;
   backoffStrategy?: BackoffStrategy;
   backoffMultiplier?: number;

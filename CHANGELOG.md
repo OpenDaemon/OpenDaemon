@@ -16,10 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cronRestart`, `waitReady` / `listenTimeout`, plain-text `logFile` / `errorLogFile` / `mergeLogs` / `logTimestamp`
 - Scheduled (`cron`) apps started with `od start` or restored by `od resurrect` are scheduled instead of run at once
 
+- `stopExitCodes` (PM2 `stop_exit_codes`), `stableAfter` (PM2 `min_uptime`), `NODE_APP_INSTANCE`, process ids wherever a name is expected, `od pid`, `od env`, `od restart --env`, `od logs --err/--out/--raw`
+
 ### Security
 - The WebUI was open without a login on `127.0.0.1:7777`, and `/api/start` runs any program: every local user could run code as the daemon's user. It now requires a login; without `username`/`password` in the config the daemon generates a random password, kept in `webui-credentials` (mode 0600). `plugins.webui.auth: false` restores the open behaviour
 
 ### Fixed
+- `maxRestarts` counted every restart since the app started, so an app that crashed once a day was given up on after ten days. It now counts crashes in a row: a run that lasts `stableAfter` (default 10 s) resets the count and the backoff
 - Commands started at the same time with no daemon running raced to spawn it and about half failed; a start lock now serialises it
 - A busy WebUI port stopped the whole daemon; it now only disables the WebUI
 - The CLI spinner wrote cursor codes into pipes and files

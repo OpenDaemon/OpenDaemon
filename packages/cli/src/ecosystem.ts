@@ -29,7 +29,7 @@ const NATIVE_KEYS = new Set([
   'limits', 'deploy', 'autoRestart', 'restartDelay', 'maxRestarts', 'minUptime', 'killTimeout', 'backoffStrategy',
   'backoffMultiplier', 'maxBackoffDelay', 'healthCheck', 'dependencyTimeout', 'logFile', 'errorLogFile', 'logLevel',
   'mergeLogs', 'logRotation', 'uid', 'gid', 'nice', 'umask', 'detached', 'cron', 'cronTimezone', 'cronOverlap',
-  'cronRetry', 'cronRestart', 'logTimestamp', 'watch', 'dependencies', 'description', 'version', 'waitReady', 'listenTimeout',
+  'cronRetry', 'cronRestart', 'stopExitCodes', 'stableAfter', 'logTimestamp', 'watch', 'dependencies', 'description', 'version', 'waitReady', 'listenTimeout',
 ]);
 
 /** PM2 keys that have no meaning here, or that OpenDaemon does on its own: dropped without a warning */
@@ -88,7 +88,8 @@ export function normalizeApp(raw: Record<string, unknown>, baseDir: string, prof
   else if (raw['autorestart'] === true) out['autoRestart'] = true;
   set('maxRestarts', raw['max_restarts']);
   set('restartDelay', asMs(raw['restart_delay']));
-  set('minUptime', asMs(raw['min_uptime']));
+  // PM2's min_uptime is the stability threshold, not a readiness wait
+  set('stableAfter', asMs(raw['min_uptime']));
   set('killTimeout', asMs(raw['kill_timeout']));
   const backoff = asMs(raw['exp_backoff_restart_delay']);
   if (backoff !== undefined) {
@@ -97,6 +98,7 @@ export function normalizeApp(raw: Record<string, unknown>, baseDir: string, prof
   }
   set('maxMemory', raw['max_memory_restart']);
   set('cronRestart', raw['cron_restart']);
+  if (raw['stop_exit_codes'] !== undefined) out['stopExitCodes'] = (Array.isArray(raw['stop_exit_codes']) ? raw['stop_exit_codes'] : [raw['stop_exit_codes']]).map(Number).filter(Number.isInteger);
   set('waitReady', raw['wait_ready']);
   set('listenTimeout', asMs(raw['listen_timeout']));
 
@@ -120,7 +122,7 @@ export function normalizeApp(raw: Record<string, unknown>, baseDir: string, prof
   for (const key of Object.keys(raw)) {
     const handled = NATIVE_KEYS.has(key) || SILENT_KEYS.has(key) || key === 'env' || key.startsWith('env_') || [
       'args', 'interpreter_args', 'node_args', 'instances', 'exec_mode', 'autorestart', 'max_restarts', 'restart_delay',
-      'min_uptime', 'kill_timeout', 'exp_backoff_restart_delay', 'max_memory_restart', 'cron_restart', 'wait_ready',
+      'min_uptime', 'kill_timeout', 'stop_exit_codes', 'exp_backoff_restart_delay', 'max_memory_restart', 'cron_restart', 'wait_ready',
       'listen_timeout', 'watch', 'ignore_watch', 'watch_delay', 'out_file', 'output', 'log_file', 'log', 'error_file',
       'error', 'merge_logs', 'time',
     ].includes(key);

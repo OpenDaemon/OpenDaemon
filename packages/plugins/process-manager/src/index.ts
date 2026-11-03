@@ -53,6 +53,8 @@ interface ManagedProcessInfo {
   pids: number[];
   startTime?: Date;
   restartCount: number;
+  /** Crashes in a row without a stable run in between: what maxRestarts and the backoff count */
+  failStreak: number;
   lastRestart?: Date;
   childProcess?: ChildProcess | undefined;
   /** Cluster mode: worker index -> pid, as reported by the cluster primary */
@@ -192,6 +194,7 @@ export class ProcessManagerPlugin implements Plugin {
     context.registerMethod('resurrect', this.resurrectProcesses.bind(this));
     context.registerMethod('reset', this.resetProcess.bind(this));
     context.registerMethod('signal', this.signalProcess.bind(this));
+    context.registerMethod('env', this.processEnv.bind(this));
   }
 
   /**
@@ -328,6 +331,7 @@ export class ProcessManagerPlugin implements Plugin {
       status,
       pids: [],
       restartCount: existing?.restartCount ?? 0,
+      failStreak: 0,
       workerPids: new Map(),
       customMetrics: new Map(),
       cpu: 0,
@@ -434,6 +438,7 @@ export class ProcessManagerPlugin implements Plugin {
       status: 'starting',
       pids: [],
       restartCount: existing?.restartCount ?? 0,
+      failStreak: 0,
       workerPids: new Map(),
       customMetrics: new Map(),
       cpu: 0,
@@ -516,10 +521,14 @@ export class ProcessManagerPlugin implements Plugin {
    * Restart a process; with `cascade`, the apps that depend on it are stopped first and started
    * again, in dependency order, once it is ready
    */
-  private async restartProcess(params: { name: string; cascade?: boolean }): Promise<ProcessInfo> {
+  private async restartProcess(params: { name: string; cascade?: boolean; env?: Record<string, string> }): Promise<ProcessInfo> {
     const proc = this.processes.get(params.name);
     if (!proc) {
       throw new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`);
+    }
+    // New environment for this and later runs (od restart api --env KEY=value)
+    if (params.env !== undefined && Object.keys(params.env).length > 0) {
+      proc.config = { ...proc.config, env: { ...proc.config.env, ...params.env } };
     }
 
     const dependents = params.cascade === true ? this.runningDependents(params.name) : [];
@@ -578,6 +587,20 @@ export class ProcessManagerPlugin implements Plugin {
   }
 
   /**
+   * The environment an app is configured with (pm2 env): values as written, secret references
+   * by name, never the secrets themselves
+   */
+  private processEnv(params: { name: string }): Promise<Record<string, string>> {
+    const proc = this.processes.get(params.name);
+    if (!proc) return Promise.reject(new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`));
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(proc.config.env ?? {}) as Array<[string, unknown]>) {
+      out[key] = typeof value === 'object' && value !== null ? `{secret:${String((value as { secret?: unknown }).secret)}}` : String(value);
+    }
+    return Promise.resolve(out);
+  }
+
+  /**
    * Zero the restart counter of one process, or of all (pm2 reset)
    */
   private resetProcess(params?: { name?: string }): Promise<string[]> {
@@ -588,7 +611,7 @@ export class ProcessManagerPlugin implements Plugin {
     }
     for (const name of names) {
       const proc = this.processes.get(name);
-      if (proc) proc.restartCount = 0;
+      if (proc) { proc.restartCount = 0; proc.failStreak = 0; }
     }
     return Promise.resolve(names);
   }
@@ -898,6 +921,8 @@ export class ProcessManagerPlugin implements Plugin {
   private static readonly CLOCK_TICKS = 100;
 
   private static readonly MAX_LOG_LINES = 500;
+  /** A run this long (ms) is stable, unless the app sets stableAfter or minUptime */
+  private static readonly STABLE_AFTER = 10000;
 
   /**
    * Capture stdout/stderr from a child process into the log buffer
@@ -1082,6 +1107,8 @@ export class ProcessManagerPlugin implements Plugin {
         restartDelay: config.restartDelay,
         maxRestarts: config.maxRestarts,
         killTimeout: config.killTimeout,
+        stableAfter: config.stableAfter ?? config.minUptime,
+        stopExitCodes: config.stopExitCodes,
       }),
     };
 
@@ -1271,10 +1298,16 @@ export class ProcessManagerPlugin implements Plugin {
     // Stop metrics collection
     this.stopMetricsCollection(proc);
 
+    // A run that lasted long enough was stable: what crashed before no longer counts against
+    // maxRestarts, so an app that fails once a day is never given up on
+    const uptime = proc.startTime ? Date.now() - proc.startTime.getTime() : 0;
+    if (uptime >= (proc.config.stableAfter ?? proc.config.minUptime ?? ProcessManagerPlugin.STABLE_AFTER)) proc.failStreak = 0;
+
     // Check if should restart
     const shouldRestart = this.shouldRestart(proc, code);
 
     if (shouldRestart) {
+      proc.failStreak++;
       proc.restartCount++;
       proc.lastRestart = new Date();
       proc.status = 'starting';
@@ -1332,9 +1365,9 @@ export class ProcessManagerPlugin implements Plugin {
 
     switch (strategy) {
       case 'linear':
-        return Math.min(baseDelay * proc.restartCount, maxDelay);
+        return Math.min(baseDelay * proc.failStreak, maxDelay);
       case 'exponential': {
-        const delay = baseDelay * Math.pow(multiplier, proc.restartCount - 1);
+        const delay = baseDelay * Math.pow(multiplier, proc.failStreak - 1);
         const jitter = delay * 0.1 * Math.random();
         return Math.min(delay + jitter, maxDelay);
       }
@@ -1362,9 +1395,15 @@ export class ProcessManagerPlugin implements Plugin {
       return false;
     }
 
+    // Exit codes that mean "done, do not bring me back" (PM2's stop_exit_codes)
+    if (code !== null && (proc.config.stopExitCodes ?? []).includes(code)) {
+      this.logger.info(`${proc.config.name} exited with ${String(code)}, which is in stopExitCodes: not restarting`);
+      return false;
+    }
+
     // Check max restarts
     const maxRestarts = proc.config.maxRestarts ?? 10;
-    if (proc.restartCount >= maxRestarts) {
+    if (proc.failStreak >= maxRestarts) {
       this.logger.warn(`Max restarts reached for ${proc.config.name}`);
       return false;
     }
@@ -1437,6 +1476,8 @@ export class ProcessManagerPlugin implements Plugin {
     // Add OpenDaemon metadata
     env['OD_PROCESS_NAME'] = config.name;
     env['OD_MANAGED'] = '1';
+    // PM2 apps tell their instances apart by NODE_APP_INSTANCE (cluster workers get their index)
+    env['NODE_APP_INSTANCE'] ??= '0';
 
     return env;
   }

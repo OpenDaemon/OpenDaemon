@@ -26,7 +26,7 @@ describe('normalizeApp (PM2 keys)', () => {
     expect(warnings).toEqual([]);
     expect(config).toMatchObject({
       name: 'api', script: join(base, 'server.js'), cwd: base, mode: 'cluster', instances: 4, autoRestart: false, maxRestarts: 5,
-      restartDelay: 2000, minUptime: 10000, killTimeout: 3000, maxMemory: '300M', args: ['--port', '80'],
+      restartDelay: 2000, stableAfter: 10000, killTimeout: 3000, maxMemory: '300M', args: ['--port', '80'],
       interpreterArgs: ['--no-warnings', '--max-old-space-size=200'], cronRestart: '0 3 * * *', mergeLogs: true,
       logFile: join(base, 'logs/out.log'), errorLogFile: join(base, 'logs/err.log'),
     });

@@ -99,9 +99,9 @@ export class CliClient {
   /**
    * Restart a process
    */
-  async restartProcess(name: string, cascade?: boolean): Promise<unknown> {
+  async restartProcess(name: string, cascade?: boolean, env?: Record<string, string>): Promise<unknown> {
     this.ensureConnected();
-    return this.client.call('restart', { name, cascade });
+    return this.client.call('restart', { name, cascade, ...(env === undefined ? {} : { env }) });
   }
 
   /**

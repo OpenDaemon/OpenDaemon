@@ -51,6 +51,8 @@ ${term.bold('COMMANDS')}
     reset [name]     Reset the restart counter
     signal <n> <sig> Send a signal to a process (od signal api SIGUSR2)
     ecosystem        Write a sample ecosystem.config.cjs
+    pid [name]       Print process ids
+    env <name>       Print the environment an app is configured with
     save             Save the process list (restored when the daemon starts)
     resurrect        Start the saved processes that are not running
 

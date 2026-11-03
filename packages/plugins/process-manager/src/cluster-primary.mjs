@@ -63,6 +63,7 @@ function shouldRestart(index, code) {
   const strategy = policy.autoRestart;
   if (strategy === false || strategy === 'never') return false;
   if (strategy === 'on-failure' && code === 0) return false;
+  if (code !== null && (policy.stopExitCodes ?? []).includes(code)) return false;
   return (restarts.get(index) ?? 0) < (policy.maxRestarts ?? 10);
 }
 
@@ -91,6 +92,7 @@ function spawnWorker(index, spec) {
   const worker = cluster.fork({
     ...spec.env,
     OD_WORKER_ID: String(index),
+    NODE_APP_INSTANCE: String(index),
     OD_WORKER_COUNT: String(instances),
     ...(spec.version ? { OD_RELEASE: spec.version } : {}),
   });
@@ -120,6 +122,7 @@ function adopt(index, worker, alreadyOnline) {
       }
     }
   });
+  const startedAt = Date.now();
   worker.on('exit', (code, signal) => {
     if (replaced.has(worker)) return;
     if (workers.get(index) === worker) workers.delete(index);
@@ -129,6 +132,8 @@ function adopt(index, worker, alreadyOnline) {
       if (Object.keys(cluster.workers ?? {}).length === 0) process.exit(0);
       return;
     }
+    // A worker that ran long enough was stable: earlier crashes no longer count against maxRestarts
+    if (Date.now() - startedAt >= (policy.stableAfter ?? 10000)) restarts.set(index, 0);
     if (shouldRestart(index, code)) {
       restarts.set(index, (restarts.get(index) ?? 0) + 1);
       send({ type: 'od:worker', event: 'restart', index, pid });

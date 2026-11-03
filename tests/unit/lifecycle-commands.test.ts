@@ -29,7 +29,7 @@ vi.mock('../../packages/cli/src/commands/index.js', () => ({
 }));
 
 import {
-  SaveCommand, ResurrectCommand, ResetCommand, SignalCommand, ReloadCommand, PingCommand, EcosystemCommand,
+  SaveCommand, ResurrectCommand, ResetCommand, SignalCommand, ReloadCommand, PingCommand, EcosystemCommand, PidCommand, EnvCommand,
 } from '../../packages/cli/src/commands/lifecycle.js';
 
 describe('lifecycle commands', () => {
@@ -205,6 +205,42 @@ describe('lifecycle commands', () => {
       getDaemonStatus.mockRejectedValue(new Error('x'));
       await new PingCommand().execute();
       expect(printed(error)).toContain('The daemon is not running');
+      expect(exit).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('pid', () => {
+    it('prints the pids of one app or of all', async () => {
+      call.mockResolvedValue([{ name: 'a', pids: [1, 2] }, { name: 'b', pids: [3] }, { name: 'c' }]);
+      await new PidCommand().execute(['a']);
+      expect(printed(log)).toBe('1\n2');
+      log.mockClear();
+      await new PidCommand().execute([]);
+      expect(printed(log)).toBe('1\n2\n3');
+    });
+
+    it('reports an unknown app', async () => {
+      call.mockResolvedValue([{ name: 'a', pids: [1] }]);
+      await new PidCommand().execute(['ghost']);
+      expect(printed(error)).toContain('Process "ghost" not found');
+      expect(exit).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('env', () => {
+    it('prints KEY=value lines, or JSON', async () => {
+      call.mockResolvedValue({ A: '1', TOKEN: '{secret:T}' });
+      await new EnvCommand().execute(['api'], {});
+      expect(call).toHaveBeenCalledWith('env', { name: 'api' });
+      expect(printed(log)).toBe('A=1\nTOKEN={secret:T}');
+      log.mockClear();
+      await new EnvCommand().execute(['api'], { json: true });
+      expect(JSON.parse(printed(log))).toEqual({ A: '1', TOKEN: '{secret:T}' });
+    });
+
+    it('needs a name', async () => {
+      await new EnvCommand().execute([], {});
+      expect(printed(error)).toContain('Usage: od env <name>');
       expect(exit).toHaveBeenCalledWith(1);
     });
   });

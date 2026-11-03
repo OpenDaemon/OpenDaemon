@@ -388,6 +388,7 @@ export class RestartCommand implements Command {
   options = [
     { name: 'strategy', type: 'string' as const, description: 'Replace workers without downtime: rolling, blue-green or canary (cluster mode)' },
     { name: 'cascade', type: 'boolean' as const, description: 'Also restart the apps that depend on it, once it is ready' },
+    { name: 'env', type: 'array' as const, description: 'KEY=value for this and later runs' },
   ];
 
   async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
@@ -405,7 +406,8 @@ export class RestartCommand implements Command {
     try {
       const client = new CliClient();
       await client.connect();
-      await client.restartProcess(name, options['cascade'] === true);
+      const { env } = parseEnvOptions(options['env']);
+      await client.restartProcess(name, options['cascade'] === true, Object.keys(env).length > 0 ? env : undefined);
       await client.disconnect();
       spinner.stop(true, `Restarted ${name}`);
     } catch (err) {
@@ -889,13 +891,21 @@ export class LogsCommand implements Command {
       }
     }
 
+    // PM2's --err / --out: only stderr or only stdout
+    const source = options['err'] === true && options['out'] !== true ? 'stderr' : options['out'] === true && options['err'] !== true ? 'stdout' : undefined;
+    const raw = options['raw'] === true;
     const filter = {
       ...(name === undefined ? {} : { name }),
       ...(grep === undefined ? {} : { grep }),
+      ...(source === undefined ? {} : { source }),
     };
     const print = (entry: LogLine) => {
       if (json) {
         console.log(JSON.stringify(entry));
+        return;
+      }
+      if (raw) {
+        console.log(entry.message);
         return;
       }
       const label = `${entry.processName}${entry.instanceId === undefined ? '' : `[${String(entry.instanceId)}]`}`;

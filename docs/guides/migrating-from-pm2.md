@@ -48,7 +48,9 @@ These are translated when you start a file (keys OpenDaemon does not support are
 | `node_args`, `interpreter_args` | `interpreterArgs` |
 | `env_<name>` | picked with `--env <name>`, merged over `env` |
 | `autorestart: false` | `autoRestart: false` |
-| `max_restarts`, `restart_delay`, `min_uptime`, `kill_timeout` | `maxRestarts`, `restartDelay`, `minUptime`, `killTimeout` (numbers or `'5s'`) |
+| `max_restarts`, `restart_delay`, `kill_timeout` | `maxRestarts`, `restartDelay`, `killTimeout` (numbers or `'5s'`) |
+| `min_uptime` | `stableAfter`: a run this long counts as stable, so only crashes in a row count against `maxRestarts` (default 10s) |
+| `stop_exit_codes` | `stopExitCodes` |
 | `exp_backoff_restart_delay` | `backoffStrategy: 'exponential'` |
 | `max_memory_restart: '512M'` | `maxMemory: '512M'` |
 | `cron_restart` | `cronRestart` |
@@ -59,6 +61,7 @@ These are translated when you start a file (keys OpenDaemon does not support are
 
 ## Differences worth knowing
 
+- `maxRestarts` counts crashes in a row: a run that lasts `stableAfter` (default 10 s) resets the count, so an app that fails once a day is never given up on. Cluster workers and fork apps get `NODE_APP_INSTANCE` (the worker index, `0` for fork).
 - The daemon keeps its files in `~/.opendaemon` (`$OPENDAEMON_HOME`), so `od` works from any directory. `dump.json` there is what `od save` writes.
 - `od save` is explicit, as in PM2: a process you started and did not save is not restored. The daemon restores the saved list when it starts; `daemon: { resurrect: false }` turns that off.
 - Cluster mode runs Node.js scripts only. Fork mode runs anything.

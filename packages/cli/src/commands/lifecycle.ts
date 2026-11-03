@@ -209,3 +209,40 @@ export class EcosystemCommand implements Command {
     return Promise.resolve();
   }
 }
+
+/**
+ * pid - print the process ids (pm2 pid), of one app or of all
+ */
+export class PidCommand implements Command {
+  name = 'pid';
+  description = 'Print the process ids of an app, or of all';
+
+  async execute(args: string[]): Promise<void> {
+    const name = args[0];
+    await withDaemon('Failed to read the pids', async (client) => {
+      const list = await client.call('list') as Array<{ name: string; pids?: number[] }>;
+      const picked = name === undefined ? list : list.filter((p) => p.name === name);
+      if (name !== undefined && picked.length === 0) throw new Error(`Process "${name}" not found`);
+      for (const p of picked) for (const pid of p.pids ?? []) console.log(String(pid));
+    });
+  }
+}
+
+/**
+ * env - the environment an app is configured with (pm2 env)
+ */
+export class EnvCommand implements Command {
+  name = 'env';
+  description = 'Print the environment an app is configured with';
+  options = [jsonOption];
+
+  async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
+    const name = args[0];
+    if (name === undefined) { term.error('Usage: od env <name>'); process.exit(1); return; }
+    await withDaemon('Failed to read the environment', async (client) => {
+      const env = await client.call('env', { name }) as Record<string, string>;
+      if (options['json'] === true) { console.log(JSON.stringify(env)); return; }
+      for (const [key, value] of Object.entries(env)) console.log(`${key}=${value}`);
+    });
+  }
+}

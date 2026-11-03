@@ -116,3 +116,59 @@ describe('PM2 features of the process manager', () => {
     });
   });
 });
+
+describe('restart policy of a long-running app', () => {
+  let dir: string;
+  let pm: ProcessManagerPlugin;
+  const methods = new Map<string, Method>();
+  const call = (m: string, p?: unknown) => methods.get(m)!(p);
+  const info = async (name: string) => await call('info', { name }) as ProcessInfo;
+  const until = async (check: () => Promise<boolean>, ms = 8000) => {
+    const end = Date.now() + ms;
+    while (!(await check())) { if (Date.now() > end) throw new Error('condition not met'); await new Promise((r) => setTimeout(r, 25)); }
+  };
+  const logs = async (name: string) => ((await call('logs', { name })) as Array<{ message: string }>).map((l) => l.message).join('\n');
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'od-policy-'));
+    methods.clear();
+    pm = new ProcessManagerPlugin();
+    pm.install({
+      config: {}, events: new EventBus(), logger: new Logger('policy'), store: new StateStore(),
+      registerMethod: (n: string, h: Method) => { methods.set(n, h); }, getPlugin: () => undefined,
+    } as unknown as PluginContext);
+  });
+  afterEach(async () => { await pm.onStop(); rmSync(dir, { recursive: true, force: true }); });
+  const script = (name: string, body: string) => { const p = join(dir, `${name}.cjs`); writeFileSync(p, body); return p; };
+
+  it('keeps restarting an app that crashes now and then: only crashes in a row count against maxRestarts', async () => {
+    // lives 400ms (stable with stableAfter 300), then crashes: far more crashes than maxRestarts 2
+    await call('start', { name: 'daily', script: script('daily', 'setTimeout(() => process.exit(1), 400); setInterval(() => {}, 1000);'), maxRestarts: 2, restartDelay: 50, stableAfter: 300, killTimeout: 300 });
+    await until(async () => (await info('daily')).restartCount >= 5, 15000);
+    expect((await info('daily')).status).not.toBe('errored');
+  }, 20000);
+
+  it('gives up on an app that crashes at once, again and again', async () => {
+    await call('start', { name: 'loop', script: script('loop', 'process.exit(1);'), maxRestarts: 3, restartDelay: 30, stableAfter: 5000, killTimeout: 300 }).catch(() => undefined);
+    await until(async () => (await info('loop')).status === 'errored');
+    expect((await info('loop')).restartCount).toBe(3);
+  });
+
+  it('does not restart after an exit code in stopExitCodes, and does after others', async () => {
+    await call('start', { name: 'done', script: script('done', 'process.exit(42);'), stopExitCodes: [42], restartDelay: 30, killTimeout: 300 }).catch(() => undefined);
+    await until(async () => (await info('done')).status === 'errored');
+    expect((await info('done')).restartCount).toBe(0);
+    await call('start', { name: 'other', script: script('other', 'process.exit(3);'), stopExitCodes: [42], maxRestarts: 1, restartDelay: 30, killTimeout: 300 }).catch(() => undefined);
+    await until(async () => (await info('other')).restartCount === 1);
+  });
+
+  it('gives each app NODE_APP_INSTANCE', async () => {
+    await call('start', { name: 'inst', script: script('inst', "console.log('instance=' + process.env.NODE_APP_INSTANCE); setInterval(() => {}, 1000);"), killTimeout: 300 });
+    await until(async () => (await logs('inst')).includes('instance=0'));
+  });
+
+  it('gives cluster workers their index as NODE_APP_INSTANCE', async () => {
+    await call('start', { name: 'clu', mode: 'cluster', instances: 2, script: script('clu', "console.log('instance=' + process.env.NODE_APP_INSTANCE); setInterval(() => {}, 1000);"), killTimeout: 500 });
+    await until(async () => { const l = await logs('clu'); return l.includes('instance=0') && l.includes('instance=1'); });
+  });
+});
