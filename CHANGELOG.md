@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cronRestart`, `waitReady` / `listenTimeout`, plain-text `logFile` / `errorLogFile` / `mergeLogs` / `logTimestamp`
 - Scheduled (`cron`) apps started with `od start` or restored by `od resurrect` are scheduled instead of run at once
 
+### Security
+- The WebUI was open without a login on `127.0.0.1:7777`, and `/api/start` runs any program: every local user could run code as the daemon's user. It now requires a login; without `username`/`password` in the config the daemon generates a random password, kept in `webui-credentials` (mode 0600). `plugins.webui.auth: false` restores the open behaviour
+
 ### Fixed
 - Commands started at the same time with no daemon running raced to spawn it and about half failed; a start lock now serialises it
 - A busy WebUI port stopped the whole daemon; it now only disables the WebUI

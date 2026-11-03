@@ -418,8 +418,8 @@ The built-in dashboard runs at `http://localhost:7777` with the WebUI plugin ena
 - Real-time process table with status, CPU, memory, uptime, and restart count
 - Start, stop, restart, and delete processes from the browser
 - Stats overview cards (total, online, errored, stopped)
-- Optional authentication (`username`/`password`): each login gets its own Bearer token, which expires after `sessionTtl` ms (default 12 hours) and is revoked by logout; Basic auth also works
-- Listens on `127.0.0.1` only unless `host` is set
+- Login is always required, because the dashboard can start programs: set `username` and `password` under `plugins.webui`, or use the ones the daemon generated: user `admin`, password in `~/.opendaemon/webui-credentials` (readable only by you, kept across restarts). Each login gets its own Bearer token, which expires after `sessionTtl` ms (default 12 hours) and is revoked by logout; Basic auth also works. `auth: false` turns the login off (every local user could then run code as you)
+- Listens on `127.0.0.1` only unless `host` is set; if the port (7777, or `port`) is taken the dashboard is disabled and the daemon keeps running
 - Auto-refresh every 3 seconds
 - Toast notifications for actions
 

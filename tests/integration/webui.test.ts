@@ -1,5 +1,8 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { request } from 'http';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import { WebuiPlugin } from '../../packages/plugins/webui/src/index.js';
 import { EventBus, StateStore, Logger } from '../../packages/core/src/index.js';
 import type { PluginContext } from '../../packages/core/src/index.js';
@@ -200,5 +203,84 @@ describe('WebuiPlugin when its port is taken', () => {
     } finally {
       await new Promise<void>((resolveClose) => { blocker.close(() => { resolveClose(); }); });
     }
+  });
+});
+
+describe('WebuiPlugin generated credentials', () => {
+  let plugin: WebuiPlugin | undefined;
+  let home: string;
+  const startProcess = vi.fn().mockResolvedValue({ name: 'x' });
+
+  async function start(pluginConfig: Record<string, unknown> = {}, withHome = true): Promise<number> {
+    const logs: string[] = [];
+    const context = {
+      config: {}, pluginConfig: { port: 0, ...pluginConfig }, events: new EventBus(), store: new StateStore(),
+      logger: { info: (m: string) => { logs.push(m); }, warn: (m: string) => { logs.push(m); }, error: () => undefined, debug: () => undefined },
+      registerMethod: () => undefined, getPlugin: () => ({ getProcesses: () => [], startProcessFromPlugin: startProcess }),
+    } as unknown as PluginContext;
+    plugin = new WebuiPlugin(withHome ? home : undefined);
+    plugin.install(context);
+    await plugin.onStart(context);
+    lastLogs = logs;
+    return (plugin as unknown as { server: { address(): { port: number } } }).server.address().port;
+  }
+  let lastLogs: string[] = [];
+  const credentials = () => {
+    const text = readFileSync(join(home, 'webui-credentials'), 'utf-8');
+    return { username: /^username: (.+)$/m.exec(text)?.[1] ?? '', password: /^password: (.+)$/m.exec(text)?.[1] ?? '' };
+  };
+  const basic = ({ username, password }: { username: string; password: string }) =>
+    ({ Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` });
+  const startBody = JSON.stringify({ name: 'x', script: '/bin/sh', interpreter: 'none' });
+
+  beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'od-webui-')); });
+  afterEach(async () => {
+    await plugin?.onStop();
+    plugin = undefined;
+    startProcess.mockClear();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('should refuse anonymous requests, so another local user cannot start programs', async () => {
+    const port = await start();
+    expect((await send(port, 'GET', '/api/processes')).status).toBe(401);
+    expect((await send(port, 'POST', '/api/start', { 'Content-Type': 'application/json' }, startBody)).status).toBe(401);
+    expect(startProcess).not.toHaveBeenCalled();
+  });
+
+  it('should accept the generated credentials, and keep them private to the daemon user', async () => {
+    const port = await start();
+    expect((await send(port, 'GET', '/api/processes', basic(credentials()))).status).toBe(200);
+    expect((await send(port, 'GET', '/api/processes', basic({ username: 'admin', password: 'wrong' }))).status).toBe(401);
+    if (process.platform !== 'win32') expect(statSync(join(home, 'webui-credentials')).mode & 0o777).toBe(0o600);
+    expect(lastLogs.join('\n')).toContain('webui-credentials');
+    expect(lastLogs.join('\n')).not.toContain(credentials().password);
+  });
+
+  it('should keep the same login after a restart', async () => {
+    await start();
+    const first = credentials();
+    await plugin?.onStop();
+    const port = await start();
+    expect(credentials()).toEqual(first);
+    expect((await send(port, 'GET', '/api/processes', basic(first))).status).toBe(200);
+  });
+
+  it('should prefer credentials from the config over generated ones', async () => {
+    const port = await start({ username: 'ops', password: 'configured-secret' });
+    expect((await send(port, 'GET', '/api/processes', basic({ username: 'ops', password: 'configured-secret' }))).status).toBe(200);
+    expect(existsSync(join(home, 'webui-credentials'))).toBe(false);
+  });
+
+  it('should allow switching authentication off explicitly, with a warning', async () => {
+    const port = await start({ auth: false });
+    expect((await send(port, 'GET', '/api/processes')).status).toBe(200);
+    expect(lastLogs.join('\n')).toContain('authentication is off');
+  });
+
+  it('should regenerate credentials that are too short to be safe', async () => {
+    writeFileSync(join(home, 'webui-credentials'), 'username: admin\npassword: abc\n');
+    await start();
+    expect(credentials().password.length).toBeGreaterThanOrEqual(16);
   });
 });

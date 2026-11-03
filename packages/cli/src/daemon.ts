@@ -115,7 +115,7 @@ export async function main(): Promise<void> {
     kernel.registerPlugin(new WatchModePlugin());
     kernel.registerPlugin(new SchedulerPlugin());
     kernel.registerPlugin(new NotificationPlugin());
-    kernel.registerPlugin(new WebuiPlugin());
+    kernel.registerPlugin(new WebuiPlugin(home));
 
     // The API server forwards to this daemon's own RPC methods over IPC, so they are validated
     // and audited exactly like CLI calls. It connects on first use and again after a failure.

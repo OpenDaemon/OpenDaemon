@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { tmpdir } from 'os';
 
@@ -163,5 +163,23 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
       spawnSync(process.execPath, [CLI, 'daemon', 'stop'], { cwd: fresh, env: { ...process.env, OPENDAEMON_HOME: raceHome }, encoding: 'utf-8' });
       rmSync(fresh, { recursive: true, force: true });
     }
+  });
+
+  it('keeps the WebUI closed to other local users: anonymous requests are refused, the login is in a private file', async () => {
+    const log = readFileSync(join(home, 'daemon.log'), 'utf-8');
+    const port = [...log.matchAll(/WebUI server listening on http:\/\/127\.0\.0\.1:(\d+)/g)].map((m) => Number(m[1])).pop();
+    expect(port).toBeDefined();
+    const anonymous = await fetch(`http://127.0.0.1:${String(port)}/api/start`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'intruder', script: '/bin/sh', interpreter: 'none', args: ['-c', 'sleep 30'] }),
+    });
+    expect(anonymous.status).toBe(401);
+    expect(list().some((p) => p.name === 'intruder')).toBe(false);
+
+    const credentials = readFileSync(join(home, 'webui-credentials'), 'utf-8');
+    const password = /^password: (.+)$/m.exec(credentials)?.[1] ?? '';
+    const authorised = await fetch(`http://127.0.0.1:${String(port)}/api/processes`, { headers: { Authorization: `Basic ${Buffer.from(`admin:${password}`).toString('base64')}` } });
+    expect(authorised.status).toBe(200);
+    if (process.platform !== 'win32') expect(statSync(join(home, 'webui-credentials')).mode & 0o777).toBe(0o600);
   });
 });

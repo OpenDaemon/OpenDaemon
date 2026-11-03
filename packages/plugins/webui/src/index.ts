@@ -1,8 +1,8 @@
 import type { Plugin, PluginContext, Logger } from '../../../core/src/index.js';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import { randomBytes, timingSafeEqual } from 'crypto';
-import { readFileSync, existsSync } from 'fs';
-import { resolve, extname } from 'path';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { resolve, extname, join } from 'path';
 
 // Note: In production build, this path needs to be adjusted
 const publicDir = resolve(process.cwd(), 'packages', 'plugins', 'webui', 'src', 'public');
@@ -41,6 +41,13 @@ export class WebuiPlugin implements Plugin {
   private sessionTtl = 12 * 60 * 60 * 1000;
   private static readonly MAX_SESSIONS = 1000;
 
+  /**
+   * `home`: the daemon's private directory. With it, a WebUI configured without credentials gets
+   * generated ones (webui-credentials, readable only by the daemon's user), because the API can
+   * start any program: an open loopback port would let every local user run code as this user.
+   */
+  constructor(private readonly home?: string) {}
+
   install(context: PluginContext): void {
     this.context = context;
     this.logger = context.logger;
@@ -53,7 +60,7 @@ export class WebuiPlugin implements Plugin {
 
     // Get config
     const config = context.pluginConfig as {
-      port?: number; host?: string; username?: string; password?: string; sessionTtl?: number;
+      port?: number; host?: string; username?: string; password?: string; sessionTtl?: number; auth?: boolean;
     } | undefined;
     // 0 is valid: let the OS pick a free port
     if (typeof config?.port === 'number') {
@@ -73,8 +80,13 @@ export class WebuiPlugin implements Plugin {
         this.sessionTtl = config.sessionTtl;
       }
       this.logger.info('WebUI authentication enabled');
+    } else if (this.home !== undefined && config?.auth !== false) {
+      this.auth = this.generatedCredentials(this.home);
+      this.logger.info(`WebUI login: user "${this.auth.username}", password in ${join(this.home, 'webui-credentials')}`);
     } else if (!LOOPBACK_HOSTS.has(this.host)) {
       this.logger.warn(`WebUI is exposed on ${this.host} without authentication; anyone who can reach it can run scripts`);
+    } else if (config?.auth === false) {
+      this.logger.warn('WebUI authentication is off: every local user can run scripts as the daemon user');
     }
 
     // Create HTTP server
@@ -109,6 +121,23 @@ export class WebuiPlugin implements Plugin {
         }
       });
     });
+  }
+
+  /**
+   * The credentials in <home>/webui-credentials, created with a random password on first use and
+   * kept, so the same login works after a restart
+   */
+  private generatedCredentials(home: string): { username: string; password: string } {
+    const file = join(home, 'webui-credentials');
+    try {
+      const text = readFileSync(file, 'utf-8');
+      const username = /^username:\s*(.+)$/m.exec(text)?.[1]?.trim();
+      const password = /^password:\s*(.+)$/m.exec(text)?.[1]?.trim();
+      if (username && password && password.length >= 16) return { username, password };
+    } catch { /* not created yet */ }
+    const credentials = { username: 'admin', password: randomBytes(18).toString('base64url') };
+    writeFileSync(file, `username: ${credentials.username}\npassword: ${credentials.password}\n`, { mode: 0o600 });
+    return credentials;
   }
 
   async onStop(): Promise<void> {
