@@ -27,6 +27,7 @@ The daemon starts by itself on the first command, like PM2's.
 | `pm2 flush` | `od flush` |
 | `pm2 reset api` | `od reset api` |
 | `pm2 sendSignal SIGUSR2 api` | `od signal SIGUSR2 api` |
+| `pm2 update` | `od update` |
 | `pm2 save` (`dump`) / `resurrect` | `od save` (`od dump`) / `od resurrect` |
 | `pm2 id api` / `pm2 pid api` | `od id api` / `od pid api` |
 | `pm2 l` / `ls` / `ps` | `od list`, `od l`, `od ls`, `od ps` (`od status` is the daemon overview) |

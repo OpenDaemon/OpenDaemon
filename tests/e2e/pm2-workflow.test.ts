@@ -102,6 +102,13 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     await waitFor(online('inline'));
   });
 
+  it('update restarts the daemon and brings the saved apps back', async () => {
+    const result = od('update');
+    expect(result.status).toBe(0);
+    expect(result.out).toContain('Daemon restarted');
+    await waitFor(online('api', 'job', 'inline'));
+  });
+
   it('restarts, stops and resets several processes at once with all', async () => {
     const pids = () => new Map(list().map((p) => [p.name, p.pid]));
     const before = pids();

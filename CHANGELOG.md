@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `od update` (PM2 `update`): save the process list, restart the daemon and resurrect the processes
 - PM2 parity: `od start` takes ecosystem files (PM2 keys translated, `env_<profile>` with `--env production`, `--only`), commands (`"npm start"`), arguments after `--`, and more flags (`--cwd`, `--interpreter`, `--no-autorestart`, `--max-restarts`, `--restart-delay`, `--kill-timeout`, `--cron-restart`, `-i max`)
 - `od save` / `od resurrect`: the process list is stored in `dump.json` and restored when the daemon starts (`daemon.resurrect: false` to disable)
 - Any program runs in fork mode: `interpreter` / `interpreterArgs` are honoured, `.py`, `.sh`, `.rb`, `.php` and `.pl` pick their interpreter, executables and commands on PATH run as they are

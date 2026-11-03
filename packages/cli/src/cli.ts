@@ -26,7 +26,7 @@ import {
   StatusCommand,
   DaemonCommand,
 } from './commands/index.js';
-import { SaveCommand, ResurrectCommand, ResetCommand, SignalCommand, ReloadCommand, PingCommand, EcosystemCommand, PidCommand, EnvCommand, ServeCommand } from './commands/lifecycle.js';
+import { SaveCommand, ResurrectCommand, ResetCommand, SignalCommand, ReloadCommand, PingCommand, EcosystemCommand, PidCommand, EnvCommand, ServeCommand, UpdateCommand } from './commands/lifecycle.js';
 import { CliClient } from './client.js';
 import { RuntimeCommand } from './commands/runtime.js';
 import { term } from './output.js';
@@ -484,6 +484,10 @@ async function executeCommand(original: ParsedCommand): Promise<void> {
 
     case 'kill':
       await new DaemonCommand().execute(['stop']);
+      break;
+
+    case 'update':
+      await new UpdateCommand().execute(parsed.args, parsed.options);
       break;
 
     case 'save':
