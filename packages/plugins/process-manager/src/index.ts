@@ -1,5 +1,6 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
 import { resolveLaunch } from './launch.js';
+import { ChildRegistry } from './orphans.js';
 import { Logger, parseBytes, dependencyLevels, parseCron, nextRun, assertTimeZone } from '../../../core/src/index.js';
 import type { CountLimit, LimitAction, Release } from '../../../core/src/index.js';
 import { DaemonError, ErrorCode, ProcessError } from '../../../core/src/index.js';
@@ -103,9 +104,13 @@ export class ProcessManagerPlugin implements Plugin {
   /** Where `save` writes the process list (dump.json in the daemon's home); unset: no persistence */
   private readonly dumpFile: string | undefined;
 
+  /** Children of this daemon, so the next one can stop what this one leaves behind if it is killed */
+  private readonly registry: ChildRegistry | undefined;
+
   constructor(home?: string) {
     this.logger = new Logger('process-manager');
     this.dumpFile = home === undefined ? undefined : resolve(home, 'dump.json');
+    this.registry = home === undefined ? undefined : new ChildRegistry(resolve(home, 'children.json'));
   }
 
   /**
@@ -206,6 +211,10 @@ export class ProcessManagerPlugin implements Plugin {
     // Load processes from config. Independent apps start in parallel and are awaited; an app
     // with `dependencies` starts once they are ready, in the background, so the daemon (and its
     // IPC) comes up without waiting for health checks.
+    // Processes a daemon that was killed left running would clash with the ones started now
+    const orphans = await this.registry?.reap() ?? [];
+    if (orphans.length > 0) this.logger.warn(`Stopped ${String(orphans.length)} process(es) left behind by a previous daemon: ${orphans.join(', ')}`);
+
     const configured = context.config.apps ?? [];
     // Apps saved with `od save` come back too (unless daemon.resurrect is false); when the saved
     // list does not fit the config (a dependency that no longer exists), only the config starts
@@ -366,6 +375,8 @@ export class ProcessManagerPlugin implements Plugin {
       }));
     }
     this.processes.clear();
+    // Everything stopped on purpose: nothing for a later daemon to clean up
+    this.registry?.clear();
   }
 
   /**
@@ -1053,6 +1064,7 @@ export class ProcessManagerPlugin implements Plugin {
     proc.pid = child.pid;
     if (child.pid) {
       proc.pids = [child.pid];
+      this.registry?.add(child.pid, config.name);
     }
 
     // Capture stdout/stderr
@@ -1066,6 +1078,7 @@ export class ProcessManagerPlugin implements Plugin {
 
     // Handle process events
     child.on('exit', (code, signal) => {
+      if (child.pid) this.registry?.remove(child.pid);
       if (proc.childProcess === child) proc.customMetrics.clear();
       this.handleProcessExit(proc, code, signal);
     });
@@ -1122,6 +1135,7 @@ export class ProcessManagerPlugin implements Plugin {
     proc.childProcess = child;
     proc.pid = child.pid;
     proc.pids = child.pid ? [child.pid] : [];
+    if (child.pid) this.registry?.add(child.pid, config.name);
     proc.workerPids = new Map();
 
     // The primary's own output (startup errors); worker output arrives as od:log messages
@@ -1131,6 +1145,7 @@ export class ProcessManagerPlugin implements Plugin {
       this.handleClusterMessage(proc, child, message);
     });
     child.on('exit', (code, signal) => {
+      if (child.pid) this.registry?.remove(child.pid);
       if (proc.childProcess === child) {
         proc.workerPids.clear();
         proc.customMetrics.clear();
