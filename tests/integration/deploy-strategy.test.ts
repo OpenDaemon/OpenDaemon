@@ -141,7 +141,7 @@ describe('DeployStrategyPlugin', () => {
     // no waiting: the third worker is still starting when the deploy looks at what is online
     const state = await run({ name: 'web', strategy: 'rolling', release: { script: release('v2.cjs', 'v2') } });
     expect(state.state).toBe('succeeded');
-    await until(async () => pm.getWorkerIndices('web').length === 3);
+    await until(() => pm.getWorkerIndices('web').length === 3);
     await until(async () => { const seen = await sample(18); return seen.size === 1 && seen.has('v2'); });
   }, 60000);
 
