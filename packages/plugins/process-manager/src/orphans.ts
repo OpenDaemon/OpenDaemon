@@ -6,7 +6,7 @@ import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 
 
 /**
  * A string that tells this process apart from a later one that reuses its pid: the start time
- * (Linux: field 22 of /proc/<pid>/stat; macOS and BSD: `ps -o lstart=`). undefined when the process
+ * (Linux: field 22 of /proc/<pid>/stat; macOS and BSD: `ps -o lstart=,command=`). undefined when the process
  * is gone, or the platform has no way to tell (Windows).
  */
 export function processIdentity(pid: number): string | undefined {
@@ -17,7 +17,8 @@ export function processIdentity(pid: number): string | undefined {
       return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19];
     }
     if (process.platform === 'win32') return undefined;
-    const out = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    // lstart has a resolution of one second: the command line makes the identity much harder to match by chance
+    const out = execFileSync('ps', ['-o', 'lstart=,command=', '-p', String(pid)], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     return out === '' ? undefined : out;
   } catch {
     return undefined;
