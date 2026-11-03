@@ -45,6 +45,8 @@ ${term.bold('COMMANDS')}
     delete <name>    Remove a process
     scale <name> <n> Change cluster workers (number or max)
     deploy <name>    Zero-downtime deploy (--strategy rolling|blue-green|canary|recreate)
+    deploy <file> <env> [setup|update|revert|curr|prev|exec|list]  Deploy from git over ssh (PM2 style)
+    startOrRestart <file>  Start apps, or restart the running ones with the file's settings (startOrReload: rolling)
     deploy status    Show deploys
     rollback <name>  Back to the release before the last deploy
     reload <name>    Reload without downtime (cluster mode), or restart; also: all

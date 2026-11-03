@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cronRestart`, `waitReady` / `listenTimeout`, plain-text `logFile` / `errorLogFile` / `mergeLogs` / `logTimestamp`
 - Scheduled (`cron`) apps started with `od start` or restored by `od resurrect` are scheduled instead of run at once
 
+- `od deploy <ecosystem file> <env> setup|update|revert|curr|prev|exec|list`: PM2's git/ssh deploy with its `deploy` section and hooks; `od startOrRestart` / `startOrReload` / `startOrGracefulReload`
 - `stopExitCodes` (PM2 `stop_exit_codes`), `stableAfter` (PM2 `min_uptime`), `NODE_APP_INSTANCE`, process ids wherever a name is expected, `od pid`, `od env`, `od restart --env`, `od logs --err/--out/--raw`
 
 ### Security

@@ -392,6 +392,8 @@ apps:
 | ids | Wherever a name is expected, a process id works too: `od restart 0`, `od logs 2 --err` |
 | `od signal <name> <SIGUSR2>` | Send a signal (PM2's order, `od signal SIGUSR2 api`, works too) |
 | `od runtime <app>` / `od-runtime <app>` | Run in the foreground for containers: logs on stdout, SIGTERM stops gracefully, exits when the apps are gone |
+| `od startOrRestart <file>` / `od startOrReload <file>` | Start the apps of a file, or restart (reload, for cluster apps) the running ones with the file's new settings |
+| `od deploy <file> <env> [setup\|update\|revert [n]\|curr\|prev\|exec "cmd"\|list]` | Deploy from git over ssh (see Deploying from git) |
 | `od ecosystem` | Write a sample `ecosystem.config.cjs` |
 | `od ping` / `od kill` | Check the daemon / stop it and everything it runs |
 | `od describe <name>`, `od jlist` | PM2 names for `od info`, `od list --json` |
@@ -609,6 +611,38 @@ npm run test:e2e
 | Config format | TS, JS, JSON, YAML | JS, JSON, YAML |
 | Plugin system | First-class with DI | Limited |
 | IPC protocol | Binary frames + JSON-RPC 2.0 | Custom |
+
+## Deploying from git (`pm2 deploy`)
+
+`od deploy <ecosystem file> <env> <command>` reads the `deploy` section of an ecosystem file (PM2's format) and runs it on the hosts over `ssh`: clone and update a checkout, run your hooks, point `current` at it.
+
+```js
+module.exports = {
+  apps: [{ name: 'api', script: '/var/www/api/current/server.js', env_production: { NODE_ENV: 'production' } }],
+  deploy: {
+    production: {
+      user: 'deploy', host: ['web1.example.com', 'web2.example.com'],
+      ref: 'origin/main', repo: 'git@github.com:me/api.git', path: '/var/www/api',
+      key: '~/.ssh/deploy', ssh_options: 'StrictHostKeyChecking=no',
+      'pre-deploy-local': 'npm test',
+      'post-deploy': 'npm ci --omit=dev && od startOrReload ecosystem.config.js --env production',
+    },
+  },
+};
+```
+
+```bash
+od deploy ecosystem.config.js production setup     # first time: create the directories and clone
+od deploy ecosystem.config.js production           # update: fetch, reset to ref, hooks (also: update)
+od deploy ecosystem.config.js production revert 1  # back one commit, then post-deploy
+od deploy ecosystem.config.js production curr      # the deployed commit (prev: the one before)
+od deploy ecosystem.config.js production exec "ls" # run a command in current
+od deploy ecosystem.config.js list                 # the environments
+```
+
+Hosts are deployed one after the other and the run stops at the first that fails. Hooks: `pre-setup`, `post-setup` (in `source`), `pre-deploy-local` (on this machine, once), `pre-deploy` (in `source`, before `current` moves), `post-deploy` (in `current`); `env` is exported to all of them. The remote needs `git`, `bash` and the `od` command on its PATH.
+
+`od startOrRestart <file>` starts the apps of a file, or restarts the ones that run with the file's new settings (script, arguments, environment). `od startOrReload <file>` (alias `startOrGracefulReload`) does the same, but replaces a cluster app one worker at a time without downtime. This is what a `post-deploy` hook calls.
 
 ## Docker
 

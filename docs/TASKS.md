@@ -29,7 +29,7 @@ Statuses last audited on 2026-10-27 against the code. Partial items, notably:
 - 8.1.x: coverage is 86% statements with plugins measured; CI gates on a ratchet just below that, not on 100%
 - 9.2.x: WebUI hardened (loopback bind, Host/Origin checks, crypto token); IPC requires a per-start token from a 0600 token file and the socket is 0600
 
-PM2-parity pass (2026-11-03), beyond the phase list below: `od save`/`resurrect`, ecosystem files with PM2 key translation and env profiles, non-Node programs, `reload`/`reset`/`signal`/`ping`/`kill`/`describe`/`jlist`/`ecosystem`, `all` and multiple names, `od runtime`/`od-runtime`, `cronRestart`, `waitReady`, plain-text log files, a daemon start lock for concurrent commands. Still open: `pm2 deploy` equivalent (git-based release deploys), `.cmd` shims for commands on Windows (`npm` there), CPU throttling, and the security/performance audits in phase 9. The statuses below predate this pass.
+PM2-parity pass (2026-11-03), beyond the phase list below: `od save`/`resurrect`, ecosystem files with PM2 key translation and env profiles, non-Node programs, `reload`/`reset`/`signal`/`ping`/`kill`/`describe`/`jlist`/`ecosystem`, `all` and multiple names, `od runtime`/`od-runtime`, `cronRestart`, `waitReady`, plain-text log files, a daemon start lock for concurrent commands. Later in the same pass: `od deploy <file> <env>` (git over ssh), `startOrRestart`/`startOrReload`, whole-tree stop, orphan cleanup after a killed daemon, a restart count of crashes in a row, `.cmd` shims on Windows. Still open: CPU throttling and the performance audits in phase 9. The statuses below predate this pass.
 
 ---
 

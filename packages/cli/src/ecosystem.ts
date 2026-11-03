@@ -159,6 +159,8 @@ export interface LoadedEcosystem {
   file: string;
   /** Things about the file as a whole, e.g. a profile no app defines */
   warnings: string[];
+  /** The top-level `deploy` section, if any (read by `od deploy <file> <env>`) */
+  deploy?: Record<string, unknown>;
 }
 
 /**
@@ -187,7 +189,7 @@ export async function loadEcosystem(path: string, options: { profile?: string; o
     warnings.push(`no app has an env_${options.profile} section: using env`);
   }
   const top = Array.isArray(data) ? {} : (data as Record<string, unknown>);
-  if (top['deploy'] !== undefined) warnings.push('the "deploy" section is not supported and was ignored (see od deploy for zero-downtime restarts)');
+  const deploy = typeof top['deploy'] === 'object' && top['deploy'] !== null ? top['deploy'] as Record<string, unknown> : undefined;
 
   const baseDir = dirname(file);
   const apps = list.map((entry, index) => {
@@ -210,7 +212,7 @@ export async function loadEcosystem(path: string, options: { profile?: string; o
     const known = new Set(apps.map((a) => a.config.name));
     const unknown = only.filter((name) => !known.has(name));
     if (unknown.length > 0) throw new Error(`Not in ${path}: ${unknown.join(', ')} (it has: ${[...known].join(', ')})`);
-    return { file, warnings, apps: apps.filter((a) => only.includes(a.config.name)) };
+    return { file, warnings, ...(deploy === undefined ? {} : { deploy }), apps: apps.filter((a) => only.includes(a.config.name)) };
   }
-  return { file, warnings, apps };
+  return { file, warnings, ...(deploy === undefined ? {} : { deploy }), apps };
 }

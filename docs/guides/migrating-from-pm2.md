@@ -33,7 +33,8 @@ The daemon starts by itself on the first command, like PM2's.
 | `pm2 ping` / `pm2 kill` | `od ping` / `od kill` |
 | `pm2 ecosystem` | `od ecosystem` |
 | `pm2-runtime ecosystem.config.js` | `od-runtime ecosystem.config.js` |
-| `pm2 deploy` | not implemented: use `od deploy` (zero-downtime restarts of what is running) with your own CI for the code |
+| `pm2 deploy ecosystem.config.js production setup\|update\|revert\|curr\|prev\|exec\|list` | `od deploy ecosystem.config.js production ...`: same `deploy` section, hooks and commands (see README). The zero-downtime restart of a running app by name is `od deploy <name>` |
+| `pm2 startOrRestart` / `startOrReload` / `startOrGracefulReload` | the same, with `od` |
 | `pm2 install pm2-logrotate` | built in: `logRotation`, see README |
 
 ## ecosystem.config.js keys

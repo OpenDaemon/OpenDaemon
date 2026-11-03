@@ -189,6 +189,7 @@ export class ProcessManagerPlugin implements Plugin {
     // Register RPC methods
     context.registerMethod('list', this.listProcesses.bind(this));
     context.registerMethod('start', this.startFromRpc.bind(this));
+    context.registerMethod('replace', this.replaceProcess.bind(this));
     context.registerMethod('stop', this.stopProcess.bind(this));
     context.registerMethod('restart', this.restartProcess.bind(this));
     context.registerMethod('delete', this.deleteProcess.bind(this));
@@ -392,6 +393,19 @@ export class ProcessManagerPlugin implements Plugin {
   private getProcessInfo(params: { name: string }): Promise<ProcessInfo | null> {
     const proc = this.processes.get(params.name);
     return Promise.resolve(proc ? this.toProcessInfo(proc) : null);
+  }
+
+  /**
+   * Start `config`, or, when an app of that name runs, stop it and start it again with this
+   * config (pm2 startOrRestart: a new release may change the script, arguments or environment)
+   */
+  private async replaceProcess(config: ProcessConfig): Promise<ProcessInfo> {
+    const existing = this.processes.get(config.name);
+    if (existing && existing.status !== 'stopped' && existing.status !== 'errored' && existing.status !== 'waiting') {
+      this.validateConfig(config);
+      await this.stopProcessInternal(existing, 'SIGTERM', existing.config.killTimeout ?? 5000);
+    }
+    return this.startFromRpc(config);
   }
 
   /**

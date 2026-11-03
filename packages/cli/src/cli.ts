@@ -295,6 +295,14 @@ async function executeCommand(original: ParsedCommand): Promise<void> {
       break;
     }
 
+    case 'startOrRestart':
+    case 'startOrReload':
+    case 'startOrGracefulReload': {
+      const startArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;
+      await new StartCommand().execute(startArgs, { ...parsed.options, replace: true, rolling: command !== 'startOrRestart' });
+      break;
+    }
+
     case 'stop': {
       const cmd = new StopCommand();
       const stopArgs = subcommand ? [subcommand, ...parsed.args] : parsed.args;

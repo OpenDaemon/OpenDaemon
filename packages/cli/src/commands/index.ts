@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ensureHome, runtimePaths } from '../paths.js';
 import { isEcosystemFile, loadEcosystem, splitArgs } from '../ecosystem.js';
+import { runDeploy, sshRunner, validateTarget, type DeployCommandName } from '../remote-deploy.js';
 import { isOnPath } from '../../../plugins/process-manager/src/launch.js';
 import type { ProcessConfig } from '../../../core/src/index.js';
 import { detectInit, planStartup, type InitSystem } from '../startup.js';
@@ -237,7 +238,23 @@ export class StartCommand implements Command {
         const spinner = term.spinner(`Starting ${config.name}...`);
         spinner.start();
         try {
-          await client.startProcess(config);
+          if (options['replace'] === true) {
+            // startOrRestart / startOrReload: a running app gets the new config, cluster apps one worker at a time
+            const existing = await client.getProcessInfo(config.name) as { status: string; mode?: string } | null;
+            if (options['rolling'] === true && existing?.status === 'online' && existing.mode === 'cluster' && config.mode === 'cluster') {
+              spinner.stop(true, `Reloading ${config.name}`);
+              if (config.instances !== undefined) await client.scaleProcess(config.name, config.instances);
+              await client.deployExecute({
+                name: config.name, strategy: 'rolling',
+                release: { script: config.script, ...(config.args === undefined ? {} : { args: config.args }), ...(config.env === undefined ? {} : { env: config.env }) },
+              });
+              await followDeploy(client, config.name, false);
+              continue;
+            }
+            await client.call('replace', config);
+          } else {
+            await client.startProcess(config);
+          }
           spinner.stop(true, `Started ${config.name}${config.mode === 'cluster' ? ` with ${String(config.instances ?? 1)} instance(s)` : ''}`);
         } catch (err) {
           spinner.stop(false);
@@ -1281,7 +1298,7 @@ export class DaemonCommand implements Command {
 /**
  * Print the steps of a deploy as they happen, until it ends; exits non-zero unless it succeeded
  */
-async function followDeploy(client: CliClient, name: string, json: boolean): Promise<void> {
+export async function followDeploy(client: CliClient, name: string, json: boolean): Promise<void> {
   interface State { state: string; strategy: string; steps: string[]; error?: string }
   let shown = 0;
   for (;;) {
@@ -1319,8 +1336,42 @@ export class DeployCommand implements Command {
     { name: 'json', type: 'boolean' as const, description: 'Output as JSON' },
   ];
 
+  /**
+   * `od deploy <ecosystem file> <env> [setup|update|revert [n]|curr|prev|exec "cmd"|list]` (pm2 deploy):
+   * pull a release on the hosts of `deploy.<env>` over ssh and run its hooks
+   */
+  private async remote(args: string[]): Promise<void> {
+    const [file = '', envName, rawCommand = 'update', ...rest] = args;
+    try {
+      const { deploy } = await loadEcosystem(file);
+      if (deploy === undefined) throw new Error(`${file} has no "deploy" section`);
+      if (envName === undefined) throw new Error(`Usage: od deploy ${file} <${Object.keys(deploy).join('|')}> [setup|update|revert [n]|curr|prev|exec "cmd"|list]`);
+      if (rawCommand === 'list' || envName === 'list') {
+        for (const [name, block] of Object.entries(deploy)) {
+          const hosts = (block as { host?: string | string[] }).host;
+          term.info(`${name}: ${(Array.isArray(hosts) ? hosts : [hosts ?? '?']).join(', ')}`);
+        }
+        return;
+      }
+      if (!(envName in deploy)) throw new Error(`No deploy.${envName} in ${file} (it has: ${Object.keys(deploy).join(', ')})`);
+      const target = validateTarget(envName, deploy[envName]);
+      const known: DeployCommandName[] = ['setup', 'update', 'deploy', 'revert', 'curr', 'current', 'prev', 'previous', 'exec'];
+      if (!known.includes(rawCommand as DeployCommandName)) throw new Error(`Unknown deploy command "${rawCommand}" (setup, update, revert, curr, prev, exec, list)`);
+      const argument = rawCommand === 'exec' ? rest.join(' ') : rest[0];
+      await runDeploy(target, rawCommand as DeployCommandName, sshRunner(target), argument);
+      term.success(`${rawCommand} done on ${(Array.isArray(target.host) ? target.host : [target.host]).join(', ')}`);
+    } catch (err) {
+      term.error(`Deploy failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  }
+
   async execute(args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
     const json = options['json'] === true;
+    if (args[0] !== undefined && isEcosystemFile(args[0]) && existsSync(resolve(args[0]))) {
+      await this.remote(args);
+      return;
+    }
     try {
       const client = new CliClient();
       await client.connect();

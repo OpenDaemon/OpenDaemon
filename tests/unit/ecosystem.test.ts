@@ -110,9 +110,11 @@ describe('loadEcosystem', () => {
     expect((await loadEcosystem(yaml)).apps[0]?.config).toMatchObject({ name: 'y', maxRestarts: 3 });
   });
 
-  it('warns once when no app has the profile, and about a deploy section', async () => {
+  it('warns once when no app has the profile, and hands the deploy section on', async () => {
     const file = write('warn.json', JSON.stringify({ apps: [{ name: 'a', script: 'a.js', env_production: { X: '1' } }, { name: 'b', script: 'b.js' }], deploy: { production: {} } }));
-    expect((await loadEcosystem(file, { profile: 'production' })).warnings).toEqual([expect.stringContaining('"deploy" section is not supported')]);
+    const loaded = await loadEcosystem(file, { profile: 'production' });
+    expect(loaded.warnings).toEqual([]);
+    expect(loaded.deploy).toEqual({ production: {} });
     expect((await loadEcosystem(file, { profile: 'staging' })).warnings[0]).toBe('no app has an env_staging section: using env');
   });
 
