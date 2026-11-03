@@ -48,6 +48,8 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     project = join(root, 'project');
     mkdirSync(project);
     writeFileSync(join(project, 'api.cjs'), "console.log('api mode=' + process.env.APP_MODE + ' args=' + process.argv.slice(2).join(',')); setInterval(() => {}, 1000);");
+    // the dashboard on a free port: 7777 may be taken by anything else on the machine
+    writeFileSync(join(project, 'opendaemon.config.json'), JSON.stringify({ plugins: { webui: { port: 0 } } }));
     writeFileSync(join(project, 'plain.cjs'), 'setInterval(() => {}, 1000);');
     writeFileSync(join(project, 'job.sh'), 'echo "shell job says $GREETING"; sleep 30');
     writeFileSync(join(project, 'ecosystem.config.cjs'), `module.exports = {

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { IpcServer } from '../../packages/core/src/ipc/server.js';
 import { IpcClient } from '../../packages/core/src/ipc/client.js';
+import { Socket } from 'net';
 
 describe('IPC Server Edge Cases', () => {
   let server: IpcServer;
@@ -19,6 +20,37 @@ describe('IPC Server Edge Cases', () => {
     } catch {
       // Ignore
     }
+  });
+
+  describe('shutdown with a client that does not hang up', () => {
+    it('should cut the client off after a second instead of waiting for it forever', async () => {
+      await server.start();
+      // Keeps its half of the connection open when the server says goodbye, like a frozen process
+      const stubborn = new Socket({ allowHalfOpen: true });
+      await new Promise<void>((connected) => { stubborn.connect(socketPath, connected); });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(server.getConnectionCount()).toBe(1);
+
+      const started = Date.now();
+      await server.stop();
+      const took = Date.now() - started;
+      expect(took).toBeGreaterThanOrEqual(900);
+      expect(took).toBeLessThan(4000);
+      // the server dropped the connection: the client sees it end, even though it never said goodbye itself
+      await new Promise<void>((ended) => { if (stubborn.readableEnded || stubborn.destroyed) ended(); else stubborn.on('end', () => { ended(); }); });
+      stubborn.destroy();
+    });
+
+    it('should stop at once when every client has hung up', async () => {
+      await server.start();
+      const client = new IpcClient({ socketPath });
+      await client.connect();
+      await client.disconnect();
+      await new Promise((r) => setTimeout(r, 50));
+      const started = Date.now();
+      await server.stop();
+      expect(Date.now() - started).toBeLessThan(500);
+    });
   });
 
   describe('server lifecycle', () => {

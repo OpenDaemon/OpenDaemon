@@ -76,6 +76,11 @@ class IpcSocketImpl implements IpcSocket {
     this.socket.end();
   }
 
+  /** Drop the connection now, whether or not the peer has hung up */
+  destroy(): void {
+    this.socket.destroy();
+  }
+
   on(event: 'data', handler: (data: Buffer) => void): void;
   on(event: 'close', handler: () => void): void;
   on(event: 'error', handler: (err: Error) => void): void;
@@ -172,22 +177,29 @@ export class IpcServer {
    * Stop the IPC server
    */
   async stop(): Promise<void> {
-    // Close all client connections
-    for (const socket of this.sockets.values()) {
+    // Close all client connections. A client that does not hang up (a frozen process, a script
+    // blocked elsewhere) must not keep the daemon from shutting down: it is cut off after a second
+    const open = [...this.sockets.values()];
+    for (const socket of open) {
       socket.end();
     }
     this.sockets.clear();
+    const cutOff = setTimeout(() => {
+      for (const socket of open) socket.destroy();
+    }, 1000);
 
     // Close server
     const server = this.server;
     if (server) {
       return new Promise((resolve) => {
         server.close(() => {
+          clearTimeout(cutOff);
           this.logger.info('IPC server stopped');
           resolve();
         });
       });
     }
+    clearTimeout(cutOff);
   }
 
   /**
