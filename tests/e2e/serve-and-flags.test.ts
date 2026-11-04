@@ -119,7 +119,7 @@ describe.skipIf(!existsSync(CLI))('od serve and start flags end to end', () => {
 
     writeFileSync(join(project, 'quit.cjs'), 'process.exit(42);');
     od('start', 'quit.cjs', '--stop-exit-codes', '42,43', '--restart-delay', '50');
-    await waitFor(() => list().find((p) => p.name === 'quit')?.status === 'errored');
+    await waitFor(() => list().find((p) => p.name === 'quit')?.status === 'stopped');
     expect(list().find((p) => p.name === 'quit')?.restartCount).toBe(0);
     expect(od('start', 'quit.cjs', '--name', 'q2', '--stop-exit-codes', 'x').out).toContain('Invalid --stop-exit-codes');
   });

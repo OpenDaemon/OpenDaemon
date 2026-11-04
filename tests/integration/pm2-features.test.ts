@@ -156,10 +156,11 @@ describe('restart policy of a long-running app', () => {
 
   it('does not restart after an exit code in stopExitCodes, and does after others', async () => {
     await call('start', { name: 'done', script: script('done', 'process.exit(42);'), stopExitCodes: [42], restartDelay: 30, killTimeout: 300 }).catch(() => undefined);
-    await until(async () => (await info('done')).status === 'errored');
+    await until(async () => (await info('done')).status === 'stopped');
     expect((await info('done')).restartCount).toBe(0);
     await call('start', { name: 'other', script: script('other', 'process.exit(3);'), stopExitCodes: [42], maxRestarts: 1, restartDelay: 30, killTimeout: 300 }).catch(() => undefined);
     await until(async () => (await info('other')).restartCount === 1);
+    await until(async () => (await info('other')).status === 'errored');
   });
 
   it('gives each app NODE_APP_INSTANCE', async () => {

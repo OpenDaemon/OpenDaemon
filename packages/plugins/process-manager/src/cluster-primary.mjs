@@ -59,12 +59,18 @@ const replaced = new WeakSet();
 /** id -> candidate worker, started by od:prepare and not yet committed */
 const candidates = new Map();
 
-function shouldRestart(index, code) {
+/** Exit code that tells the daemon the workers used up their restarts (it must not start the primary again) */
+const GAVE_UP = 86;
+
+function wantsRestart(code) {
   const strategy = policy.autoRestart;
   if (strategy === false || strategy === 'never') return false;
   if (strategy === 'on-failure' && code === 0) return false;
-  if (code !== null && (policy.stopExitCodes ?? []).includes(code)) return false;
-  return (restarts.get(index) ?? 0) < (policy.maxRestarts ?? 10);
+  return !(code !== null && (policy.stopExitCodes ?? []).includes(code));
+}
+
+function shouldRestart(index, code) {
+  return wantsRestart(code) && (restarts.get(index) ?? 0) < (policy.maxRestarts ?? 10);
 }
 
 /** Forward a worker stream line by line (chunks can end mid-line) */
@@ -140,7 +146,7 @@ function adopt(index, worker, alreadyOnline) {
       setTimeout(() => { if (!stopping && index < instances) fork(index); }, policy.restartDelay ?? 1000);
     } else if (Object.keys(cluster.workers ?? {}).length === 0) {
       // Every worker is gone for good: exit so the daemon applies its own policy to the app
-      process.exit(code ?? 1);
+      process.exit(wantsRestart(code) ? GAVE_UP : (code ?? 1));
     }
   });
 }

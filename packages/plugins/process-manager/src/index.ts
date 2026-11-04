@@ -17,6 +17,9 @@ import { resolve, dirname } from 'path';
 import { availableParallelism, constants as osConstants } from 'os';
 import { fileURLToPath } from 'url';
 
+/** Exit code of the cluster primary when all its workers crashed more often than maxRestarts allows (see cluster-primary.mjs) */
+const CLUSTER_GAVE_UP = 86;
+
 /**
  * The `metrics` of an { type: 'od:metrics' } IPC message from the SDK runtime, if it is one
  */
@@ -1335,7 +1338,8 @@ export class ProcessManagerPlugin implements Plugin {
     }
 
     this.logger.info(`Process exited: ${proc.config.name}`, { code, signal });
-    if (code !== 0) {
+    const deliberate = code !== null && (proc.config.stopExitCodes ?? []).includes(code);
+    if (code !== 0 && !deliberate) {
       // An unexpected non-zero exit or signal, whether or not it will be restarted
       this.context.events.emit('process:crash', {
         name: proc.config.name, code, signal, restartCount: proc.restartCount, pid: proc.pid,
@@ -1396,7 +1400,7 @@ export class ProcessManagerPlugin implements Plugin {
         }
       }, delay);
     } else {
-      proc.status = code === 0 ? 'stopped' : 'errored';
+      proc.status = code === 0 || deliberate ? 'stopped' : 'errored';
       this.context.events.emit('process:exit', { name: proc.config.name, code, signal });
     }
   }
@@ -1445,6 +1449,12 @@ export class ProcessManagerPlugin implements Plugin {
     // Exit codes that mean "done, do not bring me back" (PM2's stop_exit_codes)
     if (code !== null && (proc.config.stopExitCodes ?? []).includes(code)) {
       this.logger.info(`${proc.config.name} exited with ${String(code)}, which is in stopExitCodes: not restarting`);
+      return false;
+    }
+
+    // The cluster primary spent every worker's restarts: starting it again would hand out new ones
+    if (proc.config.mode === 'cluster' && code === CLUSTER_GAVE_UP) {
+      this.logger.warn(`Every worker of ${proc.config.name} used up its restarts`);
       return false;
     }
 

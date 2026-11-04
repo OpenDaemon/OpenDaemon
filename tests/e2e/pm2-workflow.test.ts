@@ -38,7 +38,7 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     });
     return { status: result.status, out: strip(result.stdout) + strip(result.stderr) };
   };
-  const list = () => JSON.parse(od('list', '--json').out) as Array<{ name: string; status: string; pid: number; restarts: number; instances: number }>;
+  const list = () => JSON.parse(od('list', '--json').out) as Array<{ name: string; status: string; pid: number; restartCount: number; instances: number }>;
   const online = (...names: string[]) => () => names.every((n) => list().some((p) => p.name === n && p.status === 'online'));
   const logs = (name: string) => od('logs', name, '--lines', '50').out;
 
@@ -157,6 +157,26 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     expect(result.out).toContain('Working directory not found');
     expect(list().find((p) => p.name === 'cwdcheck')?.status).not.toBe('online');
     od('delete', 'cwdcheck');
+  });
+
+  it('an exit code in stop-exit-codes leaves the app stopped, in fork and cluster mode', async () => {
+    writeFileSync(join(project, 'seven.cjs'), 'setTimeout(() => process.exit(7), 300);');
+    od('start', 'seven.cjs', '--name', 'seven-f', '--stop-exit-codes', '7', '--restart-delay', '100');
+    od('start', 'seven.cjs', '--name', 'seven-c', '-i', '2', '--stop-exit-codes', '7', '--restart-delay', '100');
+    await waitFor(() => ['seven-f', 'seven-c'].every((n) => list().find((p) => p.name === n)?.status === 'stopped'));
+    expect(list().find((p) => p.name === 'seven-f')?.restartCount).toBe(0);
+    od('delete', 'seven-f', 'seven-c');
+  });
+
+  it('a cluster whose workers keep crashing is given up on after max-restarts per worker, not multiplied', async () => {
+    writeFileSync(join(project, 'crashing.cjs'), 'setTimeout(() => process.exit(1), 300);');
+    od('start', 'crashing.cjs', '-i', '2', '--restart-delay', '100', '--max-restarts', '3');
+    await waitFor(() => list().find((p) => p.name === 'crashing')?.status === 'errored', 30000);
+    await new Promise((r) => setTimeout(r, 1500));
+    const entry = list().find((p) => p.name === 'crashing');
+    expect(entry?.status).toBe('errored');
+    expect(entry?.restartCount).toBeLessThanOrEqual(6);
+    od('delete', 'crashing');
   });
 
   it('update restarts the daemon and brings the saved apps back', async () => {
