@@ -43,7 +43,7 @@ ${term.bold('COMMANDS')}
     stop <name>      Stop a process
     restart <name>   Restart a process
     delete <name>    Remove a process
-    scale <name> <n> Change cluster workers (number or max)
+    scale <name> <n> Change cluster workers (n, max, +n, -n)
     deploy <name>    Zero-downtime deploy (--strategy rolling|blue-green|canary|recreate)
     deploy <file> <env> [setup|update|revert|curr|prev|exec|list]  Deploy from git over ssh (PM2 style)
     startOrRestart <file>  Start apps, or restart the running ones with the file's settings (startOrReload: rolling)

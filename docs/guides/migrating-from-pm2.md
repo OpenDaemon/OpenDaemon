@@ -22,7 +22,7 @@ The daemon starts by itself on the first command, like PM2's.
 | `pm2 describe api` | `od describe api` (or `od info api`) |
 | `pm2 stop\|restart\|delete api web` / `all` | the same, with `od` |
 | `pm2 reload api` | `od reload api` (rolling for cluster apps, a restart otherwise, as in PM2) |
-| `pm2 scale api 8` | `od scale api 8` |
+| `pm2 scale api 8` / `pm2 scale api +2` | `od scale api 8` / `od scale api +2` |
 | `pm2 logs api --lines 100` | `od logs api --lines 100 -f` (without `-f` it prints and exits) |
 | `pm2 flush` | `od flush` |
 | `pm2 reset api` | `od reset api` |
