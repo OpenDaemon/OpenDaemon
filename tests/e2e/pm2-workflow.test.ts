@@ -38,7 +38,7 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     });
     return { status: result.status, out: strip(result.stdout) + strip(result.stderr) };
   };
-  const list = () => JSON.parse(od('list', '--json').out) as Array<{ name: string; status: string; pid: number; restarts: number }>;
+  const list = () => JSON.parse(od('list', '--json').out) as Array<{ name: string; status: string; pid: number; restarts: number; instances: number }>;
   const online = (...names: string[]) => () => names.every((n) => list().some((p) => p.name === n && p.status === 'online'));
   const logs = (name: string) => od('logs', name, '--lines', '50').out;
 
@@ -132,6 +132,31 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     await waitFor(() => list().find((p) => p.name === 'again-a')?.pid !== before);
     expect(od('start', 'again.cjs', '--name', 'again-a').status).toBe(1);
     expect(od('delete', 'again-a', 'again-b').status).toBe(0);
+  });
+
+  it('scale takes +n and -n relative to the current number of workers', async () => {
+    writeFileSync(join(project, 'scaled.cjs'), 'setInterval(() => {}, 1000);');
+    od('start', 'scaled.cjs', '-i', '2');
+    await waitFor(online('scaled'));
+    const instances = () => list().find((p) => p.name === 'scaled')?.instances;
+    expect(od('scale', 'scaled', '+2').status).toBe(0);
+    expect(instances()).toBe(4);
+    expect(od('scale', 'scaled', '-1').status).toBe(0);
+    expect(instances()).toBe(3);
+    expect(od('scale', 'scaled', '-3').status).toBe(1);
+    expect(instances()).toBe(3);
+    expect(od('scale', 'scaled', '2').status).toBe(0);
+    expect(instances()).toBe(2);
+    od('delete', 'scaled');
+  });
+
+  it('refuses to start an app whose working directory is missing', () => {
+    writeFileSync(join(project, 'cwdcheck.cjs'), 'setInterval(() => {}, 1000);');
+    const result = od('start', 'cwdcheck.cjs', '--cwd', join(project, 'no-such-dir'));
+    expect(result.status).toBe(1);
+    expect(result.out).toContain('Working directory not found');
+    expect(list().find((p) => p.name === 'cwdcheck')?.status).not.toBe('online');
+    od('delete', 'cwdcheck');
   });
 
   it('update restarts the daemon and brings the saved apps back', async () => {

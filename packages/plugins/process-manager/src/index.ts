@@ -12,7 +12,7 @@ import type {
   MetricSnapshot,
 } from '../../../core/src/index.js';
 import { spawn, execFile, type ChildProcess } from 'child_process';
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { availableParallelism, constants as osConstants } from 'os';
 import { fileURLToPath } from 'url';
@@ -1057,12 +1057,20 @@ export class ProcessManagerPlugin implements Plugin {
   /**
    * Start process in fork mode
    */
+  /** A working directory that is missing makes spawn fail after the fact: refuse the start with a clear message */
+  private requireDirectory(name: string, cwd: string): void {
+    let isDirectory = false;
+    try { isDirectory = statSync(cwd).isDirectory(); } catch { /* missing */ }
+    if (!isDirectory) throw new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, name, `Working directory not found: ${cwd}`);
+  }
+
   private async startFork(proc: ManagedProcessInfo): Promise<void> {
     const config = proc.config;
     const launch = resolveLaunch(config);
     if ('error' in launch) throw new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, config.name, launch.error);
     // A command without a file has no directory of its own: it runs where the daemon was asked to
     const cwd = config.cwd ? resolve(config.cwd) : existsSync(resolve(config.script)) ? dirname(resolve(config.script)) : process.cwd();
+    this.requireDirectory(config.name, cwd);
 
     const env = this.buildEnv(config);
 
@@ -1126,6 +1134,7 @@ export class ProcessManagerPlugin implements Plugin {
     const config = proc.config;
     const scriptPath = resolve(config.script);
     const cwd = config.cwd ? resolve(config.cwd) : dirname(scriptPath);
+    this.requireDirectory(config.name, cwd);
     const instances = this.resolveInstances(config);
 
     const env = {

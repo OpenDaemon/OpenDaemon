@@ -834,9 +834,11 @@ export class ScaleCommand implements Command {
 
   async execute(args: string[], _options: Record<string, OptionValue | undefined>): Promise<void> {
     const [name, count] = args;
-    const instances = count === 'max' ? 'max' : Number(count);
-    if (name === undefined || count === undefined || (instances !== 'max' && (!Number.isInteger(instances) || instances < 1))) {
-      term.error('Usage: od scale <name> <instances|max>');
+    // `+2` / `-1` change the current number of workers (pm2 scale), a plain number sets it
+    const relative = count !== undefined && /^[+-]\d+$/.test(count);
+    let instances: number | 'max' = count === 'max' ? 'max' : Number(count);
+    if (name === undefined || count === undefined || (instances !== 'max' && !Number.isInteger(instances)) || (!relative && instances !== 'max' && instances < 1)) {
+      term.error('Usage: od scale <name> <instances|max|+n|-n>');
       process.exit(1);
       return;
     }
@@ -844,6 +846,12 @@ export class ScaleCommand implements Command {
     try {
       const client = new CliClient();
       await client.connect();
+      if (relative) {
+        const current = await client.getProcessInfo(name) as { instances: number } | null;
+        if (current === null) throw new Error(`Process "${name}" not found`);
+        instances = current.instances + Number(instances);
+        if (instances < 1) throw new Error(`Cannot scale ${name} below 1 instance (it has ${String(current.instances)})`);
+      }
       const info = await client.scaleProcess(name, instances) as { instances: number };
       await client.disconnect();
       term.success(`Scaled ${name} to ${String(info.instances)} instance(s)`);

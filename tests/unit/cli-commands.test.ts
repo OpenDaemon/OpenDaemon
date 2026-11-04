@@ -591,7 +591,7 @@ describe('CLI Commands', () => {
 
     it.each([[[]], [['web']], [['web', '0']], [['web', '2.5']], [['web', 'lots']]])('should print usage for %j', async (args) => {
       await cmd.execute(args, {});
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: od scale <name> <instances|max>'));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: od scale <name> <instances|max|+n|-n>'));
       expect(exitSpy).toHaveBeenCalledWith(1);
       expect(mockScale).not.toHaveBeenCalled();
     });
