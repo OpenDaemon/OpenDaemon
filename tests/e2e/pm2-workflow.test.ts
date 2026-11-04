@@ -117,6 +117,23 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     await waitFor(() => !list().some((p) => p.name.startsWith('ns-')));
   });
 
+  it('starting an ecosystem file again restarts the apps that exist and adds the new ones', async () => {
+    writeFileSync(join(project, 'again.cjs'), 'setInterval(() => {}, 1000);');
+    const eco = (names: string[]) => { writeFileSync(join(project, 'again.config.js'),
+      `module.exports = { apps: [${names.map((n) => `{ name: '${n}', script: 'again.cjs' }`).join(',')}] };`); };
+    eco(['again-a']);
+    expect(od('start', 'again.config.js').status).toBe(0);
+    await waitFor(online('again-a'));
+    const before = list().find((p) => p.name === 'again-a')?.pid;
+    eco(['again-a', 'again-b']);
+    const second = od('start', 'again.config.js');
+    expect(second.status).toBe(0);
+    await waitFor(online('again-a', 'again-b'));
+    await waitFor(() => list().find((p) => p.name === 'again-a')?.pid !== before);
+    expect(od('start', 'again.cjs', '--name', 'again-a').status).toBe(1);
+    expect(od('delete', 'again-a', 'again-b').status).toBe(0);
+  });
+
   it('update restarts the daemon and brings the saved apps back', async () => {
     const result = od('update');
     expect(result.status).toBe(0);

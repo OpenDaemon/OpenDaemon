@@ -327,10 +327,15 @@ export class UpdateCommand implements Command {
   async execute(_args: string[], options: Record<string, OptionValue | undefined>): Promise<void> {
     const { DaemonCommand } = await import('./index.js');
     let saved = 0;
-    await withDaemon('Failed to save before the update', async (client) => {
-      saved = ((await client.call('save')) as { saved: string[] }).saved.length;
-    });
-    await new DaemonCommand().execute(['stop']);
+    const probe = new CliClient();
+    const running = await probe.connect().then(() => true, () => false);
+    await probe.disconnect().catch(() => undefined);
+    if (running) {
+      await withDaemon('Failed to save before the update', async (client) => {
+        saved = ((await client.call('save')) as { saved: string[] }).saved.length;
+      });
+      await new DaemonCommand().execute(['stop']);
+    }
     await withDaemon('Failed to resurrect after the update', async (client) => {
       const result = await client.call('resurrect') as { started: string[]; skipped: string[]; failed: string[] };
       if (options['json'] === true) { console.log(JSON.stringify({ saved, ...result })); return; }

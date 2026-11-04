@@ -265,6 +265,11 @@ export class StartCommand implements Command {
               continue;
             }
             await client.call('replace', config);
+          } else if (isEcosystemFile(target) && await client.getProcessInfo(config.name)) {
+            // pm2 start ecosystem.config.js can be run again: the apps that exist are restarted
+            await client.restartProcess(config.name);
+            spinner.stop(true, `Restarted ${config.name} (already defined)`);
+            continue;
           } else {
             await client.startProcess(config);
           }
