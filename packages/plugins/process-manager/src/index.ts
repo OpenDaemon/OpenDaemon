@@ -599,7 +599,10 @@ export class ProcessManagerPlugin implements Plugin {
       // setTimeout cannot wait longer than ~24.8 days: longer waits are re-armed in chunks
       proc.cronRestartTimer = setTimeout(() => {
         if (Date.now() < target.getTime()) { wait(); return; }
-        if (this.processes.get(proc.config.name) !== proc || proc.status !== 'online') {
+        if (this.processes.get(proc.config.name) !== proc) return; // deleted or replaced
+        // A job that finished (exit 0, autorestart off) is started again: that is what cron_restart is for.
+        // An explicit stop cleared this timer, so what is left here ended on its own.
+        if (proc.status !== 'online' && proc.status !== 'stopped' && proc.status !== 'errored') {
           this.armCronRestart(proc);
           return;
         }
@@ -1254,6 +1257,9 @@ export class ProcessManagerPlugin implements Plugin {
     signal: string,
     timeout: number
   ): Promise<void> {
+    // An explicit stop also ends the schedule, even for an app that had already ended by itself
+    clearTimeout(proc.cronRestartTimer);
+    proc.cronRestartTimer = undefined;
     if (proc.status === 'stopped' || proc.status === 'stopping') {
       return;
     }

@@ -58,6 +58,26 @@ describe('PM2 features of the process manager', () => {
       expect((await info('cs')).status).toBe('stopped');
     });
 
+    it('starts a job that finished on its own again (cronRestart with autoRestart off)', async () => {
+      await call('start', app('job', "console.log('ran');", { cronRestart: '* * * * * *', autoRestart: false }));
+      await waitFor(async () => (await info('job')).status === 'stopped');
+      const first = (await info('job')).startedAt;
+      await waitFor(async () => { const i = await info('job'); return i.startedAt !== undefined && i.startedAt !== first; }, 5000);
+    });
+
+    it('starts a job that failed again, but not one that was stopped by hand after it finished', async () => {
+      await call('start', app('failing', 'process.exit(1);', { cronRestart: '* * * * * *', autoRestart: false }));
+      await call('start', app('manual', "console.log('x');", { cronRestart: '* * * * * *', autoRestart: false }));
+      await waitFor(async () => (await info('manual')).status === 'stopped');
+      await call('stop', { name: 'manual' });
+      const startedAt = (await info('manual')).startedAt;
+      const failedAt = (await info('failing')).startedAt;
+      await waitFor(async () => (await info('failing')).startedAt !== failedAt, 5000);
+      await new Promise((r) => setTimeout(r, 1500));
+      expect((await info('manual')).startedAt).toBe(startedAt);
+      expect((await info('manual')).status).toBe('stopped');
+    });
+
     it('rejects an invalid expression', async () => {
       await expect(call('start', app('bad', '', { cronRestart: 'not a cron' }))).rejects.toThrow(/Invalid cronRestart for "bad"/);
     });
