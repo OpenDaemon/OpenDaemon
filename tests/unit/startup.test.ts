@@ -29,7 +29,7 @@ describe('planStartup', () => {
     expect(plan.content).toContain('WantedBy=default.target');
     expect(plan.content).toContain('TimeoutStopSec=90');
     expect(plan.content).not.toContain('User=');
-    expect(plan.enable).toEqual(['systemctl --user daemon-reload', 'systemctl --user enable --now opendaemon']);
+    expect(plan.enable).toEqual(['systemctl --user daemon-reload', 'systemctl --user enable --now opendaemon', 'loginctl enable-linger "$USER"']);
     expect(plan.disable[0]).toBe('systemctl --user disable --now opendaemon');
   });
 

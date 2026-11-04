@@ -76,7 +76,8 @@ export function planStartup(options: StartupOptions): StartupPlan {
       init,
       file: system ? `/etc/systemd/system/${SERVICE}.service` : resolve(userHome, '.config/systemd/user', `${SERVICE}.service`),
       content,
-      enable: [`systemctl${scope} daemon-reload`, `systemctl${scope} enable --now ${SERVICE}`],
+      // a user unit only runs at boot when the user is allowed to linger without a login session
+      enable: [`systemctl${scope} daemon-reload`, `systemctl${scope} enable --now ${SERVICE}`, ...(system ? [] : ['loginctl enable-linger "$USER"'])],
       disable: [`systemctl${scope} disable --now ${SERVICE}`, `systemctl${scope} daemon-reload`],
     };
   }
