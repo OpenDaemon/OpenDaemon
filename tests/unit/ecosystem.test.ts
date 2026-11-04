@@ -17,6 +17,15 @@ describe('normalizeApp (PM2 keys)', () => {
   const base = resolve('/srv/app');
   const norm = (raw: Record<string, unknown>, profile?: string) => normalizeApp({ name: 'api', script: 'server.js', ...raw }, base, profile);
 
+  it('warns that fork mode runs one process when instances asks for more', () => {
+    const forked = norm({ exec_mode: 'fork', instances: 3 });
+    expect(forked.config.mode).toBe('fork');
+    expect(forked.warnings.join('\n')).toMatch(/instances.*fork.*cluster/i);
+    expect(norm({ exec_mode: 'fork', instances: 1 }).warnings).toEqual([]);
+    expect(norm({ exec_mode: 'fork' }).warnings).toEqual([]);
+    expect(norm({ exec_mode: 'cluster', instances: 3 }).warnings).toEqual([]);
+  });
+
   it('maps the common PM2 settings', () => {
     const { config, warnings } = norm({
       exec_mode: 'cluster', instances: 4, autorestart: false, max_restarts: 5, restart_delay: '2s', min_uptime: '10s',

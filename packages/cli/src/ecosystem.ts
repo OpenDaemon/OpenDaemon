@@ -83,6 +83,9 @@ export function normalizeApp(raw: Record<string, unknown>, baseDir: string, prof
   else if (execMode === 'fork' || execMode === 'fork_mode') out['mode'] = 'fork';
   if (out['mode'] === undefined && typeof out['instances'] === 'number' && out['instances'] > 1) out['mode'] = 'cluster';
   if (out['mode'] === undefined && out['instances'] === 'max') out['mode'] = 'cluster';
+  if (out['mode'] === 'fork' && (out['instances'] === 'max' || (typeof out['instances'] === 'number' && out['instances'] > 1))) {
+    warnings.push(`instances ${String(out['instances'])} is ignored in fork mode (one process runs); use exec_mode "cluster" for several`);
+  }
 
   if (raw['autorestart'] === false) out['autoRestart'] = false;
   else if (raw['autorestart'] === true) out['autoRestart'] = true;
