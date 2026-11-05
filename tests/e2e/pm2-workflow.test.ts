@@ -43,7 +43,7 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
   const logs = (name: string) => od('logs', name, '--lines', '50').out;
 
   beforeAll(() => {
-    root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'od-pm2-'));
+    root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : (process.env['OD_E2E_TMP'] ?? '/tmp'), 'od-pm2-'));
     home = join(root, 'home');
     project = join(root, 'project');
     mkdirSync(project);

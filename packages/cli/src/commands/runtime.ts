@@ -8,6 +8,15 @@ import { existsSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
+/**
+ * Where the private daemon's home goes: the temp directory ($TMPDIR is honoured), unless that path is
+ * so long that the Unix socket inside it would not fit (sun_path is about 108 bytes): then /tmp
+ */
+function privateHomeRoot(): string {
+  const dir = tmpdir();
+  return process.platform === 'win32' || dir.length <= 60 ? dir : '/tmp';
+}
+
 interface Listed { name: string; status: string }
 interface LogLine { processName: string; instanceId?: number; source: string; message: string }
 
@@ -35,7 +44,7 @@ export class RuntimeCommand implements Command {
 
     // The daemon keeps its files in a private directory (OPENDAEMON_HOME, if set, is respected)
     const ownHome = process.env['OPENDAEMON_HOME'] === undefined || process.env['OPENDAEMON_HOME'] === '';
-    const home = ownHome ? mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'od-rt-')) : (process.env['OPENDAEMON_HOME'] as string);
+    const home = ownHome ? mkdtempSync(join(privateHomeRoot(), 'od-rt-')) : (process.env['OPENDAEMON_HOME'] as string);
     process.env['OPENDAEMON_HOME'] = home;
 
     const daemonScript = getDaemonScriptPath();

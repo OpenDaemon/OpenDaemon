@@ -22,7 +22,7 @@ interface Result {
 
 /** Short temp root: Unix socket paths are limited to ~108 bytes */
 function tempRoot(): string {
-  return mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'od-e2e-'));
+  return mkdtempSync(join(process.platform === 'win32' ? tmpdir() : (process.env['OD_E2E_TMP'] ?? '/tmp'), 'od-e2e-'));
 }
 
 function strip(text: string): string {

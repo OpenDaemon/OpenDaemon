@@ -41,7 +41,7 @@ describe.skipIf(!existsSync(CLI) || process.platform === 'win32')('od deploy and
   const logs = (name: string) => od('logs', name, '--raw', '--lines', '50').out;
 
   beforeAll(() => {
-    root = mkdtempSync(join('/tmp', 'od-dep-e2e-'));
+    root = mkdtempSync(join(process.env['OD_E2E_TMP'] ?? '/tmp', 'od-dep-e2e-'));
     home = join(root, 'home');
     project = join(root, 'project');
     app = join(root, 'server');

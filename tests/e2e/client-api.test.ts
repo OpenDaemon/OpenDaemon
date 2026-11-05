@@ -32,7 +32,7 @@ describe.skipIf(!existsSync(CLI) || !existsSync(CLIENT_ESM))('programmatic clien
   const saved = process.env['OPENDAEMON_HOME'];
 
   beforeAll(async () => {
-    root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'od-client-'));
+    root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : (process.env['OD_E2E_TMP'] ?? '/tmp'), 'od-client-'));
     home = join(root, 'home');
     project = join(root, 'project');
     mkdirSync(project);

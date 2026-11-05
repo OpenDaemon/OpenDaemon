@@ -34,7 +34,7 @@ describe.skipIf(!existsSync(CLI) || process.platform === 'win32')('daemon crash 
   const list = () => JSON.parse(od('list', '--json').out) as Array<{ name: string; status: string; pid: number }>;
 
   beforeAll(() => {
-    root = mkdtempSync(join('/tmp', 'od-crash-'));
+    root = mkdtempSync(join(process.env['OD_E2E_TMP'] ?? '/tmp', 'od-crash-'));
     home = join(root, 'home');
     project = join(root, 'project');
     mkdirSync(project);

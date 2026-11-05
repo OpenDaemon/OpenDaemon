@@ -48,7 +48,7 @@ describe.skipIf(!existsSync(CLI))('od serve and start flags end to end', () => {
   const list = () => JSON.parse(od('list', '--json').out) as Array<{ name: string; status: string; restartCount: number }>;
 
   beforeAll(() => {
-    root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'od-serve-'));
+    root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : (process.env['OD_E2E_TMP'] ?? '/tmp'), 'od-serve-'));
     home = join(root, 'home');
     project = join(root, 'project');
     mkdirSync(join(project, 'site', 'docs'), { recursive: true });

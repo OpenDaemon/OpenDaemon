@@ -20,7 +20,7 @@ describe.skipIf(!existsSync(CLI))('od runtime end to end', () => {
   };
 
   beforeAll(() => {
-    root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'od-rt-e2e-'));
+    root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : (process.env['OD_E2E_TMP'] ?? '/tmp'), 'od-rt-e2e-'));
     project = join(root, 'project');
     mkdirSync(project);
     writeFileSync(join(project, 'svc.cjs'), "console.log('svc up'); process.on('SIGTERM', () => { console.log('svc got SIGTERM'); process.exit(0); }); setInterval(() => {}, 1000);");
