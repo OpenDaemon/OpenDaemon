@@ -188,7 +188,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (parsed.options['version']) {
+  // `od -v` alone is PM2's way to ask for the version; with a command it stays "verbose"
+  if (parsed.options['version'] || (parsed.options['verbose'] === true && parsed.command === '')) {
     showVersion();
     return;
   }

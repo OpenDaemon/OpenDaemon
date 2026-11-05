@@ -179,6 +179,12 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     od('delete', 'crashing');
   });
 
+  it('-v alone prints the version, like pm2 -v', () => {
+    const version = od('--version').out.trim();
+    expect(version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(od('-v').out.trim()).toBe(version);
+  });
+
   it('update restarts the daemon and brings the saved apps back', async () => {
     const result = od('update');
     expect(result.status).toBe(0);
