@@ -80,6 +80,9 @@ describe('DeployStrategyPlugin', () => {
       killTimeout: 500, restartDelay: 100, deploy: { readyTimeout: 8000, ...settings }, ...extra,
     });
     await until(async () => (await sample(6)).has('v1'));
+    // a slow runner may still be starting the other workers; a deploy plans from the ones online
+    const wanted = typeof extra.instances === 'number' ? extra.instances : 3;
+    await until(() => pm.getWorkerIndices('web').length >= wanted, 30000);
   };
 
   const until = async (check: () => Promise<boolean> | boolean, ms = 10000): Promise<void> => {
