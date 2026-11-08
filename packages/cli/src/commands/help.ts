@@ -49,7 +49,7 @@ ${term.bold('COMMANDS')}
     startOrRestart <file>  Start apps, or restart the running ones with the file's settings (startOrReload: rolling)
     deploy status    Show deploys
     rollback <name>  Back to the release before the last deploy
-    reload <name>    Reload without downtime (cluster mode), or restart; also: all
+    reload <name>    Reload without downtime (cluster mode), or restart; also: all (gracefulReload)
     reset [name]     Reset the restart counter
     signal <n> <sig> Send a signal to a process (od signal api SIGUSR2)
     ecosystem        Write a sample ecosystem.config.cjs

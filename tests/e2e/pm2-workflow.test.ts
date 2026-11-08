@@ -179,6 +179,15 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     od('delete', 'crashing');
   });
 
+  it('gracefulReload is reload under its old PM2 name', () => {
+    const started = od('start', 'plain.cjs', '--name', 'gr');
+    expect(started.status).toBe(0);
+    const done = od('gracefulReload', 'gr');
+    expect(done.status).toBe(0);
+    expect(done.out).not.toMatch(/Unknown command/);
+    expect(od('delete', 'gr').status).toBe(0);
+  });
+
   it('-v alone prints the version, like pm2 -v', () => {
     const version = od('--version').out.trim();
     expect(version).toMatch(/^\d+\.\d+\.\d+/);

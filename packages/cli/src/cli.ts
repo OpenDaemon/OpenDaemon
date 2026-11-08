@@ -234,9 +234,9 @@ async function allProcesses(): Promise<Array<{ id: number; name: string }>> {
  * Execute a command
  */
 /** Commands that take process names, and so also accept several of them and PM2's `all` */
-const PER_PROCESS = new Set(['stop', 'restart', 'delete', 'reload', 'flush']);
+const PER_PROCESS = new Set(['stop', 'restart', 'delete', 'reload', 'gracefulReload', 'flush']);
 /** Commands whose positional arguments are process names (all of them), or just the first one */
-const NAMES_ALL = new Set(['stop', 'restart', 'delete', 'reload', 'reset', 'signal', 'sendSignal']);
+const NAMES_ALL = new Set(['stop', 'restart', 'delete', 'reload', 'gracefulReload', 'reset', 'signal', 'sendSignal']);
 const NAMES_FIRST = new Set(['info', 'describe', 'logs', 'flush', 'scale', 'health', 'deploy', 'rollback', 'pid', 'env']);
 
 /**
@@ -439,6 +439,7 @@ async function executeCommand(original: ParsedCommand): Promise<void> {
       break;
 
     case 'reload':
+    case 'gracefulReload':
       await new ReloadCommand().execute(subcommand ? [subcommand, ...parsed.args] : parsed.args, parsed.options);
       break;
 
