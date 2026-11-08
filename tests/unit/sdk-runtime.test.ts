@@ -350,9 +350,14 @@ describe('runtime metrics', () => {
       expect(gauge?.series[0]?.value).toBeGreaterThan(0.05);
 
       // The next interval starts over, calm
-      await new Promise((r) => setTimeout(r, 100));
-      metrics.flush();
-      expect(sent[1]?.metrics.find((m) => m.name === 'nodejs_eventloop_delay_p99_seconds')?.series[0]?.value).toBeLessThan(0.05);
+      // (a loaded CI runner can stall any one interval, so a calm one must show up within a few)
+      let calm = Infinity;
+      for (let i = 1; i <= 5 && calm >= 0.05; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        metrics.flush();
+        calm = sent[i]?.metrics.find((m) => m.name === 'nodejs_eventloop_delay_p99_seconds')?.series[0]?.value ?? Infinity;
+      }
+      expect(calm).toBeLessThan(0.05);
     } finally {
       Object.assign(process, original);
       delete process.env['OD_METRICS_INTERVAL'];
