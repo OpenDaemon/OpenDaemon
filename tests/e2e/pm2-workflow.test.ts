@@ -179,6 +179,18 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     od('delete', 'crashing');
   });
 
+  it('takes the log files from -o and -e, like pm2', async () => {
+    const outFile = join(project, 'short-out.log');
+    const errFile = join(project, 'short-err.log');
+    writeFileSync(join(project, 'shorts.cjs'), "console.log('to-out'); console.error('to-err'); setInterval(() => {}, 1000);");
+    expect(od('start', 'shorts.cjs', '--name', 'shorts', '-o', outFile, '-e', errFile).status).toBe(0);
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline && !(existsSync(outFile) && existsSync(errFile))) await new Promise((r) => setTimeout(r, 100));
+    expect(readFileSync(outFile, 'utf-8')).toContain('to-out');
+    expect(readFileSync(errFile, 'utf-8')).toContain('to-err');
+    expect(od('delete', 'shorts').status).toBe(0);
+  });
+
   it('gracefulReload is reload under its old PM2 name', () => {
     const started = od('start', 'plain.cjs', '--name', 'gr');
     expect(started.status).toBe(0);
