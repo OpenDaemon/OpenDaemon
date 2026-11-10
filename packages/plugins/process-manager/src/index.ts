@@ -1086,7 +1086,7 @@ export class ProcessManagerPlugin implements Plugin {
     const cwd = config.cwd ? resolve(config.cwd) : existsSync(resolve(config.script)) ? dirname(resolve(config.script)) : process.cwd();
     this.requireDirectory(config.name, cwd);
 
-    const env = this.buildEnv(config);
+    const env = { ...this.buildEnv(config), pm_id: String(proc.id) };
     const identity = this.identityOf(config);
 
     const child = spawn(launch.command, launch.args, {
@@ -1155,6 +1155,7 @@ export class ProcessManagerPlugin implements Plugin {
 
     const env = {
       ...this.buildEnv(config),
+      pm_id: String(proc.id),
       OD_CLUSTER_SCRIPT: scriptPath,
       OD_CLUSTER_INSTANCES: String(instances),
       OD_CLUSTER_ARGS: JSON.stringify(config.args ?? []),

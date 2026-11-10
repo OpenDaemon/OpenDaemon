@@ -38,7 +38,7 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     });
     return { status: result.status, out: strip(result.stdout) + strip(result.stderr) };
   };
-  const list = () => JSON.parse(od('list', '--json').out) as Array<{ name: string; status: string; pid: number; restartCount: number; instances: number }>;
+  const list = () => JSON.parse(od('list', '--json').out) as Array<{ id: number; name: string; status: string; pid: number; restartCount: number; instances: number }>;
   const online = (...names: string[]) => () => names.every((n) => list().some((p) => p.name === n && p.status === 'online'));
   const logs = (name: string) => od('logs', name, '--lines', '50').out;
 
@@ -216,6 +216,23 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     const own = od('start', 'plain.cjs', '--name', 'asme', '--uid', String(process.getuid!()));
     expect(own.status).toBe(0);
     expect(od('delete', 'asme').status).toBe(0);
+  });
+
+  it('gives each app its process id as pm_id, in fork and cluster mode, like pm2', async () => {
+    writeFileSync(join(project, 'pmid.cjs'), "console.log('PMID=' + process.env.pm_id); setInterval(() => {}, 1000);");
+    expect(od('start', 'pmid.cjs', '--name', 'pmid-fork').status).toBe(0);
+    expect(od('start', 'pmid.cjs', '--name', 'pmid-cluster', '-i', '2').status).toBe(0);
+    const idOf = (name: string) => list().find((p) => p.name === name)!.id;
+    for (const name of ['pmid-fork', 'pmid-cluster']) {
+      let out = '';
+      for (let i = 0; i < 80 && !out.includes('PMID='); i++) {
+        out = od('logs', name, '--lines', '5').out;
+        if (!out.includes('PMID=')) await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(out).toContain(`PMID=${String(idOf(name))}`);
+    }
+    expect(od('delete', 'pmid-fork').status).toBe(0);
+    expect(od('delete', 'pmid-cluster').status).toBe(0);
   });
 
   it('gracefulReload is reload under its old PM2 name', () => {
