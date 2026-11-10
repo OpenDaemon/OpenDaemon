@@ -235,6 +235,16 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     expect(od('delete', 'pmid-cluster').status).toBe(0);
   });
 
+  it.skipIf(process.platform !== 'linux')('runs an app at the nice value of its config', () => {
+    writeFileSync(join(project, 'nice.config.cjs'), "module.exports = { apps: [{ name: 'niced', script: 'plain.cjs', nice: 7 }] };");
+    expect(od('start', 'nice.config.cjs').status).toBe(0);
+    const pid = list().find((p) => p.name === 'niced')!.pid;
+    // field 19 of /proc/<pid>/stat is the nice value (the name in field 2 has no spaces here)
+    const fields = readFileSync(`/proc/${String(pid)}/stat`, 'utf-8').split(') ')[1]!.split(' ');
+    expect(Number(fields[16])).toBe(7);
+    expect(od('delete', 'niced').status).toBe(0);
+  });
+
   it('gracefulReload is reload under its old PM2 name', () => {
     const started = od('start', 'plain.cjs', '--name', 'gr');
     expect(started.status).toBe(0);

@@ -15,7 +15,7 @@ import type {
 import { spawn, execFile, type ChildProcess } from 'child_process';
 import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
-import { availableParallelism, constants as osConstants } from 'os';
+import { availableParallelism, constants as osConstants, setPriority } from 'os';
 import { fileURLToPath } from 'url';
 
 /** Exit code of the cluster primary when all its workers crashed more often than maxRestarts allows (see cluster-primary.mjs) */
@@ -1071,6 +1071,14 @@ export class ProcessManagerPlugin implements Plugin {
     if (!isDirectory) throw new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, name, `Working directory not found: ${cwd}`);
   }
 
+  /** `nice`: the scheduling priority of the app (a cluster's workers inherit the primary's) */
+  private applyNice(config: ProcessConfig, pid: number | undefined): void {
+    if (config.nice === undefined || pid === undefined) return;
+    try { setPriority(pid, config.nice); } catch (err) {
+      this.logger.warn(`${config.name}: could not set nice ${String(config.nice)}: ${(err as Error).message}`);
+    }
+  }
+
   /** The user / group to run an app as (spawn options), or a refusal with the reason */
   private identityOf(config: ProcessConfig): { uid?: number; gid?: number } {
     const id = resolveIdentity(config.uid, config.gid);
@@ -1102,6 +1110,7 @@ export class ProcessManagerPlugin implements Plugin {
 
     proc.childProcess = child;
     proc.pid = child.pid;
+    this.applyNice(config, child.pid);
     if (child.pid) {
       proc.pids = [child.pid];
       this.registry?.add(child.pid, config.name);
@@ -1181,6 +1190,7 @@ export class ProcessManagerPlugin implements Plugin {
 
     proc.childProcess = child;
     proc.pid = child.pid;
+    this.applyNice(config, child.pid);
     proc.pids = child.pid ? [child.pid] : [];
     if (child.pid) this.registry?.add(child.pid, config.name);
     proc.workerPids = new Map();

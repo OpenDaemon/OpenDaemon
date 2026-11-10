@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `nice` in a config or ecosystem file now sets the scheduling priority of the app (it was accepted and ignored)
 - Every app gets `pm_id` (its process id) in its environment, as under PM2
 - `uid` / `gid` (config, ecosystem files, `--uid` / `--gid`) now run the app as that user or group when the daemon is root (they were accepted and ignored); otherwise the start is refused with the reason
 - `od restart` and `od reload` take `--update-env` (the app gets the environment of the current shell); `od start` takes `-o`, `-e` and `-l` as the short forms of `--output`, `--error` and `--log`; `gracefulReload` is accepted as `reload`.
