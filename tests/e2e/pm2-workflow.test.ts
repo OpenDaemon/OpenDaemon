@@ -191,6 +191,23 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     expect(od('delete', 'shorts').status).toBe(0);
   });
 
+  it('restart --update-env gives the app the environment of the shell, and without it keeps the old one', async () => {
+    const logOf = async (want: string): Promise<boolean> => {
+      for (let i = 0; i < 80; i++) {
+        if (od('logs', 'envapp', '--lines', '5').out.includes(want)) return true;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      return false;
+    };
+    writeFileSync(join(project, 'envapp.cjs'), "console.log('UPD=' + process.env.OD_E2E_UPD); setInterval(() => {}, 1000);");
+    expect(od('start', 'envapp.cjs', '--name', 'envapp').status).toBe(0);
+    expect(await logOf('UPD=undefined')).toBe(true);
+    const run = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { cwd: project, env: { ...process.env, OPENDAEMON_HOME: home, NO_COLOR: '1', OD_E2E_UPD: 'fresh' }, encoding: 'utf-8' });
+    expect(run('restart', 'envapp', '--update-env').status).toBe(0);
+    expect(await logOf('UPD=fresh')).toBe(true);
+    expect(od('delete', 'envapp').status).toBe(0);
+  });
+
   it('gracefulReload is reload under its old PM2 name', () => {
     const started = od('start', 'plain.cjs', '--name', 'gr');
     expect(started.status).toBe(0);

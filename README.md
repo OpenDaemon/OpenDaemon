@@ -384,7 +384,7 @@ apps:
 |---------|-------------|
 | `od start <script\|command\|file>` | Start a process, a command (`"npm start"`) or the apps of an ecosystem/config file. `-n` name, `-i` instances (number or `max`), `--env KEY=value` (or `--env production` for a file's `env_production`), `--only a,b`, `--cwd`, `--interpreter`, `--max-memory 512M`, `--no-autorestart`, `--max-restarts`, `--restart-delay`, `--kill-timeout`, `--stop-exit-codes 42,43`, `--cron-restart`, `--wait-ready`, `--listen-timeout`, `--watch`, `--ignore-watch a,b`, `--node-args="--max-old-space-size=200"`, `--output`, `--error`, `--log`, `--time` (a value that starts with `-` is written `--flag=value`); arguments for the app go after `--` |
 | `od stop <name...>` | Stop processes; `all` for every one |
-| `od restart <name...>` | Restart processes; `all` for every one; `--env KEY=value` changes the environment for this and later runs |
+| `od restart <name...>` | Restart processes; `all` for every one; `--env KEY=value` changes the environment for this and later runs; `--update-env` gives the app the environment of the current shell (also for `reload`) |
 | `od reload <name>` | Replace cluster workers one by one without downtime, restart anything else |
 | `od delete <name...>` | Delete processes; `all` for every one |
 | `od start app.js --namespace web` | Group apps (`namespace` in config/ecosystem files); `od restart web`, `stop`, `delete`, `reload` act on every member, and `od list` shows a Namespace column |

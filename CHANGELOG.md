@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `od restart` and `od reload` take `--update-env` (the app gets the environment of the current shell); `od start` takes `-o`, `-e` and `-l` as the short forms of `--output`, `--error` and `--log`; `gracefulReload` is accepted as `reload`.
 - `od startup` on systemd (user unit) also enables lingering, so the daemon starts at boot without a login
 - Namespaces (PM2): `namespace` in configs and ecosystem files, `--namespace` on `od start`; `restart`/`stop`/`delete`/`reload`/`reset`/`signal` accept a namespace for all its members; `od list` shows the column
 - `od update` (PM2 `update`): save the process list, restart the daemon and resurrect the processes

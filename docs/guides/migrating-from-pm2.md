@@ -28,6 +28,7 @@ The daemon starts by itself on the first command, like PM2's.
 | `pm2 reset api` | `od reset api` |
 | `pm2 sendSignal SIGUSR2 api` | `od signal SIGUSR2 api` |
 | `namespace` / `pm2 restart <namespace>` | `--namespace` / `namespace`; `od restart <namespace>` |
+| `pm2 restart app --update-env` | `od restart app --update-env` |
 | `pm2 update` | `od update` |
 | `pm2 save` (`dump`) / `resurrect` | `od save` (`od dump`) / `od resurrect` |
 | `pm2 id api` / `pm2 pid api` | `od id api` / `od pid api` |

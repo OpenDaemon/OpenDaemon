@@ -115,6 +115,7 @@ async function main(): Promise<void> {
   parser.addOption({ name: 'restart-delay', type: 'number', description: 'od start: ms between restarts' });
   parser.addOption({ name: 'kill-timeout', type: 'number', description: 'od start: ms before SIGKILL' });
   parser.addOption({ name: 'cron-restart', type: 'string', description: 'od start: restart on this cron schedule' });
+  parser.addOption({ name: 'update-env', type: 'boolean', description: 'od restart / reload: give the app the environment of this shell' });
   parser.addOption({ name: 'only', type: 'string', description: 'od start <file>: only these apps' });
   parser.addOption({ name: 'err', type: 'boolean', description: 'od logs: only stderr' });
   parser.addOption({ name: 'out', type: 'boolean', description: 'od logs: only stdout' });
@@ -283,6 +284,17 @@ async function resolveIds(parsed: ParsedCommand): Promise<ParsedCommand> {
 
 async function executeCommand(original: ParsedCommand): Promise<void> {
   const parsed = await resolveIds(original);
+  if (parsed.options['update-env'] === true) {
+    // --update-env: the app gets this shell's environment (explicit --env values win); done once,
+    // before a command for several apps is split up
+    const shell = Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string' && e[0] !== '' && !e[0].includes('='));
+    const given = parsed.options['env'];
+    parsed.options = {
+      ...parsed.options,
+      'update-env': undefined,
+      env: [...shell.map(([k, v]) => `${k}=${v}`), ...(Array.isArray(given) ? given : typeof given === 'string' ? [given] : [])],
+    };
+  }
   const command = parsed.command;
   const subcommand = parsed.subcommand;
 
