@@ -121,7 +121,7 @@ async function main(): Promise<void> {
   parser.addOption({ name: 'out', type: 'boolean', description: 'od logs: only stdout' });
   parser.addOption({ name: 'raw', type: 'boolean', description: 'od logs: the messages only' });
   parser.addOption({ name: 'nostream', type: 'boolean', description: 'od logs: print and exit (the default; accepted for PM2 scripts)' });
-  for (const [name, type] of [['output', 'string'], ['error', 'string'], ['log', 'string'], ['time', 'boolean'], ['node-args', 'string'], ['ignore-watch', 'string'], ['wait-ready', 'boolean'], ['listen-timeout', 'number'], ['stop-exit-codes', 'string']] as const) {
+  for (const [name, type] of [['output', 'string'], ['error', 'string'], ['log', 'string'], ['time', 'boolean'], ['node-args', 'string'], ['ignore-watch', 'string'], ['wait-ready', 'boolean'], ['listen-timeout', 'number'], ['stop-exit-codes', 'string'], ['uid', 'string'], ['gid', 'string']] as const) {
     // PM2's short forms: -o/--output, -e/--error, -l/--log
     const alias = ({ output: 'o', error: 'e', log: 'l' } as Record<string, string>)[name];
     parser.addOption({ name, type, description: `od start: ${name}`, ...(alias ? { alias } : {}) });

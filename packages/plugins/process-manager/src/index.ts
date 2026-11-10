@@ -1,6 +1,7 @@
 import type { Plugin, PluginContext } from '../../../core/src/index.js';
 import { resolveLaunch, killTree, groupAlive } from './launch.js';
 import { ChildRegistry } from './orphans.js';
+import { resolveIdentity } from './identity.js';
 import { Logger, parseBytes, dependencyLevels, parseCron, nextRun, assertTimeZone } from '../../../core/src/index.js';
 import type { CountLimit, LimitAction, Release } from '../../../core/src/index.js';
 import { DaemonError, ErrorCode, ProcessError } from '../../../core/src/index.js';
@@ -1070,6 +1071,13 @@ export class ProcessManagerPlugin implements Plugin {
     if (!isDirectory) throw new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, name, `Working directory not found: ${cwd}`);
   }
 
+  /** The user / group to run an app as (spawn options), or a refusal with the reason */
+  private identityOf(config: ProcessConfig): { uid?: number; gid?: number } {
+    const id = resolveIdentity(config.uid, config.gid);
+    if ('error' in id) throw new ProcessError(ErrorCode.PROCESS_INVALID_CONFIG, config.name, id.error);
+    return id;
+  }
+
   private async startFork(proc: ManagedProcessInfo): Promise<void> {
     const config = proc.config;
     const launch = resolveLaunch(config);
@@ -1079,10 +1087,12 @@ export class ProcessManagerPlugin implements Plugin {
     this.requireDirectory(config.name, cwd);
 
     const env = this.buildEnv(config);
+    const identity = this.identityOf(config);
 
     const child = spawn(launch.command, launch.args, {
       cwd,
       env,
+      ...identity,
       // Its own process group (POSIX): the whole tree can be stopped, and it does not get the
       // terminal's Ctrl+C meant for the daemon
       detached: process.platform !== 'win32',
@@ -1161,6 +1171,7 @@ export class ProcessManagerPlugin implements Plugin {
     const child = spawn(process.execPath, [clusterPrimaryPath()], {
       cwd,
       env,
+      ...this.identityOf(config),
       // Its own process group (POSIX): the whole tree can be stopped, and it does not get the
       // terminal's Ctrl+C meant for the daemon
       detached: process.platform !== 'win32',

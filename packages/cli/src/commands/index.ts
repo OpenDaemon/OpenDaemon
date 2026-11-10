@@ -303,6 +303,8 @@ export class StartCommand implements Command {
     set('cronRestart', str(options['cron-restart']));
     set('namespace', str(options['namespace']));
     set('interpreter', str(options['interpreter']));
+    set('uid', str(options['uid']));
+    set('gid', str(options['gid']));
     const log = str(options['log']);
     if (log !== undefined) { out['logFile'] = resolve(log); out['mergeLogs'] = true; }
     const output = str(options['output']);
@@ -311,7 +313,7 @@ export class StartCommand implements Command {
     if (errorFile !== undefined) out['errorLogFile'] = resolve(errorFile);
     if (options['time'] === true) out['logTimestamp'] = true;
     // A bare --node-args means its value started with "-" and was read as another option
-    for (const name of ['node-args', 'output', 'error', 'log', 'ignore-watch', 'stop-exit-codes', 'cron-restart', 'interpreter']) {
+    for (const name of ['node-args', 'output', 'error', 'log', 'ignore-watch', 'stop-exit-codes', 'cron-restart', 'interpreter', 'uid', 'gid']) {
       if (options[name] === true) throw new Error(`--${name} needs a value (for one that starts with "-", write --${name}=<value>)`);
     }
     const nodeArgs = str(options['node-args']);

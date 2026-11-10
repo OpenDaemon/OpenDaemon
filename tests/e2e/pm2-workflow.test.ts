@@ -208,6 +208,16 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     expect(od('delete', 'envapp').status).toBe(0);
   });
 
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('refuses --uid of another user with the reason, and takes the current one', () => {
+    const refused = od('start', 'plain.cjs', '--name', 'asother', '--uid', String(process.getuid!() + 1));
+    expect(refused.status).toBe(1);
+    expect(refused.out).toContain('only a daemon running as root');
+    od('delete', 'asother');
+    const own = od('start', 'plain.cjs', '--name', 'asme', '--uid', String(process.getuid!()));
+    expect(own.status).toBe(0);
+    expect(od('delete', 'asme').status).toBe(0);
+  });
+
   it('gracefulReload is reload under its old PM2 name', () => {
     const started = od('start', 'plain.cjs', '--name', 'gr');
     expect(started.status).toBe(0);
