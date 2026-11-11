@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `-i 0` is max and `-i -1` is max minus one (PM2), on the command line and in ecosystem files (`-1` used to mean max)
 - `nice` in a config or ecosystem file now sets the scheduling priority of the app (it was accepted and ignored)
 - Every app gets `pm_id` (its process id) in its environment, as under PM2
 - `uid` / `gid` (config, ecosystem files, `--uid` / `--gid`) now run the app as that user or group when the daemon is root (they were accepted and ignored); otherwise the start is refused with the reason

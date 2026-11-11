@@ -1,5 +1,6 @@
 import type { OptionValue } from '../parser.js';
 import { term } from '../output.js';
+import { availableParallelism } from 'os';
 import { CliClient } from '../client.js';
 import { resolve } from 'path';
 import { existsSync, readFileSync, unlinkSync, openSync, closeSync, statSync, mkdirSync, writeFileSync } from 'fs';
@@ -400,13 +401,16 @@ export class StartCommand implements Command {
 type ProcessConfigLike = ProcessConfig & Record<string, unknown>;
 
 /**
- * `-i 4` / `-i max`; undefined when not given
+ * `-i 4` / `-i max` / `-i 0` (max) / `-i -1` (max minus one); undefined when not given
  */
 export function parseInstances(value: OptionValue | undefined): number | 'max' | undefined {
   if (value === undefined || value === true || value === '') return undefined;
   if (value === 'max' || value === 'MAX') return 'max';
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 1) throw new Error(`Invalid --instances "${String(value)}" (a whole number above 0, or max)`);
+  if (!Number.isInteger(n)) throw new Error(`Invalid --instances "${String(value)}" (a whole number, or max)`);
+  // PM2: 0 is max, and -n is max minus n (at least one)
+  if (n === 0) return 'max';
+  if (n < 0) return Math.max(1, availableParallelism() + n);
   return n;
 }
 

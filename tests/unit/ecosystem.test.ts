@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
-import { tmpdir } from 'os';
+import { availableParallelism, tmpdir } from 'os';
 import { splitArgs, normalizeApp, isEcosystemFile, loadEcosystem } from '../../packages/cli/src/ecosystem.js';
 import { parseEnvOptions, parseInstances } from '../../packages/cli/src/commands/index.js';
 
@@ -43,7 +43,9 @@ describe('normalizeApp (PM2 keys)', () => {
 
   it('turns instances max / 0 / -1 into max, and many instances into cluster mode', () => {
     expect(norm({ instances: 'max' }).config).toMatchObject({ instances: 'max', mode: 'cluster' });
-    expect(norm({ instances: -1 }).config.instances).toBe('max');
+    expect(norm({ instances: 0 }).config.instances).toBe('max');
+    // -n is "all CPUs but n" (at least one), and still runs as a cluster
+    expect(norm({ instances: -1 }).config).toMatchObject({ instances: Math.max(1, availableParallelism() - 1), mode: 'cluster' });
     expect(norm({ instances: 3 }).config.mode).toBe('cluster');
     expect(norm({ instances: 3, exec_mode: 'fork' }).config.mode).toBe('fork');
     expect(norm({}).config.mode).toBeUndefined();
@@ -157,7 +159,9 @@ describe('start options', () => {
     expect(parseInstances('4')).toBe(4);
     expect(parseInstances('max')).toBe('max');
     expect(parseInstances(undefined)).toBeUndefined();
-    expect(() => parseInstances('0')).toThrow(/Invalid --instances/);
+    expect(parseInstances('0')).toBe('max');
+    expect(parseInstances('-1')).toBe(Math.max(1, availableParallelism() - 1));
+    expect(parseInstances('-999')).toBe(1);
     expect(() => parseInstances('x')).toThrow(/Invalid --instances/);
   });
 });

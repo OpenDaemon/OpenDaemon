@@ -136,6 +136,16 @@ describe('CommandParser', () => {
 
       expect(result.options['name']).toBe('my-app');
     });
+
+    it('should take a negative number as the value of a short option (pm2 -i -1), but not another flag', () => {
+      const parser = new CommandParser();
+      parser.addOption({ name: 'instances', alias: 'i', type: 'string' });
+      parser.addOption({ name: 'quiet', alias: 'q', type: 'boolean' });
+      expect(parser.parse(['start', 'app.js', '-i', '-1']).options['instances']).toBe('-1');
+      const flag = parser.parse(['start', 'app.js', '-i', '-q']);
+      expect(flag.options['instances']).toBeUndefined();
+      expect(flag.options['quiet']).toBe(true);
+    });
   });
 
   describe('mixed arguments', () => {

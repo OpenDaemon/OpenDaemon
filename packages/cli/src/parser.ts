@@ -226,7 +226,8 @@ export class CommandParser {
         }
 
         const nextArg = index + 1 < args.length ? args[index + 1] : undefined;
-        if (nextArg && !nextArg.startsWith('-')) {
+        // a negative number is a value too (pm2 -i -1)
+        if (nextArg && (!nextArg.startsWith('-') || /^-\d+$/.test(nextArg))) {
           options[fullName] = this.parseValue(nextArg, option.type);
           return 2;
         }

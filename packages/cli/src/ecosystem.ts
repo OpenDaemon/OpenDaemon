@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'fs';
 import { dirname, extname, basename, resolve, isAbsolute } from 'path';
+import { availableParallelism } from 'os';
 import { pathToFileURL } from 'url';
 import { parseDuration } from '../../core/src/index.js';
 import type { ProcessConfig } from '../../core/src/index.js';
@@ -77,12 +78,13 @@ export function normalizeApp(raw: Record<string, unknown>, baseDir: string, prof
   set('interpreter', raw['interpreter']);
 
   const instances = raw['instances'];
-  if (instances === 'max' || instances === 0 || instances === -1) out['instances'] = 'max';
+  if (instances === 'max' || instances === 0) out['instances'] = 'max';
+  else if (typeof instances === 'number' && Number.isInteger(instances) && instances < 0) out['instances'] = Math.max(1, availableParallelism() + instances);
   const execMode = raw['exec_mode'];
   if (execMode === 'cluster' || execMode === 'cluster_mode') out['mode'] = 'cluster';
   else if (execMode === 'fork' || execMode === 'fork_mode') out['mode'] = 'fork';
   if (out['mode'] === undefined && typeof out['instances'] === 'number' && out['instances'] > 1) out['mode'] = 'cluster';
-  if (out['mode'] === undefined && out['instances'] === 'max') out['mode'] = 'cluster';
+  if (out['mode'] === undefined && (out['instances'] === 'max' || (typeof instances === 'number' && instances < 0))) out['mode'] = 'cluster';
   if (out['mode'] === 'fork' && (out['instances'] === 'max' || (typeof out['instances'] === 'number' && out['instances'] > 1))) {
     warnings.push(`instances ${String(out['instances'])} is ignored in fork mode (one process runs); use exec_mode "cluster" for several`);
   }
