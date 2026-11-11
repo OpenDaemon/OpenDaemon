@@ -28,7 +28,7 @@ const NATIVE_KEYS = new Set([
   'name', 'script', 'cwd', 'env', 'instances', 'mode', 'interpreter', 'interpreterArgs', 'args', 'maxMemory', 'maxCpu',
   'limits', 'deploy', 'autoRestart', 'restartDelay', 'maxRestarts', 'minUptime', 'killTimeout', 'backoffStrategy',
   'backoffMultiplier', 'maxBackoffDelay', 'healthCheck', 'dependencyTimeout', 'logFile', 'errorLogFile', 'logLevel',
-  'mergeLogs', 'logRotation', 'uid', 'gid', 'nice', 'umask', 'detached', 'cron', 'cronTimezone', 'cronOverlap',
+  'mergeLogs', 'logRotation', 'uid', 'gid', 'nice', 'cron', 'cronTimezone', 'cronOverlap',
   'cronRetry', 'cronRestart', 'namespace', 'stopExitCodes', 'stableAfter', 'logTimestamp', 'watch', 'dependencies', 'description', 'version', 'waitReady', 'listenTimeout',
 ]);
 

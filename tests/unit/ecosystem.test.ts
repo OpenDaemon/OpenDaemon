@@ -79,6 +79,11 @@ describe('normalizeApp (PM2 keys)', () => {
     expect(norm({ script: 'npm', args: 'start' }).config).toMatchObject({ script: 'npm', args: ['start'] });
   });
 
+  it('says so when umask or detached are set, since they have no effect', () => {
+    const { warnings } = norm({ umask: '022', detached: true, nice: 5 });
+    expect(warnings).toEqual(['"umask" is not supported and was ignored', '"detached" is not supported and was ignored']);
+  });
+
   it('warns about settings it cannot carry over, and stays quiet about PM2-only ones', () => {
     const { warnings } = norm({ post_update: ['npm i'], pmx: false, wibble: 1, source_map_support: true });
     expect(warnings).toEqual(['"wibble" is not supported and was ignored']);
