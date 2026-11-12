@@ -72,10 +72,11 @@ export function normalizeApp(raw: Record<string, unknown>, baseDir: string, prof
     out['env'] = Object.fromEntries(Object.entries(env).map(([k, v]) => [k, typeof v === 'object' && v !== null ? v : String(v)]));
   }
 
+  if (raw['args'] === undefined && raw['script_args'] !== undefined) out['args'] = asList(raw['script_args']); // the older PM2 name
   if (typeof raw['args'] === 'string') out['args'] = splitArgs(raw['args']);
   const nodeArgs = [...asList(raw['interpreter_args']), ...asList(raw['node_args'])];
   if (nodeArgs.length > 0) out['interpreterArgs'] = [...asList(out['interpreterArgs']), ...nodeArgs];
-  set('interpreter', raw['interpreter']);
+  set('interpreter', raw['interpreter'] ?? raw['exec_interpreter']);
 
   const instances = raw['instances'];
   if (instances === 'max' || instances === 0) out['instances'] = 'max';
@@ -126,7 +127,7 @@ export function normalizeApp(raw: Record<string, unknown>, baseDir: string, prof
 
   for (const key of Object.keys(raw)) {
     const handled = NATIVE_KEYS.has(key) || SILENT_KEYS.has(key) || key === 'env' || key.startsWith('env_') || [
-      'args', 'interpreter_args', 'node_args', 'instances', 'exec_mode', 'autorestart', 'max_restarts', 'restart_delay',
+      'args', 'script_args', 'exec_interpreter', 'interpreter_args', 'node_args', 'instances', 'exec_mode', 'autorestart', 'max_restarts', 'restart_delay',
       'min_uptime', 'kill_timeout', 'stop_exit_codes', 'exp_backoff_restart_delay', 'max_memory_restart', 'cron_restart', 'wait_ready',
       'listen_timeout', 'watch', 'ignore_watch', 'watch_delay', 'out_file', 'output', 'log_file', 'log', 'error_file',
       'error', 'merge_logs', 'time',

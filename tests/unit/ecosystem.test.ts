@@ -81,6 +81,12 @@ describe('normalizeApp (PM2 keys)', () => {
     expect(norm({ script: 'npm', args: 'start' }).config).toMatchObject({ script: 'npm', args: ['start'] });
   });
 
+  it('reads the older PM2 names script_args and exec_interpreter', () => {
+    const { config, warnings } = norm({ script_args: 'a "b c"', exec_interpreter: 'python3' });
+    expect(config).toMatchObject({ args: ['a', 'b c'], interpreter: 'python3' });
+    expect(warnings).toEqual([]);
+  });
+
   it('says so when umask or detached are set, since they have no effect', () => {
     const { warnings } = norm({ umask: '022', detached: true, nice: 5 });
     expect(warnings).toEqual(['"umask" is not supported and was ignored', '"detached" is not supported and was ignored']);
