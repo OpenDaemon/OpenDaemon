@@ -362,6 +362,13 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     const password = /^password: (.+)$/m.exec(credentials)?.[1] ?? '';
     const authorised = await fetch(`http://127.0.0.1:${String(port)}/api/processes`, { headers: { Authorization: `Basic ${Buffer.from(`admin:${password}`).toString('base64')}` } });
     expect(authorised.status).toBe(200);
+    // mistakes of the caller are answered as such, with the reason, not as a server fault
+    const asAdmin = { Authorization: `Basic ${Buffer.from(`admin:${password}`).toString('base64')}` };
+    const ghost = await fetch(`http://127.0.0.1:${String(port)}/api/restart/no-such-app`, { method: 'POST', headers: asAdmin });
+    expect(ghost.status).toBe(404);
+    expect(((await ghost.json()) as { error: string }).error).toContain('no-such-app');
+    const badBody = await fetch(`http://127.0.0.1:${String(port)}/api/start`, { method: 'POST', headers: asAdmin, body: '{not json' });
+    expect(badBody.status).toBe(400);
     if (process.platform !== 'win32') expect(statSync(join(home, 'webui-credentials')).mode & 0o777).toBe(0o600);
   });
   // Last: it stops the shared daemon (Windows has one fixed IPC port, so a second daemon cannot run beside it)

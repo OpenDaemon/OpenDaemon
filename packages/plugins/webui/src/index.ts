@@ -575,9 +575,21 @@ export class WebuiPlugin implements Plugin {
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Not found' }));
     } catch (err) {
-      this.logger.error('API error', undefined, err as Error);
-      res.writeHead(500);
-      res.end(JSON.stringify({ error: 'Internal server error' }));
+      // What the caller got wrong is theirs to read (404 / 409 / 400 with the reason); anything else is ours
+      const code = (err as { code?: string } | null)?.code;
+      const status = err instanceof SyntaxError ? 400
+        : code === 'PROCESS_NOT_FOUND' ? 404
+        : code === 'PROCESS_ALREADY_EXISTS' ? 409
+        : code === 'PROCESS_INVALID_CONFIG' ? 400
+        : 500;
+      if (status === 500) {
+        this.logger.error('API error', undefined, err as Error);
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: 'Internal server error' }));
+      } else {
+        res.writeHead(status);
+        res.end(JSON.stringify({ error: err instanceof SyntaxError ? 'Request body is not valid JSON' : (err as Error).message }));
+      }
     }
   }
 
