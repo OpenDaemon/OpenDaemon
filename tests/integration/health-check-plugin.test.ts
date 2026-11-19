@@ -79,7 +79,8 @@ describe('HealthCheckPlugin with the process manager', () => {
   afterEach(async () => {
     health.onStop();
     await pm.onStop();
-    rmSync(dir, { recursive: true, force: true });
+    // Windows may still hold a handle of the app that just stopped for a moment (EBUSY)
+    rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   });
 
   it('should mark a passing process healthy', async () => {
