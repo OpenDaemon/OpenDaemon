@@ -183,6 +183,19 @@ describe('restart policy of a long-running app', () => {
     await until(async () => (await info('other')).status === 'errored');
   });
 
+  it('does not bring back an app that was deleted while a restart was stopping it', async () => {
+    // an app that ignores SIGTERM keeps the restart in its stop phase until killTimeout
+    await call('start', { name: 'stubborn', script: script('stubborn', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"), killTimeout: 1500 });
+    await until(async () => (await info('stubborn')).status === 'online');
+    await new Promise((r) => setTimeout(r, 600)); // the SIGTERM handler is installed once node has booted
+    const restart = call('restart', { name: 'stubborn' }).then(() => 'restarted', (err: unknown) => (err as Error).message);
+    await new Promise((r) => setTimeout(r, 300));
+    await call('delete', { name: 'stubborn' });
+    expect(await restart).toMatch(/was deleted while it restarted/);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(((await call('list')) as ProcessInfo[]).map((p) => p.name)).not.toContain('stubborn');
+  });
+
   it('gives each app NODE_APP_INSTANCE', async () => {
     await call('start', { name: 'inst', script: script('inst', "console.log('instance=' + process.env.NODE_APP_INSTANCE); setInterval(() => {}, 1000);"), killTimeout: 300 });
     await until(async () => (await logs('inst')).includes('instance=0'));

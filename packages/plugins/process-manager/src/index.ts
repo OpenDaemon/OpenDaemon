@@ -53,6 +53,8 @@ type LimitKind = 'memory' | 'cpu' | 'fds' | 'children' | 'eventLoop';
 interface ManagedProcessInfo {
   id: number;
   config: ProcessConfig;
+  /** Set the moment a delete begins: a restart that is still stopping the app must not start it again */
+  deleting?: boolean;
   status: ProcessStatus;
   pid?: number | undefined;
   pids: number[];
@@ -566,6 +568,10 @@ export class ProcessManagerPlugin implements Plugin {
       await this.stopProcessInternal(dependent, 'SIGTERM', dependent.config.killTimeout ?? 5000);
     }
     await this.stopProcessInternal(proc, 'SIGTERM', proc.config.killTimeout ?? 5000);
+    // Deleted while it was stopping: starting it again would bring back what the user removed
+    if (proc.deleting === true || this.processes.get(params.name) !== proc) {
+      throw new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" was deleted while it restarted`);
+    }
     const info = await this.startProcess(proc.config);
 
     for (const config of configs.reverse()) {
@@ -685,8 +691,14 @@ export class ProcessManagerPlugin implements Plugin {
       throw new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`);
     }
 
+    proc.deleting = true;
     if (proc.status === 'online' || proc.status === 'starting') {
-      await this.stopProcessInternal(proc, 'SIGTERM', proc.config.killTimeout ?? 5000);
+      try {
+        await this.stopProcessInternal(proc, 'SIGTERM', proc.config.killTimeout ?? 5000);
+      } catch (err) {
+        proc.deleting = false; // still there: it can be restarted or deleted again
+        throw err;
+      }
     }
 
     this.processes.delete(params.name);
@@ -940,6 +952,7 @@ export class ProcessManagerPlugin implements Plugin {
       proc.restartCount++;
       proc.lastRestart = new Date();
       this.restartProcess({ name }).catch((err: unknown) => {
+        if ((err as { code?: string }).code === ErrorCode.PROCESS_NOT_FOUND) return; // deleted meanwhile
         this.logger.error(`Limit restart failed: ${name}`, undefined, err as Error);
       });
     } else if (action === 'stop') {
