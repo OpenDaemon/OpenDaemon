@@ -55,6 +55,8 @@ interface ManagedProcessInfo {
   config: ProcessConfig;
   /** Set the moment a delete begins: a restart that is still stopping the app must not start it again */
   deleting?: boolean;
+  /** A stop arrived while a restart was still stopping the app: the restart must leave it stopped */
+  haltRequested?: boolean;
   status: ProcessStatus;
   pid?: number | undefined;
   pids: number[];
@@ -514,6 +516,15 @@ export class ProcessManagerPlugin implements Plugin {
       throw new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" not found`);
     }
 
+    // Already stopping (a restart is in flight): the stop wins, so the restart must not start it again
+    if (this.isStopping(proc)) {
+      proc.haltRequested = true;
+      while (this.isStopping(proc)) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return [params.name];
+    }
+
     // Dependents go first, so nothing is left running against a dependency that is gone
     const stopped: string[] = [];
     for (const dependent of params.cascade === true ? this.runningDependents(params.name) : []) {
@@ -526,6 +537,18 @@ export class ProcessManagerPlugin implements Plugin {
       params.timeout ?? (proc.config.killTimeout ?? 5000)
     );
     return [...stopped, params.name];
+  }
+
+  /** Read through a method: the status and the flag change across awaits, which flow analysis cannot see */
+  private isStopping(proc: ManagedProcessInfo): boolean {
+    return proc.status === 'stopping';
+  }
+
+  /** Whether a stop arrived during the restart; reading it clears it */
+  private takeHalt(proc: ManagedProcessInfo): boolean {
+    const halted = proc.haltRequested === true;
+    proc.haltRequested = false;
+    return halted;
   }
 
   /**
@@ -562,6 +585,7 @@ export class ProcessManagerPlugin implements Plugin {
       proc.config = { ...proc.config, env: { ...proc.config.env, ...params.env } };
     }
 
+    proc.haltRequested = false; // only a stop that arrives during THIS restart counts
     const dependents = params.cascade === true ? this.runningDependents(params.name) : [];
     const configs = dependents.map((dependent) => dependent.config);
     for (const dependent of dependents) {
@@ -571,6 +595,9 @@ export class ProcessManagerPlugin implements Plugin {
     // Deleted while it was stopping: starting it again would bring back what the user removed
     if (proc.deleting === true || this.processes.get(params.name) !== proc) {
       throw new ProcessError(ErrorCode.PROCESS_NOT_FOUND, params.name, `Process "${params.name}" was deleted while it restarted`);
+    }
+    if (this.takeHalt(proc)) {
+      return this.toProcessInfo(proc);
     }
     const info = await this.startProcess(proc.config);
 

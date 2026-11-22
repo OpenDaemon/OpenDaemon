@@ -197,6 +197,20 @@ describe('restart policy of a long-running app', () => {
     expect(((await call('list')) as ProcessInfo[]).map((p) => p.name)).not.toContain('stubborn');
   });
 
+  it.skipIf(process.platform === 'win32')('leaves the app stopped when a stop arrives while a restart is stopping it', async () => {
+    await call('start', { name: 'halted', script: script('halted', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"), killTimeout: 1500 });
+    await until(async () => (await info('halted')).status === 'online');
+    await new Promise((r) => setTimeout(r, 600)); // the SIGTERM handler is installed once node has booted
+    const restart = call('restart', { name: 'halted' });
+    await new Promise((r) => setTimeout(r, 300));
+    await call('stop', { name: 'halted' });
+    await restart;
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await info('halted')).status).toBe('stopped');
+    await call('restart', { name: 'halted' }); // a later restart is not affected by the earlier stop
+    await until(async () => (await info('halted')).status === 'online');
+  });
+
   it('gives each app NODE_APP_INSTANCE', async () => {
     await call('start', { name: 'inst', script: script('inst', "console.log('instance=' + process.env.NODE_APP_INSTANCE); setInterval(() => {}, 1000);"), killTimeout: 300 });
     await until(async () => (await logs('inst')).includes('instance=0'));

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `od stop` that arrives while a restart is still stopping the app now wins: the app stays stopped instead of being started by the restart
 - A restart that was still stopping an app no longer brings it back when `od delete` came in meanwhile (this happened with memory-limit restarts)
 - `od start --max-memory-restart` (the PM2 name of `--max-memory`) now takes effect; it was ignored
 - WebUI API: an unknown app is answered 404, a duplicate name 409, and a bad config or body 400, each with the reason (they were all 500 "Internal server error")
