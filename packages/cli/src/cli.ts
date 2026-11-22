@@ -115,6 +115,7 @@ async function main(): Promise<void> {
   parser.addOption({ name: 'restart-delay', type: 'number', description: 'od start: ms between restarts' });
   parser.addOption({ name: 'kill-timeout', type: 'number', description: 'od start: ms before SIGKILL' });
   parser.addOption({ name: 'cron-restart', type: 'string', description: 'od start: restart on this cron schedule' });
+  parser.addOption({ name: 'max-memory-restart', type: 'string', description: 'od start: restart above this memory (PM2 name of --max-memory)' });
   parser.addOption({ name: 'update-env', type: 'boolean', description: 'od restart / reload: give the app the environment of this shell' });
   parser.addOption({ name: 'only', type: 'string', description: 'od start <file>: only these apps' });
   parser.addOption({ name: 'err', type: 'boolean', description: 'od logs: only stderr' });

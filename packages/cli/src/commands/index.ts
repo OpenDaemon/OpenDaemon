@@ -293,7 +293,7 @@ export class StartCommand implements Command {
   /** Settings given as flags override what a file or the defaults say */
   private overrides(options: Record<string, OptionValue | undefined>): Record<string, unknown> {
     const out: Record<string, unknown> = {};
-    const maxMemory = str(options['max-memory']);
+    const maxMemory = str(options['max-memory']) ?? str(options['max-memory-restart']); // the second is PM2's name
     if (maxMemory !== undefined) out['maxMemory'] = maxMemory;
     if (options['watch'] === true) out['watch'] = true;
     if (options['no-autorestart'] === true) out['autoRestart'] = false;
@@ -314,7 +314,7 @@ export class StartCommand implements Command {
     if (errorFile !== undefined) out['errorLogFile'] = resolve(errorFile);
     if (options['time'] === true) out['logTimestamp'] = true;
     // A bare --node-args means its value started with "-" and was read as another option
-    for (const name of ['node-args', 'output', 'error', 'log', 'ignore-watch', 'stop-exit-codes', 'cron-restart', 'interpreter', 'uid', 'gid']) {
+    for (const name of ['node-args', 'output', 'error', 'log', 'ignore-watch', 'stop-exit-codes', 'cron-restart', 'interpreter', 'uid', 'gid', 'max-memory', 'max-memory-restart']) {
       if (options[name] === true) throw new Error(`--${name} needs a value (for one that starts with "-", write --${name}=<value>)`);
     }
     const nodeArgs = str(options['node-args']);

@@ -245,6 +245,15 @@ describe.skipIf(!existsSync(CLI))('PM2-style workflow end to end', () => {
     expect(od('delete', 'niced').status).toBe(0);
   });
 
+  it('--max-memory-restart (pm2) restarts an app that grows past the limit', async () => {
+    writeFileSync(join(project, 'grow.cjs'), 'const keep = []; setInterval(() => { keep.push(Buffer.alloc(8e6, 1)); }, 100);');
+    expect(od('start', 'grow.cjs', '--name', 'grow', '--max-memory-restart', '100M').status).toBe(0);
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline && (list().find((p) => p.name === 'grow')?.restartCount ?? 0) === 0) await new Promise((r) => setTimeout(r, 250));
+    expect(list().find((p) => p.name === 'grow')?.restartCount).toBeGreaterThan(0);
+    expect(od('delete', 'grow').status).toBe(0);
+  });
+
   it('gracefulReload is reload under its old PM2 name', () => {
     const started = od('start', 'plain.cjs', '--name', 'gr');
     expect(started.status).toBe(0);

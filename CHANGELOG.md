@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `od start --max-memory-restart` (the PM2 name of `--max-memory`) now takes effect; it was ignored
 - WebUI API: an unknown app is answered 404, a duplicate name 409, and a bad config or body 400, each with the reason (they were all 500 "Internal server error")
 - `-i 0` is max and `-i -1` is max minus one (PM2), on the command line and in ecosystem files (`-1` used to mean max)
 - `nice` in a config or ecosystem file now sets the scheduling priority of the app (it was accepted and ignored)
