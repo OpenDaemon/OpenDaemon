@@ -183,7 +183,8 @@ describe('restart policy of a long-running app', () => {
     await until(async () => (await info('other')).status === 'errored');
   });
 
-  it('does not bring back an app that was deleted while a restart was stopping it', async () => {
+  // POSIX only: Windows cannot ignore the stop, so there the stop phase is over at once and there is nothing to race
+  it.skipIf(process.platform === 'win32')('does not bring back an app that was deleted while a restart was stopping it', async () => {
     // an app that ignores SIGTERM keeps the restart in its stop phase until killTimeout
     await call('start', { name: 'stubborn', script: script('stubborn', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"), killTimeout: 1500 });
     await until(async () => (await info('stubborn')).status === 'online');
